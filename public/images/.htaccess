@@ -1,0 +1,6 @@
+# Brand/landing images aren't content-hashed but change only on a rebrand;
+# a week of browser cache (plus the service worker) covers repeat visits.
+# Lives here (not in public/.htaccess) so the rule stays scoped to images.
+<IfModule mod_headers.c>
+    Header set Cache-Control "public, max-age=604800"
+</IfModule>

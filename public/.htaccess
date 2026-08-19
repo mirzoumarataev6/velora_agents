@@ -1,0 +1,50 @@
+<IfModule mod_rewrite.c>
+    <IfModule mod_negotiation.c>
+        Options -MultiViews -Indexes
+    </IfModule>
+
+    RewriteEngine On
+
+    # Handle Authorization Header
+    RewriteCond %{HTTP:Authorization} .
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+    # Handle X-XSRF-Token Header
+    RewriteCond %{HTTP:x-xsrf-token} .
+    RewriteRule .* - [E=HTTP_X_XSRF_TOKEN:%{HTTP:X-XSRF-Token}]
+
+    # Redirect Trailing Slashes If Not A Folder...
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteCond %{REQUEST_URI} (.+)/$
+    RewriteRule ^ %1 [L,R=301]
+
+    # Send Requests To Front Controller...
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteRule ^ index.php [L]
+</IfModule>
+
+# --- Static asset caching -------------------------------------------------
+# Vite writes content-hashed (fingerprinted) files under /build, so their URL
+# changes whenever the content does. That makes them safe to cache forever.
+# Kept here in public/.htaccess (not public/build/.htaccess, which `npm run
+# build` would wipe) so the rule survives every rebuild.
+# NOTE: these headers apply only when Apache serves the app. `php artisan
+# serve` (what the ngrok tunnel currently fronts) bypasses .htaccess entirely —
+# there, repeat-visit speed comes from the service worker (public/sw.js), which
+# caches the same assets client-side regardless of server headers.
+<IfModule mod_headers.c>
+    # Vite build output is content-hashed (app-DRkbCov4.css, inter-800-….woff2):
+    # a changed file gets a new URL, so cached copies can never go stale.
+    <FilesMatch "-[A-Za-z0-9_\-]{8,}\.(css|js|woff2|woff)$">
+        Header set Cache-Control "public, max-age=31536000, immutable"
+    </FilesMatch>
+    <FilesMatch "^(favicon\.ico|site\.webmanifest|sw\.js)$">
+        Header set Cache-Control "public, max-age=86400"
+    </FilesMatch>
+</IfModule>
+
+# Transparently gzip text assets when the client supports it.
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE text/html text/plain text/css application/javascript application/json image/svg+xml
+</IfModule>
