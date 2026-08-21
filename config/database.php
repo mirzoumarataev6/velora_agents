@@ -62,6 +62,33 @@ return [
             'options' => extension_loaded('pdo_mysql') ? array_filter([
                 Mysql::ATTR_SSL_CA => env('MYSQL_ATTR_SSL_CA'),
             ]) : [],
+
+            /*
+             * Read by spatie/laravel-backup when it shells out to mysqldump.
+             *
+             * The path is required on this machine: mysqldump is not on PATH
+             * under OSPanel. Overridable via DB_DUMP_BINARY_PATH so a real
+             * deployment (where it IS on PATH) can leave it empty.
+             *
+             * Points at MySQL 8.0, not the 8.4 that serves the database,
+             * because C:\OSPanel\modules\MySQL-8.4\bin\mysqldump.exe is corrupt
+             * in this install — it crashes with an access violation
+             * (0xC0000005) even on `--version`, while mysql.exe in the same
+             * directory runs fine. The 8.0 client dumps an 8.4 server
+             * correctly. The MariaDB mysqldump builds elsewhere under
+             * C:\OSPanel\modules are deliberately NOT used: their output does
+             * not cleanly restore into MySQL. If the 8.4 binary is ever
+             * repaired, move this back.
+             *
+             * useSingleTransaction: every table here is InnoDB, so the dump can
+             * be taken consistently without locking the app out of the database
+             * while it runs.
+             */
+            'dump' => [
+                'dump_binary_path' => env('DB_DUMP_BINARY_PATH', 'C:\OSPanel\modules\MySQL-8.0\bin'),
+                'useSingleTransaction' => true,
+                'timeout' => 60 * 5,
+            ],
         ],
 
         'mariadb' => [

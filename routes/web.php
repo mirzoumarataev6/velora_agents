@@ -8,6 +8,7 @@ use App\Http\Controllers\KnowledgeSourceController;
 use App\Http\Controllers\LeadController;
 use App\Http\Controllers\LeadNotificationController;
 use App\Http\Controllers\LocaleController;
+use App\Http\Controllers\OnboardingController;
 use App\Http\Controllers\PasswordResetController;
 use App\Http\Controllers\PlaygroundController;
 use App\Http\Controllers\RootRedirectController;
@@ -36,6 +37,11 @@ Route::middleware('guest')->group(function () {
 Route::middleware(['auth', 'auth.session'])->group(function () {
     Route::redirect('/home', '/agents')->name('home');
     Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
+
+    // The only onboarding endpoint. Step progress is derived from the account's
+    // own data at render time, so there is nothing to report back — only the
+    // decision to skip needs recording.
+    Route::delete('onboarding', [OnboardingController::class, 'dismiss'])->name('onboarding.dismiss');
 
     // Leads / Заявки. The static segments (poll, seen) are declared before the
     // {lead} wildcard so they aren't swallowed as a model-bound id.

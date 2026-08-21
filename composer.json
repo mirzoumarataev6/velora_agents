@@ -16,6 +16,7 @@
         "phpoffice/phpspreadsheet": "^5.8",
         "phpoffice/phpword": "^1.4",
         "smalot/pdfparser": "^2.12",
+        "spatie/laravel-backup": "*",
         "symfony/css-selector": "^8.1",
         "symfony/dom-crawler": "^8.1"
     },

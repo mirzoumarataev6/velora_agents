@@ -13,6 +13,13 @@ use Laravel\Socialite\Facades\Socialite;
 
 class AuthController extends Controller
 {
+    /**
+     * Marks a session that began with a registration. Only such a session shows
+     * the onboarding checklist; see register() for why this is session state
+     * rather than a column on the user.
+     */
+    public const ONBOARDING_SESSION_KEY = 'onboarding_active';
+
     public function register(Request $request): RedirectResponse
     {
         $validated = $request->validate([
@@ -33,6 +40,17 @@ class AuthController extends Controller
         Auth::login($user);
         $request->session()->regenerate();
 
+        // Onboarding belongs to the sign-up itself, not to the account. Marking
+        // the SESSION rather than the user is what makes "a returning user
+        // never sees the checklist, whatever their progress" true by
+        // construction: signing in starts a session that was never marked, so
+        // there is no state a half-finished setup could leave behind to make
+        // the card come back later. Set after regenerate(), which would
+        // otherwise be a chance to lose it.
+        $request->session()->put(self::ONBOARDING_SESSION_KEY, true);
+
+        // Deliberately no welcome_back flash — a fresh sign-up gets the welcome
+        // modal, and the two greetings must never both appear.
         return redirect()->route('home');
     }
 
@@ -52,7 +70,13 @@ class AuthController extends Controller
         $request->session()->regenerate();
         $this->syncLocale(Auth::user());
 
-        return redirect()->intended(route('home'));
+        // Explicit, even though a signing-in session should never carry this:
+        // regenerate() rotates the session ID but KEEPS the data, so anything
+        // already in the session survives into the authenticated one. Clearing
+        // it here means the "never on login" rule does not depend on that.
+        $request->session()->forget(self::ONBOARDING_SESSION_KEY);
+
+        return redirect()->intended(route('home'))->with('welcome_back', true);
     }
 
     private function syncLocale(User $user): void
@@ -87,6 +111,12 @@ class AuthController extends Controller
             ->orWhere('email', $googleUser->getEmail())
             ->first();
 
+        // A returning owner gets the greeting; a first-time one gets the
+        // welcome modal instead, which the dashboard raises off the account's
+        // own welcomed_at rather than off this flash — so the two can never
+        // both fire, and a Google signup is welcomed exactly like a form one.
+        $returning = $user !== null;
+
         if ($user) {
             if (! $user->google_id) {
                 $user->forceFill(['google_id' => $googleUser->getId()])->save();
@@ -104,6 +134,15 @@ class AuthController extends Controller
         $request->session()->regenerate();
         $this->syncLocale($user);
 
-        return redirect()->intended(route('home'));
+        // This one endpoint is both "register" and "log in", so it has to make
+        // the same choice both of the other two make — exactly one of the two
+        // paths, never both and never neither.
+        if ($returning) {
+            $request->session()->forget(self::ONBOARDING_SESSION_KEY);
+        } else {
+            $request->session()->put(self::ONBOARDING_SESSION_KEY, true);
+        }
+
+        return redirect()->intended(route('home'))->with('welcome_back', $returning);
     }
 }

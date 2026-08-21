@@ -30,7 +30,28 @@ class UserFactory extends Factory
             'email_verified_at' => now(),
             'password' => static::$password ??= Hash::make('password'),
             'remember_token' => Str::random(10),
+            // A fixture is an established account, not a fresh sign-up — the
+            // same stance the onboarding migration takes towards rows that
+            // already existed. Without this, every test that renders a
+            // dashboard page would also raise the welcome modal and the
+            // first-run checklist over whatever it was actually asserting.
+            // Tests about onboarding opt in with newcomer() below.
+            'welcomed_at' => now(),
+            'onboarding_dismissed_at' => now(),
         ];
+    }
+
+    /**
+     * An account that has just been created and has seen nothing yet.
+     */
+    public function newcomer(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'welcomed_at' => null,
+            'playground_tried_at' => null,
+            'onboarding_dismissed_at' => null,
+            'onboarding_completed_at' => null,
+        ]);
     }
 
     /**

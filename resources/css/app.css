@@ -383,6 +383,43 @@ i {
     transform: translateY(0) scale(1);
 }
 
+/* The one-time welcome. Hand-written rather than Alpine's x-transition because
+   the card and its backdrop need different curves — the backdrop simply fades,
+   the card arrives on an overshooting ease so it settles rather than snaps —
+   and because a class-based transition is what the reduced-motion block at the
+   bottom of this file can switch off wholesale. */
+.welcome-backdrop {
+    opacity: 0;
+    transition: opacity 0.35s ease;
+}
+.welcome-backdrop.show {
+    opacity: 1;
+}
+.welcome-card {
+    opacity: 0;
+    transform: translateY(16px) scale(0.96);
+    transition:
+        opacity 0.4s ease,
+        transform 0.55s cubic-bezier(0.22, 1.2, 0.36, 1);
+}
+.welcome-card.show {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+}
+
+/* The checklist collapsing away when it is skipped: height can't animate from
+   `auto`, so the card animates its own opacity and lift and is removed from the
+   layout when the transition ends. */
+.onboarding-card {
+    transition:
+        opacity 0.3s ease,
+        transform 0.3s ease;
+}
+.onboarding-card.is-leaving {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.99);
+}
+
 [x-cloak] {
     display: none !important;
 }
@@ -397,6 +434,15 @@ i {
     .page-enter,
     .page-exit {
         opacity: 1 !important;
+        transition: none;
+    }
+    .welcome-backdrop,
+    .welcome-card {
+        opacity: 1;
+        transform: none;
+        transition: none;
+    }
+    .onboarding-card {
         transition: none;
     }
 }

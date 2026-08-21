@@ -47,6 +47,20 @@ return [
             'report' => false,
         ],
 
+        /*
+         * Database backups (spatie/laravel-backup). Deliberately OUTSIDE
+         * storage/ and public/: a backup that lives inside the tree it protects
+         * is one `storage:clear`, one bad deploy or one wiped volume away from
+         * being useless. `backups/` is gitignored — these dumps contain real
+         * customer data and must never reach the repository.
+         */
+        'backups' => [
+            'driver' => 'local',
+            'root' => base_path('backups'),
+            'throw' => true,
+            'report' => false,
+        ],
+
         's3' => [
             'driver' => 's3',
             'key' => env('AWS_ACCESS_KEY_ID'),

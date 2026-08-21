@@ -4,6 +4,13 @@
 
 @section('content')
 <div class="mx-auto max-w-6xl">
+    {{-- Above the heading, not instead of it: onboarding sits inside the real
+         product surface, and the agents grid below stays exactly as it was for
+         anyone who has finished or skipped setup. --}}
+    @if ($onboarding['visible'])
+        @include('partials.onboarding-card', ['onboarding' => $onboarding])
+    @endif
+
     <div class="flex flex-wrap items-center justify-between gap-4">
         <div>
             <h1 class="text-2xl font-semibold">{{ __('agents.index.heading') }}</h1>

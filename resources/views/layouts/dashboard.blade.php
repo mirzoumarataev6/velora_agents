@@ -44,6 +44,13 @@
 
 <div id="toast-container" class="pointer-events-none fixed left-1/2 top-4 z-[100] flex w-[calc(100%_-_2rem)] max-w-sm -translate-x-1/2 flex-col px-2" role="status" aria-live="polite" aria-atomic="true"></div>
 
+{{-- Raised off the account itself rather than off a redirect flash, so it
+     reaches a Google sign-up too — that path never touches register(). The
+     partial stamps the account as welcomed while rendering; see its header. --}}
+@if (auth()->user()->awaitsWelcome())
+    @include('partials.welcome-modal')
+@endif
+
 <div class="flex min-h-screen" x-data="dashboardShell({
         pollUrl: '{{ route('leads.poll') }}',
         seenUrl: '{{ route('leads.seen') }}',
@@ -80,22 +87,30 @@
 
         <nav class="flex-1 space-y-1 overflow-y-auto px-3 py-2">
             {{-- Labels are hidden with a class rather than x-show so they stay in
-                 the DOM for the instant locale swap, which walks [data-i18n]. --}}
-            <a href="{{ route('agents.index') }}" title="{{ __('agents.nav.agents') }}"
+                 the DOM for the instant locale swap, which walks [data-i18n].
+
+                 aria-label, not title: the collapsed rail hides the label text,
+                 so each item still needs an accessible name — but `title` also
+                 renders a native tooltip, which in the expanded rail just
+                 repeated the label sitting right next to the cursor. aria-label
+                 gives screen readers the name with nothing shown on hover, in
+                 either state. It carries data-i18n-al so the instant locale
+                 swap updates it too. --}}
+            <a href="{{ route('agents.index') }}" aria-label="{{ __('agents.nav.agents') }}" data-i18n-al="agents.nav.agents"
                 :class="railCollapsed && 'lg:justify-center'"
                 class="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors {{ request()->routeIs('agents.*') ? 'bg-brand/10 text-brand' : 'text-muted hover:bg-black/5 dark:text-night-muted dark:hover:bg-white/5' }}">
                 <svg class="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 12a4 4 0 100-8 4 4 0 000 8zm0 0c-4.4 0-8 2.24-8 5v2h16v-2c0-2.76-3.6-5-8-5z"/></svg>
                 <span data-i18n="agents.nav.agents" :class="railCollapsed && 'lg:hidden'">{{ __('agents.nav.agents') }}</span>
             </a>
 
-            <a href="{{ route('conversations.index') }}" title="{{ __('agents.nav.conversations') }}"
+            <a href="{{ route('conversations.index') }}" aria-label="{{ __('agents.nav.conversations') }}" data-i18n-al="agents.nav.conversations"
                 :class="railCollapsed && 'lg:justify-center'"
                 class="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors {{ request()->routeIs('conversations.*') ? 'bg-brand/10 text-brand' : 'text-muted hover:bg-black/5 dark:text-night-muted dark:hover:bg-white/5' }}">
                 <svg class="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8-1.06 0-2.08-.16-3.02-.46L3 21l1.5-4.5C3.55 15.1 3 13.6 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
                 <span data-i18n="agents.nav.conversations" :class="railCollapsed && 'lg:hidden'">{{ __('agents.nav.conversations') }}</span>
             </a>
 
-            <a href="{{ route('leads.index') }}" title="{{ __('agents.nav.leads') }}"
+            <a href="{{ route('leads.index') }}" aria-label="{{ __('agents.nav.leads') }}" data-i18n-al="agents.nav.leads"
                 :class="railCollapsed && 'lg:justify-center'"
                 class="relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors {{ request()->routeIs('leads.*') ? 'bg-brand/10 text-brand' : 'text-muted hover:bg-black/5 dark:text-night-muted dark:hover:bg-white/5' }}">
                 <span class="relative shrink-0">
@@ -111,7 +126,7 @@
                     class="ml-auto min-w-[20px] rounded-full bg-brand px-1.5 py-0.5 text-center text-[10px] font-bold text-on-accent"></span>
             </a>
 
-            <a href="{{ route('settings.index') }}" title="{{ __('agents.nav.settings') }}"
+            <a href="{{ route('settings.index') }}" aria-label="{{ __('agents.nav.settings') }}" data-i18n-al="agents.nav.settings"
                 :class="railCollapsed && 'lg:justify-center'"
                 class="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors {{ request()->routeIs('settings.*') ? 'bg-brand/10 text-brand' : 'text-muted hover:bg-black/5 dark:text-night-muted dark:hover:bg-white/5' }}">
                 <svg class="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
@@ -121,7 +136,7 @@
 
         <div class="shrink-0 border-t border-black/10 p-3 dark:border-white/10">
             <div class="flex items-center gap-2 rounded-xl px-2 py-2" :class="railCollapsed && 'lg:flex-col lg:gap-1 lg:px-0'">
-                <a href="{{ route('settings.index') }}" title="{{ auth()->user()->name }}"
+                <a href="{{ route('settings.index') }}" aria-label="{{ auth()->user()->name }}"
                     :class="railCollapsed && 'lg:flex-none'"
                     class="flex min-w-0 flex-1 items-center gap-2 rounded-lg transition-opacity hover:opacity-80">
                     <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand/10 text-xs font-semibold text-brand">
@@ -160,7 +175,7 @@
             </div>
             <form method="POST" action="{{ route('logout') }}" class="mt-1">
                 @csrf
-                <button type="submit" title="{{ __('agents.nav.logout') }}"
+                <button type="submit" aria-label="{{ __('agents.nav.logout') }}" data-i18n-al="agents.nav.logout"
                     :class="railCollapsed && 'lg:justify-center'"
                     class="flex w-full items-center gap-3 rounded-xl px-2 py-2 text-sm font-medium text-muted transition-colors hover:bg-black/5 dark:text-night-muted dark:hover:bg-white/5">
                     <svg class="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
@@ -199,7 +214,7 @@
 {{-- Pages that add their own namespace (the inbox, settings) pass
      $i18nExtraNamespaces; the chrome's own namespaces are always present. --}}
 @include('partials.i18n-bundle', [
-    'i18nNamespaces' => array_merge(['nav', 'common', 'agents'], $i18nExtraNamespaces ?? []),
+    'i18nNamespaces' => array_merge(['nav', 'common', 'agents', 'onboarding'], $i18nExtraNamespaces ?? []),
     'i18nReload' => true,
 ])
 
@@ -284,6 +299,25 @@
         };
     };
 </script>
+@if (session('welcome_back'))
+    {{-- A greeting, not an announcement: it reuses the existing toast, which
+         already fades itself out after four seconds. Set only when signing in
+         to an EXISTING account — a fresh sign-up gets the welcome modal
+         instead, so the two never both appear.
+
+         Deferred to DOMContentLoaded because app.js (which defines showToast)
+         is a module and therefore runs after this inline script is parsed. --}}
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // Just behind the page's own fade-in, so it reads as arriving
+            // rather than as already having been there.
+            {{-- JSON_UNESCAPED_UNICODE because the default would emit the
+                 Russian and Tajik greetings as \uXXXX escapes — correct, but
+                 unreadable in view source and in the page's own tests. --}}
+            setTimeout(() => window.showToast?.(@json(__('onboarding.back', ['name' => auth()->user()->name]), JSON_UNESCAPED_UNICODE), 'info'), 350);
+        });
+    </script>
+@endif
 @stack('scripts')
 </body>
 </html>

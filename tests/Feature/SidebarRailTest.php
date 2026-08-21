@@ -58,17 +58,49 @@ class SidebarRailTest extends TestCase
     /**
      * Collapsed is icon-only, not hidden: the icons stay, the labels go.
      */
-    public function test_collapsing_hides_labels_but_keeps_icons_and_tooltips(): void
+    public function test_collapsing_hides_labels_but_keeps_icons_and_accessible_names(): void
     {
         $response = $this->page();
 
         $response->assertOk();
         $response->assertSee("railCollapsed ? 'lg:w-[4.75rem]' : 'lg:w-64'", false);
         $response->assertSee('railCollapsed && \'lg:hidden\'', false);
-        // Every nav item carries a title so the icon-only rail is still legible.
+        // Every nav item carries an accessible name, so the icon-only rail is
+        // still navigable once the label text is hidden.
         foreach (['agents', 'conversations', 'leads', 'settings'] as $item) {
-            $response->assertSee('title="'.__('agents.nav.'.$item).'"', false);
+            $response->assertSee('aria-label="'.__('agents.nav.'.$item).'"', false);
         }
+    }
+
+    /**
+     * The names above are aria-label rather than title on purpose: `title`
+     * renders a native tooltip, which in the expanded rail merely repeated the
+     * label already sitting beside the cursor.
+     */
+    public function test_nav_items_do_not_render_hover_tooltips(): void
+    {
+        $response = $this->page();
+
+        $response->assertOk();
+
+        foreach (['agents', 'conversations', 'leads', 'settings', 'logout'] as $item) {
+            $response->assertDontSee('title="'.__('agents.nav.'.$item).'"', false);
+        }
+
+        // The owner's own name sat on the profile link as a tooltip too.
+        $response->assertDontSee('title="'.$this->user->name.'"', false);
+    }
+
+    /**
+     * The one control that keeps its tooltip: it is icon-only in BOTH states,
+     * so unlike the nav items there is no visible label for it to duplicate.
+     */
+    public function test_the_rail_toggle_keeps_its_tooltip(): void
+    {
+        $response = $this->page();
+
+        $response->assertOk();
+        $response->assertSee(':title="railCollapsed ?', false);
     }
 
     /**

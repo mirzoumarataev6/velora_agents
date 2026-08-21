@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreAgentRequest;
 use App\Models\Agent;
+use App\Services\OnboardingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -11,14 +12,28 @@ use Illuminate\View\View;
 
 class AgentController extends Controller
 {
-    public function index(Request $request): View
+    public function index(Request $request, OnboardingService $onboarding): View
     {
-        $agents = $request->user()->agents()
+        $user = $request->user();
+
+        $agents = $user->agents()
             ->withCount(['knowledgeSources', 'channels', 'conversations'])
             ->latest()
             ->get();
 
-        return view('agents.index', compact('agents'));
+        $checklist = $onboarding->forUser(
+            $user,
+            $request->session()->get(AuthController::ONBOARDING_SESSION_KEY, false) === true,
+        );
+
+        // Stamped here rather than inside the service so the write is visible
+        // at the call site: rendering the finished checklist is what spends the
+        // congratulations panel, and it is spent exactly once.
+        if ($checklist['celebrate']) {
+            $user->markOnboardingCompleted();
+        }
+
+        return view('agents.index', compact('agents') + ['onboarding' => $checklist]);
     }
 
     public function create(): View

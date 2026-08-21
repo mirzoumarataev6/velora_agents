@@ -41,7 +41,74 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'lead_notifications_enabled' => 'boolean',
+            'welcomed_at' => 'datetime',
+            'playground_tried_at' => 'datetime',
+            'onboarding_dismissed_at' => 'datetime',
+            'onboarding_completed_at' => 'datetime',
         ];
+    }
+
+    /**
+     * Whether the "Welcome to Velora" moment is still owed to this account.
+     *
+     * Deliberately a stored column rather than a redirect flash: registration
+     * is not the only way an account comes into existence — Google sign-in
+     * creates one on an entirely different code path — and a flash would also
+     * be spent by any redirect that happens to land first.
+     */
+    public function awaitsWelcome(): bool
+    {
+        return $this->welcomed_at === null;
+    }
+
+    /**
+     * Record that the welcome has been shown. Idempotent, so the view can call
+     * it unconditionally while rendering.
+     */
+    public function markWelcomed(): void
+    {
+        if ($this->welcomed_at !== null) {
+            return;
+        }
+
+        $this->forceFill(['welcomed_at' => now()])->save();
+    }
+
+    /**
+     * Called when the owner sends their first sandbox message. Guarded so the
+     * hot path costs a comparison rather than a write on every later message.
+     */
+    public function markPlaygroundTried(): void
+    {
+        if ($this->playground_tried_at !== null) {
+            return;
+        }
+
+        $this->forceFill(['playground_tried_at' => now()])->save();
+    }
+
+    /** "Not now." Permanent, and beats every other onboarding state. */
+    public function dismissOnboarding(): void
+    {
+        if ($this->onboarding_dismissed_at !== null) {
+            return;
+        }
+
+        $this->forceFill(['onboarding_dismissed_at' => now()])->save();
+    }
+
+    /**
+     * Stamped by the request that renders the finished checklist, so the
+     * congratulations panel is shown once and the card is gone on the next
+     * load — same one-shot mechanism as the welcome.
+     */
+    public function markOnboardingCompleted(): void
+    {
+        if ($this->onboarding_completed_at !== null) {
+            return;
+        }
+
+        $this->forceFill(['onboarding_completed_at' => now()])->save();
     }
 
     /**

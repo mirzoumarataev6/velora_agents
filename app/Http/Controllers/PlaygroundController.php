@@ -38,6 +38,11 @@ class PlaygroundController extends Controller
             voiceDuration: $sourceType === 'voice' ? $request->integer('voice_duration') ?: null : null,
         );
 
+        // The last onboarding step, ticked by doing the thing rather than by
+        // clicking "done". Only recorded once the agent has actually answered,
+        // so a failed reply doesn't credit a sandbox that never worked.
+        $request->user()->markPlaygroundTried();
+
         return response()->json([
             'user' => [
                 'id' => $result['user']->id,
