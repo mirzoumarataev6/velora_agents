@@ -251,7 +251,27 @@
       "WebFetch(domain:www.intercom.com)",
       "PowerShell(Set-Location C:\\\\OSPanel\\\\home\\\\agent; node scripts/build-palette.mjs; Select-String -Path resources\\\\css\\\\palette.generated.css -Pattern \"on-accent|brand-light\" | ForEach-Object { $_.Line.Trim\\(\\) })",
       "PowerShell(Set-Location C:\\\\OSPanel\\\\home\\\\agent; Select-String -Path resources\\\\lang\\\\en\\\\landing.php -Pattern \"'cta' =>|tagline|'title' => 'Ready|'primary'|'secondary'|'sub' =>\" | Select-Object -Last 8 | ForEach-Object { \"$\\($_.LineNumber\\): $\\($_.Line.Trim\\(\\)\\)\" })",
-      "PowerShell(Set-Location C:\\\\OSPanel\\\\home\\\\agent; Select-String -Path resources\\\\lang\\\\en\\\\landing.php -Pattern \"Response time|part of the product|Live in Telegram\" | ForEach-Object { \"$\\($_.LineNumber\\): $\\($_.Line.Trim\\(\\)\\)\" })"
+      "PowerShell(Set-Location C:\\\\OSPanel\\\\home\\\\agent; Select-String -Path resources\\\\lang\\\\en\\\\landing.php -Pattern \"Response time|part of the product|Live in Telegram\" | ForEach-Object { \"$\\($_.LineNumber\\): $\\($_.Line.Trim\\(\\)\\)\" })",
+      "PowerShell(vendor/bin/pint app/Http/Controllers/AuthController.php tests/Feature/OnboardingTest.php resources/lang/ru/onboarding.php resources/lang/en/onboarding.php resources/lang/tg/onboarding.php)",
+      "PowerShell(php artisan test --filter=HopProbeTest 2>&1 | Select-Object -Last 20)",
+      "PowerShell(php artisan test --filter=HopProbeTest)",
+      "PowerShell(php artisan route:clear; php artisan test --filter=HopProbeTest)",
+      "PowerShell(try { \\(Invoke-WebRequest -Uri \"http://127.0.0.1:8000/en\" -TimeoutSec 5 -UseBasicParsing\\).StatusCode } catch { \"no server on 8000: $\\($_.Exception.Message\\)\" }; Get-Content \"C:\\\\OSPanel\\\\home\\\\agent\\\\.env\" | Select-String \"^APP_URL|^APP_ENV|^DB_DATABASE\")",
+      "PowerShell(& \"C:\\\\Users\\\\MIRZOU~1\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--OSPanel-home-agent\\\\293d8275-129d-4582-a2f2-2d8aa2febbda\\\\scratchpad\\\\e2e.ps1\")",
+      "PowerShell($r = Invoke-WebRequest \"http://127.0.0.1:8000/en/register\" -UseBasicParsing; $r.Content | Select-String -Pattern '_token|csrf' -AllMatches | ForEach-Object { $_.Line.Trim\\(\\) } | Select-Object -First 5)",
+      "PowerShell(php artisan view:clear; php artisan test --filter=OnboardingTest)",
+      "PowerShell(php artisan tinker \"C:\\\\Users\\\\MIRZOU~1\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--OSPanel-home-agent\\\\293d8275-129d-4582-a2f2-2d8aa2febbda\\\\scratchpad\\\\del.php\")",
+      "PowerShell(git *)",
+      "PowerShell(Select-String -Path \"C:\\\\OSPanel\\\\home\\\\agent\\\\tests\\\\Feature\\\\OnboardingTest.php\" -Pattern \"welcome_toast|welcome\\\\.eyebrow|GREETING_WELCOME\" | ForEach-Object { \"$\\($_.LineNumber\\): $\\($_.Line.Trim\\(\\)\\)\" })",
+      "PowerShell(php artisan test --filter=OnboardingTest 2>&1 | Select-Object -First 3)",
+      "PowerShell($r = php artisan test --filter=OnboardingTest 2>&1 | Out-String; if \\($r.Length -gt 3000\\) { $r.Substring\\(0,3000\\) } else { $r })",
+      "PowerShell($r = composer run test 2>&1 | Out-String; \\($r -split \"`n\" | Select-Object -Last 3\\) -join \"`n\")",
+      "PowerShell(& \"C:\\\\Users\\\\MIRZOU~1\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--OSPanel-home-agent\\\\293d8275-129d-4582-a2f2-2d8aa2febbda\\\\scratchpad\\\\e2e2.ps1\")",
+      "PowerShell(php artisan tinker \"C:\\\\Users\\\\MIRZOU~1\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--OSPanel-home-agent\\\\293d8275-129d-4582-a2f2-2d8aa2febbda\\\\scratchpad\\\\del.php\"; vendor/bin/pint resources tests app)",
+      "PowerShell(php artisan view:clear; $r = php artisan test --filter=OnboardingTest 2>&1 | Out-String; \\($r -split \"`n\" | Select-Object -Last 2\\) -join \"`n\")",
+      "PowerShell(& \"C:\\\\Users\\\\MIRZOU~1\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--OSPanel-home-agent\\\\293d8275-129d-4582-a2f2-2d8aa2febbda\\\\scratchpad\\\\e2e3.ps1\")",
+      "PowerShell(php artisan tinker \"C:\\\\Users\\\\MIRZOU~1\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--OSPanel-home-agent\\\\293d8275-129d-4582-a2f2-2d8aa2febbda\\\\scratchpad\\\\del.php\"; $r = composer run test 2>&1 | Out-String; \\($r -split \"`n\" | Select-Object -Last 2\\) -join \"`n\")",
+      "PowerShell($r = composer run test 2>&1 | Out-String; \\($r -split \"`n\" | Select-Object -Last 2\\) -join \"`n\")"
     ]
   }
 }

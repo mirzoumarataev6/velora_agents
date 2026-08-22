@@ -20,6 +20,23 @@ class AuthController extends Controller
      */
     public const ONBOARDING_SESSION_KEY = 'onboarding_active';
 
+    /**
+     * The arrival greeting owed to the next page the owner actually looks at,
+     * holding either self::GREETING_WELCOME or self::GREETING_BACK.
+     *
+     * Deliberately NOT flash data. The auth forms submit with fetch(), which
+     * follows the redirect chain itself and throws the resulting HTML away
+     * before navigating the browser to the same URL — so a flash would be aged
+     * out by requests nobody ever sees, and the page the owner lands on would
+     * get nothing. Ordinary session state instead, spent by the layout when it
+     * renders a real document; see the layout for the other half.
+     */
+    public const GREETING_SESSION_KEY = 'greeting';
+
+    public const GREETING_WELCOME = 'welcome';
+
+    public const GREETING_BACK = 'back';
+
     public function register(Request $request): RedirectResponse
     {
         $validated = $request->validate([
@@ -49,8 +66,11 @@ class AuthController extends Controller
         // otherwise be a chance to lose it.
         $request->session()->put(self::ONBOARDING_SESSION_KEY, true);
 
-        // Deliberately no welcome_back flash — a fresh sign-up gets the welcome
-        // modal, and the two greetings must never both appear.
+        // A sign-up gets the welcome greeting, never the "back" one — one key
+        // holding one of two values makes that mutually exclusive by
+        // construction rather than by agreement between two flags.
+        $request->session()->put(self::GREETING_SESSION_KEY, self::GREETING_WELCOME);
+
         return redirect()->route('home');
     }
 
@@ -76,7 +96,9 @@ class AuthController extends Controller
         // it here means the "never on login" rule does not depend on that.
         $request->session()->forget(self::ONBOARDING_SESSION_KEY);
 
-        return redirect()->intended(route('home'))->with('welcome_back', true);
+        $request->session()->put(self::GREETING_SESSION_KEY, self::GREETING_BACK);
+
+        return redirect()->intended(route('home'));
     }
 
     private function syncLocale(User $user): void
@@ -111,10 +133,10 @@ class AuthController extends Controller
             ->orWhere('email', $googleUser->getEmail())
             ->first();
 
-        // A returning owner gets the greeting; a first-time one gets the
-        // welcome modal instead, which the dashboard raises off the account's
-        // own welcomed_at rather than off this flash — so the two can never
-        // both fire, and a Google signup is welcomed exactly like a form one.
+        // Which of the two greetings this callback owes: a returning owner gets
+        // "back", a first-time one the "welcome" toast — the same choice
+        // register() and login() each make, so a Google sign-in is greeted
+        // exactly like a form one.
         $returning = $user !== null;
 
         if ($user) {
@@ -143,6 +165,11 @@ class AuthController extends Controller
             $request->session()->put(self::ONBOARDING_SESSION_KEY, true);
         }
 
-        return redirect()->intended(route('home'))->with('welcome_back', $returning);
+        $request->session()->put(
+            self::GREETING_SESSION_KEY,
+            $returning ? self::GREETING_BACK : self::GREETING_WELCOME,
+        );
+
+        return redirect()->intended(route('home'));
     }
 }

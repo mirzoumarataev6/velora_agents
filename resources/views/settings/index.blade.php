@@ -200,7 +200,7 @@
 
             {{-- ══════════════ PREFERENCES ══════════════ --}}
             <section x-show="tab === 'preferences'" x-cloak class="space-y-6">
-                <form method="POST" action="{{ route('settings.preferences') }}"
+                <form method="POST" action="{{ route('settings.preferences') }}" @submit="cacheTheme()"
                     class="rounded-2xl border border-black/10 bg-white p-5 dark:border-white/10 dark:bg-white/5 sm:p-6">
                     @csrf
                     @method('PATCH')
@@ -422,6 +422,25 @@
                 const isDark = theme === 'dark'
                     || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
                 document.documentElement.classList.toggle('dark', isDark);
+            },
+
+            /**
+             * Keep the pre-paint cache in step with what is being saved. This
+             * is the ONE place that clears it: the server stores "system" as a
+             * null column, which is indistinguishable from an account that
+             * simply never chose, so the layout can't safely clear it on
+             * render — doing so there discarded the choice a guest made with
+             * the toggle on the login page.
+             */
+            cacheTheme() {
+                const theme = document.querySelector('input[name="theme"]:checked')?.value;
+                if (!theme) return;
+
+                if (theme === 'system') {
+                    localStorage.removeItem('theme');
+                } else {
+                    localStorage.setItem('theme', theme);
+                }
             },
         };
     }

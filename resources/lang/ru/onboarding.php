@@ -10,6 +10,11 @@ return [
         'close' => 'Закрыть',
     ],
 
+    // The two arrival greetings. The sign-up one renders as the banner at the
+    // top of the checklist (and as a toast only where there is no checklist);
+    // it is deliberately plainer than welcome.title above.
+    'welcome_greeting' => 'Добро пожаловать, :name',
+
     'back' => 'С возвращением, :name',
 
     'checklist' => [

@@ -10,6 +10,8 @@ use App\Models\User;
 use App\Services\Llm\LlmProviderInterface;
 use App\Services\OnboardingService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
+use Illuminate\Testing\TestResponse;
 use Tests\TestCase;
 
 /**
@@ -117,10 +119,182 @@ class OnboardingTest extends TestCase
         ]);
 
         $response->assertRedirect(route('home'));
-        $response->assertSessionMissing('welcome_back');
+        $response->assertSessionHasNoErrors();
+        $this->assertNotSame(
+            AuthController::GREETING_BACK,
+            session(AuthController::GREETING_SESSION_KEY),
+            'A sign-up must never be greeted as a returning owner.',
+        );
 
         $user = User::where('email', 'nadia@example.test')->firstOrFail();
         $this->assertNull($user->welcomed_at, 'A fresh sign-up is still owed its welcome.');
+    }
+
+    public function test_registering_owes_the_new_owner_the_welcome_greeting(): void
+    {
+        $this->post('/register', [
+            'name' => 'Nadia',
+            'email' => 'nadia@example.test',
+            'password' => 'secret-password',
+            'password_confirmation' => 'secret-password',
+        ])->assertSessionHas(AuthController::GREETING_SESSION_KEY, AuthController::GREETING_WELCOME);
+    }
+
+    public function test_the_sign_up_greeting_falls_back_to_a_toast_without_a_checklist(): void
+    {
+        // An established, already-welcomed account: no checklist on the page to
+        // carry the banner, and no modal (whose title contains the same words),
+        // so only the toast can satisfy this.
+        $user = User::factory()->create(['name' => 'Nadia']);
+
+        $response = $this->actingAs($user)
+            ->withSession([AuthController::GREETING_SESSION_KEY => AuthController::GREETING_WELCOME])
+            ->get(route('agents.index'));
+
+        $response->assertOk();
+        $response->assertSee($this->toastCall(__('onboarding.welcome_greeting', ['name' => 'Nadia'])), false);
+    }
+
+    public function test_the_greeting_is_shown_once_and_then_spent(): void
+    {
+        $user = User::factory()->create(['name' => 'Ada']);
+
+        $this->actingAs($user)
+            ->withSession([AuthController::GREETING_SESSION_KEY => AuthController::GREETING_BACK])
+            ->get(route('agents.index'))
+            ->assertSee($this->toastCall(__('onboarding.back', ['name' => 'Ada'])), false);
+
+        $this->actingAs($user)->get(route('agents.index'))
+            ->assertDontSee($this->toastCall(__('onboarding.back', ['name' => 'Ada'])), false);
+    }
+
+    /**
+     * The regression that mattered. The auth forms don't navigate — they POST
+     * with fetch(), which follows the redirect chain itself and DISCARDS the
+     * HTML, then sends the browser to the same URL as a fresh request. These
+     * two walk that exact sequence: anything spent by the invisible fetch
+     * renders nothing on the page the owner actually sees.
+     */
+    public function test_the_sign_up_greeting_survives_the_fetch_that_swallows_the_redirect(): void
+    {
+        $xhr = ['Accept' => 'application/json'];
+
+        $this->post('/register', [
+            'name' => 'Nadia',
+            'email' => 'nadia@example.test',
+            'password' => 'secret-password',
+            'password_confirmation' => 'secret-password',
+        ], $xhr);
+
+        // The hops fetch() follows and throws away.
+        $this->get('/home', $xhr);
+        $this->get(route('agents.index'), $xhr);
+
+        // The navigation the owner actually sees. Registration lands on the
+        // dashboard WITH the checklist, so the greeting is the banner.
+        $this->get(route('agents.index'))
+            ->assertOk()
+            ->assertSee(__('onboarding.welcome_greeting', ['name' => 'Nadia']), false);
+    }
+
+    // ------------------------------------------------------- greeting banner
+
+    /**
+     * After a sign-up the greeting is the banner on the checklist — and ONLY
+     * the banner. The toast and the welcome modal both greet by name, so
+     * either one alongside it would greet the same person twice.
+     */
+    public function test_the_sign_up_greeting_is_a_banner_on_the_checklist_and_nothing_else(): void
+    {
+        $response = $this->registerAndLand('Nadia');
+
+        $response->assertOk();
+        $response->assertSee(__('onboarding.welcome_greeting', ['name' => 'Nadia']), false);
+        $response->assertSee(__('onboarding.checklist.title'), false);
+
+        $response->assertDontSee($this->toastCall(__('onboarding.welcome_greeting', ['name' => 'Nadia'])), false);
+        $response->assertDontSee(__('onboarding.welcome.eyebrow'), false);
+    }
+
+    public function test_the_banner_sits_at_the_top_of_the_checklist_and_can_be_closed(): void
+    {
+        $response = $this->registerAndLand('Nadia');
+        $html = $response->getContent();
+
+        $this->assertLessThan(
+            strpos($html, __('onboarding.checklist.title')),
+            strpos($html, __('onboarding.welcome_greeting', ['name' => 'Nadia'])),
+            'The greeting must be pinned above the checklist, not below it.',
+        );
+
+        // ...and above the checklist's card element itself, not inside it: the
+        // banner is its own separate block with its own spacing.
+        $this->assertLessThan(
+            strpos($html, 'id="onboarding"'),
+            strpos($html, __('onboarding.welcome_greeting', ['name' => 'Nadia'])),
+            'The greeting must be a standalone block, not nested in the onboarding card.',
+        );
+
+        // The × is client-side only: it hides the banner for this page view and
+        // records nothing, which is why the request below re-renders normally.
+        $this->assertStringContainsString('@click="shown = false"', $html);
+    }
+
+    public function test_the_banner_lasts_one_page_view_and_leaves_nothing_dismissed(): void
+    {
+        $this->registerAndLand('Nadia');
+
+        // A reload: the greeting is over, but the checklist it sat on is not.
+        $this->get(route('agents.index'))
+            ->assertOk()
+            ->assertDontSee(__('onboarding.welcome_greeting', ['name' => 'Nadia']), false)
+            ->assertSee(__('onboarding.checklist.title'), false);
+    }
+
+    /**
+     * Register the way the browser does — a fetch() that swallows the redirect
+     * chain — and return the page the owner actually lands on.
+     */
+    protected function registerAndLand(string $name): TestResponse
+    {
+        $xhr = ['Accept' => 'application/json'];
+
+        $this->post('/register', [
+            'name' => $name,
+            'email' => Str::slug($name).'@example.test',
+            'password' => 'secret-password',
+            'password_confirmation' => 'secret-password',
+        ], $xhr);
+
+        $this->get('/home', $xhr);
+        $this->get(route('agents.index'), $xhr);
+
+        return $this->get(route('agents.index'));
+    }
+
+    public function test_the_sign_in_greeting_survives_the_fetch_that_swallows_the_redirect(): void
+    {
+        $xhr = ['Accept' => 'application/json'];
+        User::factory()->create(['email' => 'ada@example.test', 'name' => 'Ada']);
+
+        $this->post('/login', ['email' => 'ada@example.test', 'password' => 'password'], $xhr);
+
+        $this->get('/home', $xhr);
+        $this->get(route('agents.index'), $xhr);
+
+        $this->get(route('agents.index'))
+            ->assertOk()
+            ->assertSee($this->toastCall(__('onboarding.back', ['name' => 'Ada'])), false);
+    }
+
+    /**
+     * The exact call the layout emits. Asserting on the call rather than on the
+     * message alone matters for the sign-up case, where the welcome modal's own
+     * title contains the same words and would satisfy a looser assertion.
+     */
+    protected function toastCall(string $message): string
+    {
+        return 'window.showToast?.('.json_encode($message, JSON_UNESCAPED_UNICODE).", 'info')";
     }
 
     public function test_an_established_account_is_never_shown_the_welcome(): void
@@ -145,7 +319,7 @@ class OnboardingTest extends TestCase
             'password' => 'password',
         ]);
 
-        $response->assertSessionHas('welcome_back', true);
+        $response->assertSessionHas(AuthController::GREETING_SESSION_KEY, AuthController::GREETING_BACK);
 
         $this->actingAs($user->fresh())->get(route('agents.index'));
     }
@@ -155,13 +329,12 @@ class OnboardingTest extends TestCase
         $user = User::factory()->create(['email' => 'ada@example.test']);
 
         $response = $this->actingAs($user)
-            ->withSession(['welcome_back' => true])
+            ->withSession([AuthController::GREETING_SESSION_KEY => AuthController::GREETING_BACK])
             ->get(route('agents.index'));
 
         $response->assertOk();
-        $response->assertSee(__('onboarding.back', ['name' => $user->name]), false);
         // Reuses the existing toast helper, which already expires on its own.
-        $response->assertSee('window.showToast?.(', false);
+        $response->assertSee($this->toastCall(__('onboarding.back', ['name' => $user->name])), false);
     }
 
     public function test_no_greeting_without_a_fresh_sign_in(): void
@@ -335,7 +508,9 @@ class OnboardingTest extends TestCase
 
     /**
      * The headline rule, end to end through the real endpoint: registering
-     * gives you the welcome AND the checklist.
+     * gives you the welcome AND the checklist — the welcome being the banner
+     * the checklist carries, which is also the whole of it (the modal that
+     * used to greet here would be a second greeting for the same arrival).
      */
     public function test_registering_shows_the_welcome_and_the_checklist(): void
     {
@@ -351,9 +526,10 @@ class OnboardingTest extends TestCase
         $response = $this->get(route('agents.index'));
 
         $response->assertOk();
-        $response->assertSee(__('onboarding.welcome.title', ['name' => 'Nadia']), false);
+        $response->assertSee(__('onboarding.welcome_greeting', ['name' => 'Nadia']), false);
         $response->assertSee(__('onboarding.checklist.title'), false);
-        // ...and never the returning-user greeting.
+        // ...and never a second greeting, nor the returning-user one.
+        $response->assertDontSee(__('onboarding.welcome.eyebrow'), false);
         $response->assertDontSee(__('onboarding.back', ['name' => 'Nadia']), false);
     }
 

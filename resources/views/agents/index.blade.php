@@ -8,6 +8,10 @@
          product surface, and the agents grid below stays exactly as it was for
          anyone who has finished or skipped setup. --}}
     @if ($onboarding['visible'])
+        {{-- Its own card above the checklist, not a strip inside it: the
+             greeting is a separate thing that happens to arrive at the same
+             time, and it leaves on its own without the checklist moving. --}}
+        @include('partials.welcome-banner')
         @include('partials.onboarding-card', ['onboarding' => $onboarding])
     @endif
 

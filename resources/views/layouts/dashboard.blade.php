@@ -9,12 +9,18 @@
     // (so the choice follows the owner between devices); localStorage is the
     // local cache that keeps this synchronous, and the OS setting is the
     // fallback that "system" deliberately falls back to.
+    //
+    // A null column means "no account-level override" — which is also what a
+    // brand-new account has. It must NOT clear the cached choice: the theme
+    // toggle lives on the login and sign-up pages too, where a guest has no
+    // account to write to and localStorage is the only record of what they
+    // picked. Wiping it here is what made a light-theme owner land on dark
+    // (or the reverse) on the first page after signing in. Picking "system"
+    // in settings clears the cache at the point of choosing instead.
     (function () {
         var saved = @json(auth()->user()?->theme);
         if (saved) {
             localStorage.setItem('theme', saved);
-        } else if (@json((bool) auth()->check())) {
-            localStorage.removeItem('theme');
         }
         var stored = saved || localStorage.getItem('theme');
         var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -299,11 +305,40 @@
         };
     };
 </script>
-@if (session('welcome_back'))
+@php
+    /**
+     * The arrival greeting, spent here — by the request that renders it.
+     *
+     * By the time this runs the page content has already rendered, so where the
+     * onboarding checklist is on the page it has claimed the sign-up greeting
+     * for its banner and nothing is left here — one greeting, not two. The
+     * toast is what greets everywhere else: every sign-in, and the sign-up
+     * pages that carry no checklist.
+     *
+     * The expectsJson() guard is the load-bearing part. The auth forms POST
+     * with fetch(), and fetch follows the redirect chain itself: the dashboard
+     * is therefore rendered ONCE for the fetch (whose HTML is discarded) and
+     * again for the navigation that follows. Both requests reach this line, and
+     * only the second one is a page anybody sees — so the fetch's render, which
+     * carries the fetch's `Accept: application/json`, must leave the greeting
+     * untouched for the real one.
+     */
+    $__greeting = request()->expectsJson() ? null : session(\App\Http\Controllers\AuthController::GREETING_SESSION_KEY);
+
+    if ($__greeting) {
+        session()->forget(\App\Http\Controllers\AuthController::GREETING_SESSION_KEY);
+    }
+
+    $__greetingKey = match ($__greeting) {
+        \App\Http\Controllers\AuthController::GREETING_WELCOME => 'onboarding.welcome_greeting',
+        \App\Http\Controllers\AuthController::GREETING_BACK => 'onboarding.back',
+        default => null,
+    };
+@endphp
+@if ($__greetingKey)
     {{-- A greeting, not an announcement: it reuses the existing toast, which
-         already fades itself out after four seconds. Set only when signing in
-         to an EXISTING account — a fresh sign-up gets the welcome modal
-         instead, so the two never both appear.
+         already fades itself out after four seconds. On a fresh sign-up it sits
+         alongside the welcome modal.
 
          Deferred to DOMContentLoaded because app.js (which defines showToast)
          is a module and therefore runs after this inline script is parsed. --}}
@@ -314,7 +349,7 @@
             {{-- JSON_UNESCAPED_UNICODE because the default would emit the
                  Russian and Tajik greetings as \uXXXX escapes — correct, but
                  unreadable in view source and in the page's own tests. --}}
-            setTimeout(() => window.showToast?.(@json(__('onboarding.back', ['name' => auth()->user()->name]), JSON_UNESCAPED_UNICODE), 'info'), 350);
+            setTimeout(() => window.showToast?.(@json(__($__greetingKey, ['name' => auth()->user()->name]), JSON_UNESCAPED_UNICODE), 'info'), 350);
         });
     </script>
 @endif
