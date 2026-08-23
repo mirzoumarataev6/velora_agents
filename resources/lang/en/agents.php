@@ -32,6 +32,7 @@ return [
         'back' => 'All agents',
         'tabs' => [
             'knowledge' => 'Knowledge base',
+            'catalog' => 'Catalog',
             'channels' => 'Channels',
             'playground' => 'Playground',
             'conversations' => 'Conversations',
@@ -161,6 +162,92 @@ return [
             'deleted' => 'Source deleted',
             'refetch_queued' => 'Source queued for re-fetching',
             'refetch_failed' => 'Could not re-fetch the source',
+        ],
+    ],
+
+    'catalog' => [
+        'intro_title' => 'Product catalog',
+        'intro_description' => 'Upload a price list and the agent can answer questions about prices, stock and categories exactly. This is separate from the knowledge base: that stores text, this stores a table of products the agent can filter by price and stock.',
+        'drop_text' => 'Drop a file here or',
+        'drop_browse' => 'choose from your computer',
+        'file_hint' => 'XLSX or CSV — up to :size MB. The first row must be the column headers.',
+        'uploading' => 'Reading the file...',
+
+        'mapping_title' => 'Map the columns',
+        'mapping_description' => 'We guessed what each column means. Check and correct it — this decides which prices the agent quotes to customers. Leave columns you do not need as "Do not use".',
+        'mapping_reused' => 'Reused the mapping from your last upload — the file has the same columns.',
+        'mapping_col_file' => 'Column in file',
+        'mapping_col_sample' => 'Sample values',
+        'mapping_col_field' => 'What it is',
+        'mapping_rows_found' => 'Rows found: :count',
+        'mapping_truncated' => 'The file is longer than the limit — the first :count rows will be imported.',
+        'mapping_import' => 'Import',
+        'mapping_cancel' => 'Cancel',
+        'mapping_importing' => 'Importing...',
+
+        'fields' => [
+            'ignore' => 'Do not use',
+            'name' => 'Product name',
+            'price' => 'Price',
+            'stock' => 'Stock / availability',
+            'category' => 'Category',
+            'description' => 'Description',
+            'sku' => 'SKU',
+            'url' => 'Link',
+            'extra' => 'Extra field',
+        ],
+
+        'status_title' => 'Catalog loaded',
+        'status_rows' => 'Products: :count',
+        'status_updated' => 'Updated :time',
+        'status_skipped' => 'Rows skipped: :count',
+        'status_mapping' => 'Column mapping',
+        'status_replace' => 'Replace catalog',
+        'status_delete' => 'Delete catalog',
+        'status_preview' => 'Catalog products',
+
+        'skip_reasons' => [
+            'missing_name' => 'no product name — :count',
+            'empty_row' => 'empty rows — :count',
+        ],
+
+        'preview' => [
+            'name' => 'Name',
+            'price' => 'Price',
+            'stock' => 'Stock',
+            'category' => 'Category',
+            'sku' => 'SKU',
+            'empty' => '—',
+        ],
+
+        'pagination' => [
+            'prev' => 'Previous',
+            'next' => 'Next',
+            'summary' => ':from–:to of :total',
+            'page_aria' => 'Page :page',
+        ],
+
+        'empty_title' => 'The catalog is empty',
+        'empty_description' => 'The agent cannot answer price or stock questions with exact data yet. Upload a price list.',
+
+        'errors' => [
+            'bad_format' => 'Allowed formats: :formats.',
+            'too_large' => 'The file is too large (maximum :size MB).',
+            'unreadable' => 'The file could not be read. Check that it is an XLSX or CSV with headers in the first row.',
+            'upload_expired' => 'The upload has expired — please upload the file again.',
+            'missing_name' => 'Choose which column holds the product name.',
+            'no_valid_rows' => 'No row in the file had a product name.',
+            'import_failed' => 'The catalog could not be imported. Your existing catalog is unchanged.',
+        ],
+
+        'toasts' => [
+            'imported' => 'Catalog updated · :count products',
+            'imported_skipped' => 'Catalog updated · :count products, :skipped skipped',
+            'deleted' => 'Catalog deleted',
+            'delete_confirm' => 'Delete the catalog? The agent will stop answering price and stock questions from this data.',
+            'replace_confirm' => 'The new file will completely replace the current catalog. Continue?',
+            'delete_failed' => 'The catalog could not be deleted',
+            'network_error' => 'No connection to the server',
         ],
     ],
 

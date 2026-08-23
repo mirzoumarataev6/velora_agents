@@ -4,6 +4,7 @@ use App\Http\Controllers\AgentController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\ChannelController;
 use App\Http\Controllers\ConversationController;
+use App\Http\Controllers\DatasetController;
 use App\Http\Controllers\KnowledgeSourceController;
 use App\Http\Controllers\LeadController;
 use App\Http\Controllers\LeadNotificationController;
@@ -88,6 +89,20 @@ Route::middleware(['auth', 'auth.session'])->group(function () {
         Route::post('url', [KnowledgeSourceController::class, 'storeUrl'])->name('url.store');
         Route::post('{knowledgeSource}/refetch', [KnowledgeSourceController::class, 'refetch'])->name('refetch');
         Route::delete('{knowledgeSource}', [KnowledgeSourceController::class, 'destroy'])->name('destroy');
+    });
+
+    // Structured product catalog (Каталог). Separate from the knowledge base
+    // above: that one chunks text for semantic retrieval, this one imports
+    // row-per-product so the agent can filter by price and stock exactly.
+    Route::prefix('agents/{agent}/catalog')->name('agents.catalog.')->group(function () {
+        Route::get('/', [DatasetController::class, 'show'])->name('show');
+        // The owner's paginated browser for their own catalog — unrelated to
+        // what the agent shows customers, which search_products caps separately.
+        Route::get('products', [DatasetController::class, 'products'])->name('products');
+        Route::post('analyze', [DatasetController::class, 'analyze'])->name('analyze');
+        Route::post('import', [DatasetController::class, 'import'])->name('import');
+        Route::post('cancel', [DatasetController::class, 'cancel'])->name('cancel');
+        Route::delete('/', [DatasetController::class, 'destroy'])->name('destroy');
     });
 
     Route::prefix('agents/{agent}/playground')->name('agents.playground.')->group(function () {

@@ -8,6 +8,7 @@ use App\Models\Agent;
 use App\Models\Conversation;
 use App\Models\Lead;
 use App\Models\Message;
+use App\Services\Dataset\ProductSearchService;
 use App\Services\Llm\LlmProviderInterface;
 use App\Services\Llm\UsageRecorder;
 use App\Services\Rag\RetrievedChunk;
@@ -42,12 +43,20 @@ class AgentReplyService
      */
     protected const GREETING_PATTERN = '/^\s*(привет\w*|здравствуй\w*|добр(ый|ое)\s+(день|вечер|утро)|hi|hello+|hey+|salom\w*|ассалому\s*алейкум|салом\w*|assalomu\s*alaykum)[\s!.,?]*$/iu';
 
+    /**
+     * How many times the model may call search_products before the reply is
+     * written anyway. One refinement after a miss is genuinely useful ("no
+     * jackets under 500" -> widen the budget); a third is the model looping.
+     */
+    protected const MAX_PRODUCT_SEARCH_ROUNDS = 2;
+
     public function __construct(
         protected LlmProviderInterface $llm,
         protected VectorStoreInterface $vectorStore,
         protected UsageRecorder $usage,
         protected LeadCaptureService $leadCapture,
         protected EscalationService $escalation,
+        protected ProductSearchService $productSearch,
     ) {}
 
     /**
@@ -121,6 +130,7 @@ class AgentReplyService
         /** @var Lead[] $capturedLeads */
         $capturedLeads = [];
         $escalation = null;
+        $productSearches = 0;
 
         try {
             $embeddingStart = microtime(true);
@@ -140,8 +150,12 @@ class AgentReplyService
 
             $captureLeads = (bool) $agent->capture_leads;
             $detectEscalation = $this->escalation->enabledFor($agent);
+            $searchProducts = $this->productSearch->enabledFor($agent);
 
             $systemPrompt = $this->buildSystemPrompt($agent, $retrieved, $conversation);
+            if ($searchProducts) {
+                $systemPrompt .= "\n\n".$this->productSearch->systemInstruction();
+            }
             if ($captureLeads) {
                 $systemPrompt .= "\n\n".$this->leadCapture->systemInstruction();
             }
@@ -167,6 +181,9 @@ class AgentReplyService
             // Both tools ride on the one generation that was happening anyway —
             // the frustration check costs no extra request.
             $tools = [];
+            if ($searchProducts) {
+                $tools[] = $this->productSearch->toolDefinition();
+            }
             if ($captureLeads) {
                 $tools[] = $this->leadCapture->toolDefinition();
             }
@@ -179,14 +196,33 @@ class AgentReplyService
 
             $generationStart = microtime(true);
             $result = $this->llm->generate($systemPrompt, $contents, $options);
+            $toolCalls = $result['tool_calls'] ?? [];
+            $carried = ['input_tokens' => 0, 'output_tokens' => 0];
+
+            // A catalog lookup is answered here and fed back, so the reply the
+            // customer sees is written with the real prices in hand. $contents
+            // grows with the exchange, which is what keeps a follow-up round
+            // (and a later lead confirmation) coherent.
+            if ($searchProducts) {
+                $resolved = $this->resolveProductSearches($agent, $systemPrompt, $contents, $result, $options);
+                $result = $resolved['result'];
+                $contents = $resolved['contents'];
+                $carried = $resolved['carried'];
+                $productSearches = $resolved['searches'];
+                // Replaced, not appended: $resolved carries forward the non-search
+                // calls from every superseded generation (the first one included),
+                // and $result is now the final generation. Adding the original
+                // list back would record the same lead twice.
+                $toolCalls = [...$resolved['tool_calls'], ...($result['tool_calls'] ?? [])];
+            }
 
             if ($detectEscalation) {
-                $escalation = $this->firstEscalationCall($agent, $result['tool_calls'] ?? []);
+                $escalation = $this->firstEscalationCall($agent, $toolCalls);
             }
 
             $leadCalls = $captureLeads
                 ? array_values(array_filter(
-                    $result['tool_calls'] ?? [],
+                    $toolCalls,
                     fn ($call) => ($call['name'] ?? null) === LeadCaptureService::TOOL_NAME
                 ))
                 : [];
@@ -210,6 +246,12 @@ class AgentReplyService
                     : ($escalation !== null ? $this->escalationAcknowledgement($agent) : $this->fallbackMessage($agent));
                 $usage = ['input_tokens' => $result['input_tokens'], 'output_tokens' => $result['output_tokens']];
             }
+
+            // Superseded generations (a turn the model spent calling
+            // search_products) still cost tokens; the owner is billed for the
+            // whole exchange, so it is all recorded.
+            $usage['input_tokens'] += $carried['input_tokens'];
+            $usage['output_tokens'] += $carried['output_tokens'];
 
             $generationMs = (microtime(true) - $generationStart) * 1000;
         } catch (LlmException $e) {
@@ -247,6 +289,11 @@ class AgentReplyService
                 'escalated' => $escalation !== null,
                 'escalation_signal' => $escalation['signal'] ?? null,
                 'escalation_confidence' => $escalation['confidence'] ?? null,
+                // How many catalog lookups this reply is grounded in. Surfaces in
+                // the Playground's per-message diagnostics the same way retrieval
+                // timings do, so an owner debugging a wrong price can see whether
+                // the dataset was consulted at all.
+                'product_searches' => $productSearches,
             ],
         ]);
 
@@ -264,6 +311,89 @@ class AgentReplyService
         }
 
         return $assistantMsg;
+    }
+
+    /**
+     * Answer the model's search_products calls and let it write the reply with
+     * the results in hand.
+     *
+     * Each round appends the call and its result to $contents and regenerates.
+     * The loop is bounded by MAX_PRODUCT_SEARCH_ROUNDS: a model that keeps
+     * searching instead of answering must still produce a reply, so whatever it
+     * last wrote is what the customer gets.
+     *
+     * The search itself cannot fail the turn — ProductSearchService returns an
+     * empty result with guidance rather than throwing — so a catalog problem
+     * degrades to "I could not find that" instead of the generic fallback.
+     *
+     * @param  array<int, array<string, mixed>>  $contents
+     * @param  array<string, mixed>  $result  The generation that may contain tool calls.
+     * @param  array<string, mixed>  $options
+     * @return array{result: array<string, mixed>, contents: array<int, array<string, mixed>>, carried: array{input_tokens: int, output_tokens: int}, tool_calls: array<int, array<string, mixed>>, searches: int}
+     */
+    protected function resolveProductSearches(
+        Agent $agent,
+        string $systemPrompt,
+        array $contents,
+        array $result,
+        array $options,
+    ): array {
+        $carried = ['input_tokens' => 0, 'output_tokens' => 0];
+        $seenToolCalls = [];
+        $searches = 0;
+
+        for ($round = 0; $round < self::MAX_PRODUCT_SEARCH_ROUNDS; $round++) {
+            $calls = array_values(array_filter(
+                $result['tool_calls'] ?? [],
+                fn ($call) => ($call['name'] ?? null) === ProductSearchService::TOOL_NAME,
+            ));
+
+            if ($calls === []) {
+                break;
+            }
+
+            foreach ($calls as $call) {
+                $arguments = $call['arguments'] ?? [];
+                $found = $this->productSearch->search($agent, $arguments);
+                $searches++;
+
+                Log::debug('agent.product_search', [
+                    'agent_id' => $agent->id,
+                    'arguments' => $arguments,
+                    'filters' => $found['filters'],
+                    'count' => $found['count'],
+                ]);
+
+                $contents[] = ['role' => 'tool_call', 'id' => $call['id'], 'name' => $call['name'], 'arguments' => $arguments];
+                $contents[] = [
+                    'role' => 'tool_result',
+                    'id' => $call['id'],
+                    'name' => $call['name'],
+                    'result' => json_encode($found, JSON_UNESCAPED_UNICODE),
+                ];
+            }
+
+            // The generation that asked for the search is about to be replaced,
+            // but any OTHER tool it called on the same turn (a lead, an
+            // escalation flag) still counts and must not be lost with it.
+            $seenToolCalls = [...$seenToolCalls, ...array_values(array_filter(
+                $result['tool_calls'] ?? [],
+                fn ($call) => ($call['name'] ?? null) !== ProductSearchService::TOOL_NAME,
+            ))];
+
+            $carried['input_tokens'] += (int) ($result['input_tokens'] ?? 0);
+            $carried['output_tokens'] += (int) ($result['output_tokens'] ?? 0);
+
+            $result = $this->llm->generate($systemPrompt, $contents, $options);
+        }
+
+        return [
+            'result' => $result,
+            'contents' => $contents,
+            'carried' => $carried,
+            'tool_calls' => $seenToolCalls,
+            'searches' => $searches,
+        ];
     }
 
     /**

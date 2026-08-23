@@ -6,7 +6,17 @@
 {{-- The inbox tab wants the room the other tabs don't. --}}
 <div class="mx-auto transition-[max-width] duration-200"
     :class="tab === 'conversations' ? 'max-w-7xl' : 'max-w-5xl'"
-    x-data="{ tab: '{{ $tab }}' }">
+    x-data="{ tab: '{{ $tab }}' }"
+    {{-- The open tab lives in ?tab= so it survives both a reload (the server
+         reads it back and renders that tab first) and a language switch (the
+         switcher rebuilds the URL from window.location.search, so the param
+         rides along). replaceState rather than pushState: paging through tabs
+         should not fill up the back button. --}}
+    x-init="$watch('tab', (value) => {
+        const url = new URL(window.location);
+        url.searchParams.set('tab', value);
+        window.history.replaceState({}, '', url);
+    })">
     <div class="flex flex-wrap items-center justify-between gap-4">
         <div class="flex items-center gap-3">
             <div class="flex h-12 w-12 items-center justify-center rounded-xl bg-brand/10 text-lg font-semibold text-brand">
@@ -37,6 +47,9 @@
     <div class="mt-6">
         <div x-show="tab === 'knowledge'" x-cloak x-transition.opacity.duration.200ms>
             @include('agents.partials.knowledge-tab', ['agent' => $agent])
+        </div>
+        <div x-show="tab === 'catalog'" x-cloak x-transition.opacity.duration.200ms>
+            @include('agents.partials.catalog-tab', ['agent' => $agent, 'catalog' => $catalog])
         </div>
         <div x-show="tab === 'channels'" x-cloak x-transition.opacity.duration.200ms>
             @include('agents.partials.channels-tab', ['agent' => $agent])

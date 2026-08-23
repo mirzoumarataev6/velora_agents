@@ -222,6 +222,32 @@ return [
     | Knowledge source uploads
     |--------------------------------------------------------------------------
     */
+    'dataset' => [
+        // The structured product catalog (Каталог tab). Distinct from the
+        // knowledge base above: this is imported row-per-product into a real
+        // table and queried exactly, so only tabular formats are accepted.
+        'max_file_size_kb' => env('AGENT_DATASET_MAX_FILE_SIZE_KB', 20 * 1024),
+        'allowed_extensions' => ['xlsx', 'xls', 'csv'],
+
+        // Ceiling on imported products per agent. A file longer than this is
+        // imported up to the cap and the owner is told it was truncated —
+        // better than refusing a 60k-row export outright.
+        'max_rows' => env('AGENT_DATASET_MAX_ROWS', 50000),
+
+        // Rows shown in the mapping screen, with their values, so the owner can
+        // see what they are mapping.
+        'sample_rows' => 5,
+
+        // Page size for the owner's catalog browser in the Каталог tab. Purely
+        // a UI concern — it does not limit what the agent can find, which is
+        // ProductSearchService::MAX_LIMIT's job.
+        'preview_rows' => 10,
+
+        // How long an analyzed-but-not-yet-imported upload waits on disk for the
+        // owner to confirm its mapping before it is swept.
+        'pending_ttl_minutes' => env('AGENT_DATASET_PENDING_TTL_MINUTES', 120),
+    ],
+
     'uploads' => [
         'max_file_size_kb' => env('AGENT_MAX_FILE_SIZE_KB', 20 * 1024),
         'allowed_extensions' => ['pdf', 'docx', 'xlsx', 'csv', 'xml', 'png', 'jpg', 'jpeg', 'webp'],

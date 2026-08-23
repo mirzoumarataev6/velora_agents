@@ -20,7 +20,14 @@
         kbFallback: {{ Js::from(__('agents.playground.kb_fallback')) }},
         maxRecordingSeconds: {{ (int) config('agent.voice.max_duration_seconds', 300) }},
         voiceLabels: {{ Js::from(__('agents.playground.voice')) }},
-    })" x-init="initVoice()" class="flex h-[32rem] flex-col overflow-hidden rounded-2xl border border-black/10 dark:border-white/10">
+    })" x-init="initVoice()"
+    {{-- `tab` comes from the page's own x-data, one level up. x-effect re-runs
+         whenever it changes, so the composer takes focus both when the page
+         opens straight onto Песочница and when the owner switches to it later.
+         Focusing a display:none input is a no-op, so the other tabs are
+         unaffected. --}}
+    x-effect="if (tab === 'playground') focusComposer()"
+    class="flex h-[32rem] flex-col overflow-hidden rounded-2xl border border-black/10 dark:border-white/10">
 
     <div class="flex items-center justify-between border-b border-black/10 bg-white/60 px-4 py-3 dark:border-white/10 dark:bg-white/5">
         <div>
@@ -44,9 +51,19 @@
 
         <template x-for="msg in messages" :key="msg.id">
             <div class="flex flex-col" :class="msg.role === 'user' ? 'items-end' : 'items-start'">
-                <div class="max-w-[80%] rounded-2xl px-4 py-2.5 text-sm whitespace-pre-wrap"
-                    :class="msg.role === 'user' ? 'bg-brand text-on-accent' : 'bg-black/5 dark:bg-white/10'"
-                    x-text="msg.content"></div>
+                {{-- Two bubbles, not one with a conditional binding: what the
+                     customer typed is shown verbatim, while the agent's reply is
+                     markdown the model wrote and has to be rendered. --}}
+                <template x-if="msg.role === 'user'">
+                    <div class="max-w-[80%] rounded-2xl bg-brand px-4 py-2.5 text-sm whitespace-pre-wrap text-on-accent"
+                        :class="msg._fresh && 'pg-msg-in'"
+                        x-text="msg.content"></div>
+                </template>
+                <template x-if="msg.role !== 'user'">
+                    <div class="pg-prose max-w-[80%] rounded-2xl bg-black/5 px-4 py-2.5 text-sm dark:bg-white/10"
+                        :class="msg._fresh && 'pg-msg-in'"
+                        x-html="renderMarkdown(msg.content)"></div>
+                </template>
 
                 {{-- Same marker the Диалоги inbox uses, so a transcript reads the
                      same way in both places. --}}
@@ -81,8 +98,16 @@
             </div>
         </template>
 
-        <div x-show="sending" class="flex items-center gap-2 text-xs text-muted dark:text-night-muted">
-            <span class="spinner"></span> {{ __('agents.playground.typing') }}
+        {{-- Sits where the reply itself will land, so the bubble that arrives
+             reads as the same object settling rather than a new one appearing
+             somewhere else. --}}
+        <div x-show="sending" x-cloak class="flex flex-col items-start">
+            <div class="pg-msg-in flex items-center gap-1.5 rounded-2xl bg-black/5 px-4 py-3.5 dark:bg-white/10"
+                role="status" aria-live="polite" aria-label="{{ __('agents.playground.typing') }}">
+                <span class="pg-typing-dot h-1.5 w-1.5 rounded-full bg-current opacity-35"></span>
+                <span class="pg-typing-dot h-1.5 w-1.5 rounded-full bg-current opacity-35"></span>
+                <span class="pg-typing-dot h-1.5 w-1.5 rounded-full bg-current opacity-35"></span>
+            </div>
         </div>
     </div>
 
@@ -110,7 +135,7 @@
         </div>
 
         <form @submit.prevent="sendMessage()" class="flex items-center gap-2 p-3">
-            <input type="text" x-model="input" :disabled="sending || recording || transcribing"
+            <input type="text" x-model="input" x-ref="messageInput" :disabled="sending || recording || transcribing"
                 placeholder="{{ __('agents.playground.placeholder') }}"
                 class="field flex-1 rounded-full px-4 py-2.5 text-sm" />
 
@@ -140,6 +165,85 @@
 @once
 @push('scripts')
 <script>
+    /**
+     * A deliberately small markdown renderer for agent replies in the sandbox.
+     *
+     * Model output is untrusted text, so every character is HTML-escaped FIRST
+     * and the tags below are the only markup added back afterwards — there is no
+     * path from what the model writes to executable markup. That ordering is the
+     * whole safety argument, so do not move the escape step.
+     *
+     * Scope is what the model actually emits: bold, emphasis, inline code,
+     * bullet and numbered lists, and line breaks. Links are deliberately NOT
+     * rendered — an anchor built from model output is a phishing vector, and the
+     * raw URL is perfectly readable as text.
+     */
+    function renderPlaygroundMarkdown(text) {
+        const entities = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+        const escaped = String(text ?? '').replace(/[&<>"']/g, (char) => entities[char]);
+
+        const inline = (line) => line
+            .replace(/`([^`]+)`/g, '<code>$1</code>')
+            .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+            .replace(/__([^_]+)__/g, '<strong>$1</strong>')
+            // Single markers only where they read as emphasis rather than as
+            // punctuation or a stray asterisk mid-word (2*3, snake_case_name).
+            .replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s.,!?;:)]|$)/g, '$1<em>$2</em>')
+            .replace(/(^|[\s(])_([^_\n]+)_(?=[\s.,!?;:)]|$)/g, '$1<em>$2</em>');
+
+        const blocks = [];
+        let list = null;
+        let paragraph = [];
+
+        const flushParagraph = () => {
+            if (paragraph.length) {
+                blocks.push('<p>' + paragraph.join('<br>') + '</p>');
+                paragraph = [];
+            }
+        };
+        const flushList = () => {
+            if (list) {
+                blocks.push(`<${list.tag}>` + list.items.map((item) => `<li>${item}</li>`).join('') + `</${list.tag}>`);
+                list = null;
+            }
+        };
+
+        for (const raw of escaped.split(/\r?\n/)) {
+            const line = raw.trimEnd();
+            // A bullet needs whitespace after the marker, so "**bold**" at the
+            // start of a line is never mistaken for one.
+            const bullet = line.match(/^\s*[-*•]\s+(.+)$/);
+            const ordered = bullet ? null : line.match(/^\s*\d+[.)]\s+(.+)$/);
+
+            if (bullet || ordered) {
+                flushParagraph();
+                const tag = bullet ? 'ul' : 'ol';
+                if (!list || list.tag !== tag) {
+                    flushList();
+                    list = { tag, items: [] };
+                }
+                list.items.push(inline((bullet || ordered)[1]));
+                continue;
+            }
+
+            flushList();
+
+            if (line.trim() === '') {
+                flushParagraph();
+                continue;
+            }
+
+            paragraph.push(inline(line));
+        }
+
+        flushList();
+        flushParagraph();
+
+        // Falling back to the escaped text keeps a reply of pure punctuation
+        // visible rather than rendering an empty bubble.
+        return blocks.join('') || escaped;
+    }
+
     function playgroundTab({ sendUrl, transcribeUrl, resetUrl, initialMessages, sourcesLabel, kbFallback, maxRecordingSeconds, voiceLabels }) {
         return {
             messages: initialMessages,
@@ -164,6 +268,25 @@
             initVoice() {
                 this.voiceSupported = typeof MediaRecorder !== 'undefined'
                     && !! (navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+            },
+
+            renderMarkdown(text) {
+                return renderPlaygroundMarkdown(text);
+            },
+
+            /**
+             * preventScroll because the composer sits below the fold on a short
+             * window, and focusing it must not yank the page down while the
+             * owner is reading the tab they just opened.
+             */
+            focusComposer() {
+                this.$nextTick(() => this.$refs.messageInput?.focus({ preventScroll: true }));
+            },
+
+            scrollToLatest() {
+                this.$nextTick(() => {
+                    this.$refs.scrollArea.scrollTop = this.$refs.scrollArea.scrollHeight;
+                });
             },
 
             elapsedLabel() {
@@ -293,6 +416,22 @@
                 this.sending = true;
                 this.voiceError = '';
 
+                // Optimistic: the bubble is on screen before the request leaves,
+                // so the sandbox feels like a messenger rather than a form. The
+                // negative id cannot collide with a real one, which matters
+                // because x-for is keyed on it.
+                const pendingId = -Date.now();
+                this.messages.push({
+                    id: pendingId,
+                    role: 'user',
+                    content: text,
+                    meta: null,
+                    source_type: fromVoice ? 'voice' : 'text',
+                    voice_duration: fromVoice ? duration : null,
+                    _fresh: true,
+                });
+                this.scrollToLatest();
+
                 try {
                     const res = await fetch(sendUrl, {
                         method: 'POST',
@@ -309,22 +448,44 @@
                     });
 
                     if (!res.ok) {
+                        this.rollbackPending(pendingId, text);
                         window.showToast?.(@json(__('agents.playground.toasts.send_failed')), 'error');
-                        this.sending = false;
                         return;
                     }
 
                     const data = await res.json();
-                    this.messages.push(data.user);
-                    this.messages.push({ ...data.assistant, _sourcesOpen: false });
+
+                    // Swap the optimistic bubble for the persisted one in place,
+                    // keeping its position and its already-played animation —
+                    // removing and re-adding it would make it flash.
+                    const index = this.messages.findIndex((msg) => msg.id === pendingId);
+                    const persisted = { ...data.user, _fresh: false };
+                    if (index === -1) {
+                        this.messages.push(persisted);
+                    } else {
+                        this.messages.splice(index, 1, persisted);
+                    }
+
+                    this.messages.push({ ...data.assistant, _sourcesOpen: false, _fresh: true });
                 } catch (e) {
+                    this.rollbackPending(pendingId, text);
                     window.showToast?.(@json(__('agents.playground.toasts.network_error')), 'error');
                 } finally {
                     this.sending = false;
-                    this.$nextTick(() => {
-                        this.$refs.scrollArea.scrollTop = this.$refs.scrollArea.scrollHeight;
-                    });
+                    this.scrollToLatest();
+                    // The input is disabled while sending, which drops focus.
+                    // Put the cursor back so the next message can just be typed.
+                    this.focusComposer();
                 }
+            },
+
+            /**
+             * Take back an optimistic bubble the server never accepted, and hand
+             * the owner their text back rather than making them retype it.
+             */
+            rollbackPending(pendingId, text) {
+                this.messages = this.messages.filter((msg) => msg.id !== pendingId);
+                if (!this.input.trim()) this.input = text;
             },
             async resetConversation() {
                 if (!confirm(@json(__('agents.playground.toasts.clear_confirm')))) return;
@@ -336,6 +497,7 @@
                     },
                 });
                 this.messages = [];
+                this.focusComposer();
             },
         };
     }

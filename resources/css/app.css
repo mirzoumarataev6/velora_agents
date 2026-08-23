@@ -420,6 +420,91 @@ i {
     transform: translateY(-8px) scale(0.99);
 }
 
+/* Playground chat.
+ *
+ * Hand-written rather than Alpine's x-transition for the same reason as the
+ * welcome card above: a class-based animation is what the reduced-motion block
+ * at the bottom of this file can switch off wholesale.
+ *
+ * The arrival animation is applied per message by the component, only to ones
+ * that just appeared — opening a long history must not replay every bubble. */
+.pg-msg-in {
+    animation: pg-msg-in 0.28s cubic-bezier(0.22, 1.2, 0.36, 1) both;
+}
+@keyframes pg-msg-in {
+    from {
+        opacity: 0;
+        transform: translateY(8px) scale(0.98);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+/* The "agent is typing" bubble: three dots bouncing out of phase. */
+.pg-typing-dot {
+    animation: pg-typing 1.3s ease-in-out infinite;
+}
+.pg-typing-dot:nth-child(2) {
+    animation-delay: 0.16s;
+}
+.pg-typing-dot:nth-child(3) {
+    animation-delay: 0.32s;
+}
+@keyframes pg-typing {
+    0%,
+    65%,
+    100% {
+        opacity: 0.35;
+        transform: translateY(0);
+    }
+    30% {
+        opacity: 1;
+        transform: translateY(-3px);
+    }
+}
+
+/* Markdown rendered inside a Playground reply bubble. Scoped to the bubble so
+   it cannot leak into the rest of the dashboard.
+   Note there is no `em { font-style: italic }` here on purpose — see the <em>
+   rule near the top of this file: only upright Inter is shipped, so emphasis in
+   this app is weight, not a synthesised oblique. */
+.pg-prose > p {
+    margin: 0;
+}
+.pg-prose > p + p,
+.pg-prose > ul,
+.pg-prose > ol {
+    margin-top: 0.5rem;
+}
+.pg-prose ul,
+.pg-prose ol {
+    padding-inline-start: 1.15rem;
+}
+.pg-prose ul {
+    list-style-type: disc;
+}
+.pg-prose ol {
+    list-style-type: decimal;
+}
+.pg-prose li + li {
+    margin-top: 0.15rem;
+}
+.pg-prose strong {
+    font-weight: 600;
+}
+.pg-prose code {
+    border-radius: 0.25rem;
+    background: rgba(0, 0, 0, 0.08);
+    padding: 0.05rem 0.3rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.85em;
+}
+.dark .pg-prose code {
+    background: rgba(255, 255, 255, 0.15);
+}
+
 [x-cloak] {
     display: none !important;
 }
@@ -444,5 +529,14 @@ i {
     }
     .onboarding-card {
         transition: none;
+    }
+    /* Messages still appear and the agent is still visibly thinking — they just
+       arrive rather than animate. */
+    .pg-msg-in {
+        animation: none;
+    }
+    .pg-typing-dot {
+        animation: none;
+        opacity: 0.6;
     }
 }

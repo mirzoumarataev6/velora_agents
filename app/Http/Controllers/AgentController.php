@@ -12,6 +12,16 @@ use Illuminate\View\View;
 
 class AgentController extends Controller
 {
+    /**
+     * The tabs on the agent detail page, in nav order.
+     *
+     * `?tab=` is what carries the open tab across a reload and a language
+     * switch, so an arbitrary value would otherwise reach the page — and every
+     * panel is `x-show`n against it, so an unrecognized one would render a page
+     * with no content at all. Anything not on this list falls back to the first.
+     */
+    public const TABS = ['knowledge', 'catalog', 'channels', 'playground', 'conversations', 'settings'];
+
     public function index(Request $request, OnboardingService $onboarding): View
     {
         $user = $request->user();
@@ -62,7 +72,9 @@ class AgentController extends Controller
             ->where('external_user_id', 'playground')
             ->first();
 
-        $tab = $request->query('tab', 'knowledge');
+        $tab = in_array($request->query('tab'), self::TABS, true)
+            ? $request->query('tab')
+            : self::TABS[0];
 
         return view('agents.show', compact('agent', 'tab', 'playgroundConversation') + [
             'i18nExtraNamespaces' => ['conversations'],
@@ -71,6 +83,9 @@ class AgentController extends Controller
             // the tab costs no extra query on a page that never opens it.
             'conversationFilters' => ConversationController::defaultFilters($agent->id),
             'conversationChannelTypes' => $agent->channels->pluck('type')->unique()->values(),
+            // Seeds the catalog tab so it paints its real state on first render
+            // rather than flashing "empty" until an XHR comes back.
+            'catalog' => DatasetController::state($agent),
         ]);
     }
 

@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Str;
 
 #[Fillable([
@@ -76,6 +77,20 @@ class Agent extends Model
     public function knowledgeChunks(): HasMany
     {
         return $this->hasMany(KnowledgeChunk::class);
+    }
+
+    /**
+     * The agent's structured product catalog (at most one). Separate from the
+     * knowledge base: this is queried exactly, not semantically.
+     */
+    public function dataset(): HasOne
+    {
+        return $this->hasOne(Dataset::class);
+    }
+
+    public function datasetProducts(): HasMany
+    {
+        return $this->hasMany(DatasetProduct::class);
     }
 
     public function channels(): HasMany
