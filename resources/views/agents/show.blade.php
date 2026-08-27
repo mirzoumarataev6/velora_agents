@@ -51,6 +51,9 @@
         <div x-show="tab === 'catalog'" x-cloak x-transition.opacity.duration.200ms>
             @include('agents.partials.catalog-tab', ['agent' => $agent, 'catalog' => $catalog])
         </div>
+        <div x-show="tab === 'database'" x-cloak x-transition.opacity.duration.200ms>
+            @include('agents.partials.database-tab', ['agent' => $agent, 'database' => $database])
+        </div>
         <div x-show="tab === 'channels'" x-cloak x-transition.opacity.duration.200ms>
             @include('agents.partials.channels-tab', ['agent' => $agent])
         </div>

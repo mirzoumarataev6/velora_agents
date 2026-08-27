@@ -88,6 +88,25 @@ class Agent extends Model
         return $this->hasOne(Dataset::class);
     }
 
+    /**
+     * The agent's live connection to the business's own product database (at
+     * most one). The advanced alternative to `dataset` — which of the two is
+     * actually consulted is `product_source`, never "whichever exists".
+     *
+     * Deliberately NOT fillable: the source is switched through its own guarded
+     * endpoint, so a stray field on the agent form can never silently point the
+     * agent at a different set of prices.
+     */
+    public function databaseConnection(): HasOne
+    {
+        return $this->hasOne(DatabaseConnection::class);
+    }
+
+    public function usesLiveDatabase(): bool
+    {
+        return $this->product_source === 'database';
+    }
+
     public function datasetProducts(): HasMany
     {
         return $this->hasMany(DatasetProduct::class);

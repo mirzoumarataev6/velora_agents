@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Services\Database\DriverManager;
 use App\Services\Llm\GeminiProvider;
 use App\Services\Llm\LlmProviderInterface;
 use App\Services\Llm\OpenAiProvider;
@@ -9,12 +10,15 @@ use App\Services\Llm\UsageRecorder;
 use App\Services\Queue\WorkerHeartbeat;
 use App\Services\Rag\MySqlCosineVectorStore;
 use App\Services\Rag\VectorStoreInterface;
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Http\Request;
 use Illuminate\Queue\Events\JobExceptionOccurred;
 use Illuminate\Queue\Events\JobFailed;
 use Illuminate\Queue\Events\JobProcessed;
 use Illuminate\Queue\Events\JobProcessing;
 use Illuminate\Queue\Events\Looping;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 use InvalidArgumentException;
 
@@ -34,6 +38,11 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->bind(VectorStoreInterface::class, MySqlCosineVectorStore::class);
+
+        // Singleton so a driver registered at runtime (a test double, or a new
+        // engine registered by a future provider) is visible to everything that
+        // resolves the manager.
+        $this->app->singleton(DriverManager::class);
 
         // One usage context per request/job, reset between them.
         $this->app->scoped(UsageRecorder::class);
@@ -62,6 +71,23 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->recordWorkerHeartbeat();
+        $this->limitDatabaseConnectionTests();
+    }
+
+    /**
+     * "Test connection" opens a TCP connection to a host and port the caller
+     * chose, and its error messages distinguish "refused" from "wrong password".
+     * Unthrottled, that is a port scanner with a friendly UI pointed at anywhere
+     * on the internet from our IP. Per user, not per IP: the endpoint is behind
+     * auth, so the account is the thing worth limiting.
+     */
+    protected function limitDatabaseConnectionTests(): void
+    {
+        RateLimiter::for('database-test', function (Request $request) {
+            $perMinute = max(1, (int) config('agent.database.test_rate_limit', 10));
+
+            return Limit::perMinute($perMinute)->by((string) ($request->user()?->id ?? $request->ip()));
+        });
     }
 
     /**

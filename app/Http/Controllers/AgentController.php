@@ -20,7 +20,7 @@ class AgentController extends Controller
      * panel is `x-show`n against it, so an unrecognized one would render a page
      * with no content at all. Anything not on this list falls back to the first.
      */
-    public const TABS = ['knowledge', 'catalog', 'channels', 'playground', 'conversations', 'settings'];
+    public const TABS = ['knowledge', 'catalog', 'database', 'channels', 'playground', 'conversations', 'settings'];
 
     public function index(Request $request, OnboardingService $onboarding): View
     {
@@ -86,6 +86,9 @@ class AgentController extends Controller
             // Seeds the catalog tab so it paints its real state on first render
             // rather than flashing "empty" until an XHR comes back.
             'catalog' => DatasetController::state($agent),
+            // Same idea for the live-connection tab: it paints its real state on
+            // first render rather than flashing "not connected".
+            'database' => DatabaseConnectionController::state($agent),
         ]);
     }
 

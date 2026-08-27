@@ -69,6 +69,35 @@ class ColumnMapper
     ];
 
     /**
+     * The alias table itself, for callers that match on more than a header name.
+     *
+     * Live database discovery needs the same vocabulary but a different rule:
+     * it also knows each column's TYPE, so it can prefer a numeric "цена" over a
+     * textual one and refuse a numeric column as the product name. Exposing the
+     * words keeps that one vocabulary — an owner who mapped a spreadsheet here
+     * meets the same guesses on their database — while letting the type-aware
+     * matching live where the types are.
+     *
+     * @return array<string, string[]>
+     */
+    public static function aliases(): array
+    {
+        return self::ALIASES;
+    }
+
+    /**
+     * Fold a header to its comparable form. Public for the same reason as
+     * aliases(): the two matchers must agree on what "the same name" means.
+     */
+    public static function fold(string $header): string
+    {
+        $value = mb_strtolower(trim($header));
+        $value = (string) preg_replace('/[^\p{L}\p{N}]+/u', ' ', $value);
+
+        return trim((string) preg_replace('/\s+/u', ' ', $value));
+    }
+
+    /**
      * Suggest field => column index for a header row.
      *
      * Every field is claimed by at most one column, and every column by at most
@@ -130,9 +159,6 @@ class ColumnMapper
      */
     protected function normalize(string $header): string
     {
-        $value = mb_strtolower(trim($header));
-        $value = (string) preg_replace('/[^\p{L}\p{N}]+/u', ' ', $value);
-
-        return trim((string) preg_replace('/\s+/u', ' ', $value));
+        return self::fold($header);
     }
 }

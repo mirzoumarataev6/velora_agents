@@ -4,6 +4,7 @@ use App\Http\Controllers\AgentController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\ChannelController;
 use App\Http\Controllers\ConversationController;
+use App\Http\Controllers\DatabaseConnectionController;
 use App\Http\Controllers\DatasetController;
 use App\Http\Controllers\KnowledgeSourceController;
 use App\Http\Controllers\LeadController;
@@ -103,6 +104,32 @@ Route::middleware(['auth', 'auth.session'])->group(function () {
         Route::post('import', [DatasetController::class, 'import'])->name('import');
         Route::post('cancel', [DatasetController::class, 'cancel'])->name('cancel');
         Route::delete('/', [DatasetController::class, 'destroy'])->name('destroy');
+    });
+
+    // Live database connection (Подключение к базе данных) — the ADVANCED
+    // alternative to the uploaded catalog above. An agent uses one or the other,
+    // never both; `source` is what switches between them.
+    Route::prefix('agents/{agent}/database')->name('agents.database.')->group(function () {
+        Route::get('/', [DatabaseConnectionController::class, 'show'])->name('show');
+        // Dials a host and port the caller chose, so it is throttled whether or
+        // not private ranges are allowed — otherwise this is a port scanner.
+        Route::post('test', [DatabaseConnectionController::class, 'test'])
+            ->middleware('throttle:database-test')->name('test');
+        Route::put('/', [DatabaseConnectionController::class, 'store'])
+            ->middleware('throttle:database-test')->name('store');
+        // Automatic discovery. Throttled with the connection endpoints: it opens
+        // a connection, reads a whole catalog, and — for a schema the
+        // deterministic pass cannot settle, when that is switched on — may make
+        // one model call.
+        Route::post('discover', [DatabaseConnectionController::class, 'discover'])
+            ->middleware('throttle:database-test')->name('discover');
+        Route::put('discovery', [DatabaseConnectionController::class, 'confirmDiscovery'])
+            ->middleware('throttle:database-test')->name('discovery.confirm');
+        Route::get('tables', [DatabaseConnectionController::class, 'tables'])->name('tables');
+        Route::post('describe', [DatabaseConnectionController::class, 'describe'])->name('describe');
+        Route::put('mapping', [DatabaseConnectionController::class, 'mapping'])->name('mapping');
+        Route::put('source', [DatabaseConnectionController::class, 'source'])->name('source');
+        Route::delete('/', [DatabaseConnectionController::class, 'destroy'])->name('destroy');
     });
 
     Route::prefix('agents/{agent}/playground')->name('agents.playground.')->group(function () {

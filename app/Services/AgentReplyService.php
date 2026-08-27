@@ -11,6 +11,7 @@ use App\Models\Message;
 use App\Services\Dataset\ProductSearchService;
 use App\Services\Llm\LlmProviderInterface;
 use App\Services\Llm\UsageRecorder;
+use App\Services\Rag\ProductQuestionDetector;
 use App\Services\Rag\RetrievedChunk;
 use App\Services\Rag\VectorStoreInterface;
 use Illuminate\Support\Facades\Log;
@@ -57,6 +58,7 @@ class AgentReplyService
         protected LeadCaptureService $leadCapture,
         protected EscalationService $escalation,
         protected ProductSearchService $productSearch,
+        protected ProductQuestionDetector $productQuestions,
     ) {}
 
     /**
@@ -131,28 +133,40 @@ class AgentReplyService
         $capturedLeads = [];
         $escalation = null;
         $productSearches = 0;
+        $retrievalSkipped = false;
 
         try {
-            $embeddingStart = microtime(true);
-            $queryEmbedding = $this->llm->embed($userMsg->content);
-            $embeddingMs = (microtime(true) - $embeddingStart) * 1000;
-
-            $searchStart = microtime(true);
-            $retrieved = $this->vectorStore->search(
-                $agent,
-                $queryEmbedding['vector'],
-                (int) config('agent.rag.top_k'),
-                (float) config('agent.rag.similarity_threshold'),
-                (float) config('agent.rag.relative_ratio'),
-                (int) config('agent.rag.min_context_chunks'),
-            );
-            $searchMs = (microtime(true) - $searchStart) * 1000;
-
             $captureLeads = (bool) $agent->capture_leads;
             $detectEscalation = $this->escalation->enabledFor($agent);
             $searchProducts = $this->productSearch->enabledFor($agent);
 
-            $systemPrompt = $this->buildSystemPrompt($agent, $retrieved, $conversation);
+            // "How much is the Lenovo?" is answered entirely by search_products;
+            // embedding it and scanning the knowledge base adds a round trip and
+            // a full cosine pass to produce chunks about delivery policy. Skipped
+            // only when the message is unambiguously a product question — see
+            // ProductQuestionDetector, which is built to say no when unsure.
+            $retrievalSkipped = $searchProducts
+                && config('agent.rag.skip_for_product_questions')
+                && $this->productQuestions->isPureProductQuestion($userMsg->content);
+
+            if (! $retrievalSkipped) {
+                $embeddingStart = microtime(true);
+                $queryEmbedding = $this->llm->embed($userMsg->content);
+                $embeddingMs = (microtime(true) - $embeddingStart) * 1000;
+
+                $searchStart = microtime(true);
+                $retrieved = $this->vectorStore->search(
+                    $agent,
+                    $queryEmbedding['vector'],
+                    (int) config('agent.rag.top_k'),
+                    (float) config('agent.rag.similarity_threshold'),
+                    (float) config('agent.rag.relative_ratio'),
+                    (int) config('agent.rag.min_context_chunks'),
+                );
+                $searchMs = (microtime(true) - $searchStart) * 1000;
+            }
+
+            $systemPrompt = $this->buildSystemPrompt($agent, $retrieved, $conversation, $searchProducts, $retrievalSkipped);
             if ($searchProducts) {
                 $systemPrompt .= "\n\n".$this->productSearch->systemInstruction();
             }
@@ -281,6 +295,10 @@ class AgentReplyService
                 'embedding_ms' => round($embeddingMs, 1),
                 'search_ms' => round($searchMs, 2),
                 'retrieval_ms' => round($embeddingMs + $searchMs, 1),
+                // Surfaces in the Playground's per-message diagnostics beside the
+                // timings, so a zero retrieval time reads as a decision rather
+                // than as something silently broken.
+                'retrieval_skipped' => $retrievalSkipped,
                 'generation_ms' => round($generationMs, 1),
                 'total_ms' => round($totalMs, 1),
                 'failed' => $failed,
@@ -706,9 +724,16 @@ class AgentReplyService
 
     /**
      * @param  RetrievedChunk[]  $retrieved
+     * @param  bool  $searchProducts  Whether the catalog tool is being offered this turn.
+     * @param  bool  $retrievalSkipped  Whether the knowledge base was deliberately not consulted.
      */
-    protected function buildSystemPrompt(Agent $agent, array $retrieved, Conversation $conversation): string
-    {
+    protected function buildSystemPrompt(
+        Agent $agent,
+        array $retrieved,
+        Conversation $conversation,
+        bool $searchProducts = false,
+        bool $retrievalSkipped = false,
+    ): string {
         $format = $agent->response_format ?? [];
         $behavior = $agent->behavior ?? [];
 
@@ -752,7 +777,7 @@ class AgentReplyService
             ? 'You may use emojis sparingly to sound warm and approachable.'
             : 'Do not use emojis.';
 
-        $parts[] = $this->answeringPolicyInstruction();
+        $parts[] = $this->answeringPolicyInstruction($searchProducts);
 
         $parts[] = implode("\n", [
             'Rules:',
@@ -775,7 +800,7 @@ class AgentReplyService
 
         $parts[] = $this->fallbackInstruction($behavior['on_not_found'] ?? 'apologize', $format['fallback_message'] ?? null);
 
-        $parts[] = $this->knowledgeBaseSection($retrieved);
+        $parts[] = $this->knowledgeBaseSection($retrieved, $retrievalSkipped);
 
         return implode("\n\n", $parts);
     }
@@ -796,8 +821,21 @@ class AgentReplyService
      * learning and programming while a clothing shop's is knowledgeable about
      * fabrics and sizing, with nothing about either hardcoded here.
      */
-    protected function answeringPolicyInstruction(): string
+    protected function answeringPolicyInstruction(bool $searchProducts): string
     {
+        // Without this carve-out TIER 2 flatly states that prices and stock may
+        // come ONLY from the knowledge base — which contradicts the catalog
+        // instruction appended after it, and gives a model looking for a reason
+        // not to call the tool a rule that appears to endorse skipping it.
+        $productCarveOut = $searchProducts
+            ? [
+                '- EXCEPTION, and it overrides the rule above: prices, discounts, stock, availability and which',
+                '  products exist do NOT come from the KNOWLEDGE BASE. They come from the "'.ProductSearchService::TOOL_NAME.'" tool,',
+                '  freshly called, every time — see PRODUCT CATALOG below. If the knowledge base and the tool',
+                '  disagree about a price or about stock, the tool is right and the knowledge base is stale.',
+            ]
+            : [];
+
         return implode("\n", [
             'HOW TO ANSWER — there are two kinds of question and they are handled differently.',
             'Work out which kind you are being asked before you reply. Infer what field this business',
@@ -821,6 +859,7 @@ class AgentReplyService
             'stock, locations, contact details, policies, deadlines, guarantees.',
             '- These may come ONLY from the KNOWLEDGE BASE. Never invent, estimate, or infer them, and never',
             '  fill a gap with what is typical elsewhere. A plausible-sounding wrong price is worse than no price.',
+            ...$productCarveOut,
             '- If the fact IS in the KNOWLEDGE BASE, answer it directly and specifically. Material that arrived',
             '  under a heading matching the question (staff, prices, schedule) is the answer — use it, and do',
             '  not claim you lack information that is sitting in front of you.',
@@ -837,8 +876,21 @@ class AgentReplyService
     /**
      * @param  RetrievedChunk[]  $retrieved
      */
-    protected function knowledgeBaseSection(array $retrieved): string
+    protected function knowledgeBaseSection(array $retrieved, bool $skipped = false): string
     {
+        // Deliberately NOT the same message as "empty". A skipped retrieval must
+        // never read to the model as "this business has no knowledge base" —
+        // that would turn a latency optimization into the agent denying it knows
+        // anything about the business.
+        if ($skipped) {
+            return 'KNOWLEDGE BASE: not consulted for this message. It was identified as a question about products, '
+                .'prices, stock or availability, which the "'.ProductSearchService::TOOL_NAME.'" tool answers '
+                .'authoritatively and more currently than any uploaded document could. The business DOES have a '
+                .'knowledge base; it simply was not searched this time. If it turns out the customer needs a business '
+                .'fact that is not about price, stock or availability, do not guess and do not claim the business has '
+                .'no information — say you will check and offer to connect them with a colleague.';
+        }
+
         if ($retrieved === []) {
             return 'KNOWLEDGE BASE: (empty — nothing has been uploaded for this business yet). '
                 .'You can still answer Tier 1 general questions about the field from your own knowledge. '

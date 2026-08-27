@@ -33,6 +33,7 @@ return [
         'tabs' => [
             'knowledge' => 'Knowledge base',
             'catalog' => 'Catalog',
+            'database' => 'Database',
             'channels' => 'Channels',
             'playground' => 'Playground',
             'conversations' => 'Conversations',
@@ -165,7 +166,216 @@ return [
         ],
     ],
 
+    'database' => [
+        'badge' => 'Advanced',
+        'intro_title' => 'Database connection',
+        'intro_description' => 'The agent reads prices and stock straight from your own database — nothing to export, nothing to keep up to date by hand. This is an alternative to the catalog: an agent uses either the uploaded file or a live connection.',
+        'readonly_notice' => 'Create a separate database user with read-only (SELECT) rights. We never modify your data, but a read-only user is your guarantee rather than our promise.',
+
+        /*
+         * One line on the first screen; everything else behind “Details”. The
+         * long copy is worth reading once and is unavoidable on every visit.
+         */
+        'intro_tagline' => 'Prices and stock straight from your own database — nothing to export.',
+        'help_more' => 'Details',
+        'edit_connection' => 'Edit',
+        'cancel_editing' => 'Cancel',
+
+        'steps' => [
+            'aria' => 'Setup steps',
+            'connect' => 'Connection',
+            'review' => 'Review',
+            'done' => 'Done',
+        ],
+
+        'source_title' => 'Product data source',
+        'source_description' => 'What the agent uses when a customer asks about a price or availability.',
+        'source_dataset' => 'Uploaded catalog',
+        'source_dataset_hint' => 'The price list file from the Catalog tab.',
+        'source_database' => 'Live connection',
+        'source_database_hint' => 'Your database, queried on every question.',
+        'source_active' => 'Active',
+        'source_use' => 'Use this',
+        'source_empty_dataset' => 'The catalog is empty — the agent cannot answer price questions.',
+
+        'form_title' => 'Connection details',
+        'engine_label' => 'Engine',
+        'host_label' => 'Host',
+        'host_placeholder' => 'db.example.com',
+        'port_label' => 'Port',
+        'database_label' => 'Database',
+        'username_label' => 'User',
+        'password_label' => 'Password',
+        'password_saved' => 'Password saved — type a new one to replace it',
+        'ssl_label' => 'Use SSL',
+        'ssl_hint' => 'Encrypt the connection. Certificate verification is configured on the server.',
+        'test_button' => 'Test connection',
+        'testing' => 'Testing...',
+        'save_button' => 'Save connection',
+        'saving' => 'Saving...',
+
+        'status_ready' => 'Connected',
+        'status_error' => 'Connection error',
+        'status_unverified' => 'Not verified',
+        'status_tested' => 'Tested :time',
+        'disconnect' => 'Disconnect database',
+        'disconnect_confirm' => 'Delete the connection and the stored password? The agent falls back to the uploaded catalog.',
+
+        'schema_title' => 'Products table',
+        'schema_description' => 'Pick the table or view that holds your products. Schemas change — refresh the list if a table is missing.',
+        'table_label' => 'Table',
+        'choose_table' => 'Choose a table',
+        'refresh_tables' => 'Refresh list',
+        'loading' => 'Loading...',
+        'view_suffix' => 'view',
+
+        'mapping_title' => 'Map the columns',
+        'mapping_description' => 'Tell us what each column means. This decides which prices the agent quotes to customers.',
+        'mapping_col_db' => 'Column in the database',
+        'mapping_col_sample' => 'Sample values',
+        'mapping_col_field' => 'What it is',
+        'mapping_save' => 'Save mapping',
+        'mapping_saving' => 'Saving...',
+
+        'fields' => [
+            'ignore' => 'Do not use',
+            'name' => 'Product name',
+            'price' => 'Price',
+            'stock' => 'Stock / availability',
+            'category' => 'Category',
+            'description' => 'Description',
+            'sku' => 'SKU',
+            'url' => 'Link',
+        ],
+
+        /*
+         * The same fields, without the claim that this is a product.
+         *
+         * A heading of “Product name” over a column of customer names answers
+         * the very question we are asking the owner. Alternatives get the
+         * neutral labels instead.
+         */
+        'fields_neutral' => [
+            'name' => 'Name',
+            'price' => 'Price',
+            'stock' => 'Quantity',
+            'category' => 'Category',
+            'description' => 'Description',
+            'sku' => 'Code',
+            'url' => 'Link',
+        ],
+
+        'configured_title' => 'Connection configured',
+        'configured_table' => 'Table: :table',
+        'configured_mapping' => 'Column mapping',
+        'configured_updated' => 'Schema read :time',
+        'change_table' => 'Change table',
+
+        'empty_title' => 'No database connected',
+        'empty_description' => 'Fill in the connection details, test them, and pick the table that holds your products.',
+        'empty_value' => '—',
+
+        /*
+         * Automatic discovery of the product tables.
+         *
+         * `reasons` is the explanation behind a candidate: the owner confirms
+         * facts they can check themselves, not a score they have to trust.
+         */
+        'discovery' => [
+            'title' => 'Find products automatically',
+            'description' => 'We read the structure of your database and work out where the products, prices and stock live. Nothing is saved until you confirm.',
+            'button' => 'Find products automatically',
+            'rescan' => 'Scan again',
+            'scanning' => 'Reading the database structure…',
+            'scanned' => 'Tables scanned: :count',
+            'summary_found' => 'Found your products in the table “:table”.',
+            'summary_view' => 'Found your products in the view “:table”.',
+            'summary_alternative' => 'Another option: the table “:table”.',
+            'summary_alternative_view' => 'Another option: the view “:table”.',
+            'alternatives_title' => 'Other options',
+            'summary_join' => ':field comes from “:table”',
+            'summary_join_summed' => ':field is added up across all the rows in “:table” (warehouses, for example)',
+            'summary_none' => 'We could not confidently identify a products table. Please pick one by hand in the advanced settings.',
+            'summary_ambiguous' => 'Several tables fit. Pick the one the agent should answer customers from.',
+            'why' => 'Why this table',
+            'preview_title' => 'Sample products — this is what the agent will see',
+            'preview_empty' => 'Could not read sample rows. Check that this user may read that table.',
+            'rows_estimate' => 'about :count rows',
+            'confirm' => 'Looks right, use this',
+            'confirmed' => 'Connection configured automatically',
+            'inferred_relations' => 'Table relationships were matched by column name — please check the samples carefully',
+            'advanced' => 'Advanced: choose the table and columns by hand',
+            'advanced_hint' => 'Useful if the automatic search got it wrong, or your products are laid out unusually.',
+            'configured_joins' => 'Pulled in from other tables',
+            'confidence' => [
+                'high' => 'High confidence',
+                'medium' => 'Medium confidence',
+                'low' => 'Please check',
+            ],
+            'reasons' => [
+                'table_name_matches' => 'The table name “:table” looks like a product catalog',
+                'has_name_column' => 'It has a product name column — “:column”',
+                'name_column_in_related' => 'Product names live in the related table “:table”',
+                'has_price_column' => 'It has a numeric price column — “:column”',
+                'price_column_in_related' => 'Prices live in the related table “:table”',
+                'price_not_numeric' => 'The price in “:column” is stored as text, so “cheaper than …” will not work',
+                'has_stock_column' => 'It has a stock column — “:column”',
+                'linked_to_categories' => 'It is linked to the category table “:table”',
+                'linked_stock_table' => 'Stock levels live in the related table “:table”',
+                'referenced_by_others' => 'Other tables point at it (:count)',
+                'is_view' => 'It is a view — most likely built for exactly this',
+                'looks_like_orders' => 'Looks like an orders table rather than a catalog',
+                'looks_like_service_table' => 'Looks like an internal service table',
+                'looks_like_supporting_table' => 'Looks like a lookup table (categories or stock) rather than the catalog itself',
+                'looks_like_link_table' => 'Looks like a link table — it holds nothing but identifiers',
+                'no_declared_keys' => 'This database declares no relationships, so they were matched by column name',
+                'interpreted_by_model' => 'Several tables fit — a language model suggested this one from the column names. Please check the sample rows below',
+            ],
+
+            /*
+             * What we found and did NOT use. Saying nothing here reads as “this
+             * shop keeps no stock”, which is a different claim entirely.
+             */
+            'notes' => [
+                'stock_table_not_joined' => 'Stock levels look like they live in “:table” (column “:column”), but we could not pull them in automatically. Set it up by hand in the advanced settings if the agent needs them.',
+                'stock_table_not_numeric' => 'Stock levels look like they live in “:table”, but “:column” stores them as text, so they cannot be added up across warehouses. Set it up by hand in the advanced settings.',
+            ],
+        ],
+
+        'errors' => [
+            'unreachable' => 'Could not reach the server. Check the host and port, and that it accepts outside connections.',
+            'auth_failed' => 'The server rejected that username or password.',
+            'unknown_database' => 'There is no database with that name on the server.',
+            'permission_denied' => 'This user is not allowed to read that database or table.',
+            'timeout' => 'The server did not answer in time. Try again, or check how loaded the database is.',
+            'ssl_failed' => 'A secure (SSL) connection could not be established.',
+            'blocked_host' => 'That address is on an internal network and cannot be connected to.',
+            'unsupported_engine' => 'That engine is not supported yet.',
+            'schema_changed' => 'The table structure changed. Re-read the schema and check the mapping.',
+            'schema_too_large' => 'This database has too many tables to scan automatically. Pick the products table by hand in the advanced settings.',
+            'unknown' => 'Could not connect. Check the details and try again.',
+            'not_connected' => 'Save a database connection first.',
+            'unknown_table' => 'That table is not in the database. Refresh the table list.',
+            'unknown_column' => 'The column ":column" is no longer in the table. Re-read the schema.',
+            'missing_name' => 'Tell us which column holds the product name.',
+            'unknown_source' => 'Unknown data source.',
+            'not_ready' => 'Finish setting the connection up first: test it, pick a table and map the columns.',
+            'rate_limited' => 'Too many connection attempts. Wait a minute.',
+            'network_error' => 'No connection to the server',
+        ],
+
+        'toasts' => [
+            'connection_ok' => 'The connection works',
+            'saved' => 'Connection saved',
+            'mapping_saved' => 'Mapping saved — the agent now answers from live data',
+            'source_dataset' => 'The agent answers from the uploaded catalog',
+            'source_database' => 'The agent answers from the live database',
+            'disconnected' => 'Connection removed',
+        ],
+    ],
+
     'catalog' => [
+        'live_source_notice' => 'The agent is currently answering from a live database. This catalog is kept but not used — switch the source on the Database tab.',
         'intro_title' => 'Product catalog',
         'intro_description' => 'Upload a price list and the agent can answer questions about prices, stock and categories exactly. This is separate from the knowledge base: that stores text, this stores a table of products the agent can filter by price and stock.',
         'drop_text' => 'Drop a file here or',

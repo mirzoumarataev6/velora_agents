@@ -24,6 +24,15 @@
         initial: {{ Js::from($catalog) }},
     })" class="space-y-6">
 
+    {{-- The agent is answering from a live connection instead. The catalog below
+         is still here and still editable, but nothing in it reaches customers —
+         saying so beats letting an owner tune prices that are never quoted. --}}
+    @if ($agent->usesLiveDatabase())
+        <p class="rounded-2xl bg-warning/10 px-4 py-3 text-xs leading-relaxed text-warning dark:text-warning-light">
+            {{ __('agents.catalog.live_source_notice') }}
+        </p>
+    @endif
+
     {{-- Intro + upload zone (hidden while mapping, so the owner has one job at a time) --}}
     <div x-show="!pending" x-cloak>
         <div class="rounded-2xl border border-black/10 p-5 dark:border-white/10">

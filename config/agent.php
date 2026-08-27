@@ -108,6 +108,20 @@ return [
         // base must never present as an empty one: the model can dismiss a
         // weak chunk, but it cannot use a chunk it was never shown.
         'min_context_chunks' => env('RAG_MIN_CONTEXT_CHUNKS', 3),
+        // Skip embedding + vector search entirely when the message is
+        // unambiguously a price/stock/availability question AND the agent has the
+        // search_products tool, which answers those authoritatively and more
+        // currently than any uploaded document. Saves an embedding round trip
+        // plus a full cosine pass on exactly the questions the knowledge base
+        // cannot help with.
+        //
+        // The detector (App\Services\Rag\ProductQuestionDetector) is tuned for
+        // precision: any hint that the question also needs a business fact
+        // ("сколько стоит доставка?") keeps retrieval. Set to false to disable
+        // the optimization outright if a phrasing is ever misclassified — the
+        // agent then behaves exactly as it did before.
+        'skip_for_product_questions' => env('RAG_SKIP_FOR_PRODUCT_QUESTIONS', true),
+
         'history_length' => env('RAG_HISTORY_LENGTH', 10),
         'cache_ttl_seconds' => env('RAG_CACHE_TTL_SECONDS', 300),
     ],
@@ -246,6 +260,78 @@ return [
         // How long an analyzed-but-not-yet-imported upload waits on disk for the
         // owner to confirm its mapping before it is swept.
         'pending_ttl_minutes' => env('AGENT_DATASET_PENDING_TTL_MINUTES', 120),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Live database connections (advanced product source)
+    |--------------------------------------------------------------------------
+    |
+    | The alternative to uploading a catalog: the agent reads the business's own
+    | product table on every question. Everything here is a safety budget rather
+    | than a feature toggle.
+    |
+    | `allow_private_hosts` is the SSRF gate. Left off, a connection may only be
+    | pointed at a public address — otherwise an owner could dial 127.0.0.1:3306
+    | and be handed OUR database, or use the "Test connection" button to scan the
+    | internal network. Turn it on ONLY for a self-hosted install where the
+    | customer database genuinely sits on the same private network.
+    |
+    */
+    'database' => [
+        'connect_timeout_seconds' => env('AGENT_DB_CONNECT_TIMEOUT', 5),
+
+        // Server-side statement timeout. A slow customer database must not be
+        // able to hold a reply — and therefore a queue worker — open.
+        'query_timeout_seconds' => env('AGENT_DB_QUERY_TIMEOUT', 5),
+
+        // Rows shown beside each column on the mapping screen.
+        'sample_rows' => 5,
+
+        // Tables offered in the picker. A shop database with thousands of tables
+        // would otherwise put all of them in one response.
+        'max_tables' => 500,
+
+        'allow_private_hosts' => env('AGENT_DB_ALLOW_PRIVATE_HOSTS', false),
+
+        // Path to a CA bundle used to VERIFY the customer's TLS certificate.
+        // Without it the SSL toggle still encrypts, but cannot authenticate the
+        // server — see MySqlDriver::extraOptions().
+        'ssl_ca' => env('AGENT_DB_SSL_CA'),
+
+        /*
+         * Automatic schema discovery — the deterministic pass that proposes
+         * WHERE the products are, so the owner confirms rather than maps.
+         *
+         * `use_llm` is off on purpose. Discovery is decided by declared facts —
+         * foreign keys, column types, a name vocabulary — and on a
+         * conventionally named schema those settle it without a model. The LLM
+         * is a tie-breaker for the shortlist and nothing else: it is given table
+         * and column NAMES only (never row data, never credentials), it returns
+         * a suggestion, and that suggestion is discarded whole if it names
+         * anything the schema does not actually contain. It can never produce
+         * SQL, and its answer is still confirmed by the owner.
+         */
+        'discovery' => [
+            // Tables automatic discovery will read the columns of. Above this,
+            // discovery declines and the owner is pointed at the manual picker.
+            'max_tables' => env('AGENT_DB_DISCOVERY_MAX_TABLES', 300),
+
+            // Relationship hops a composed query may follow (products →
+            // categories is one). Bounded so a join plan can never become an
+            // arbitrary walk of the customer's schema graph.
+            'max_join_depth' => 2,
+
+            // Rows in the confirmation preview the owner reviews before saving.
+            'preview_rows' => 5,
+
+            'use_llm' => env('AGENT_DB_DISCOVERY_USE_LLM', false),
+        ],
+
+        // "Test connection" attempts per minute, per user. This endpoint dials
+        // an arbitrary host:port on request, so it is rate limited whether or
+        // not private ranges are allowed.
+        'test_rate_limit' => env('AGENT_DB_TEST_RATE_LIMIT', 10),
     ],
 
     'uploads' => [

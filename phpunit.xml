@@ -32,5 +32,9 @@
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>
+        <!-- The SSRF gate is commonly opened in a developer's .env so a live
+             database connection can be pointed at localhost. The suite must
+             assert the SHIPPED behaviour, not whoever's machine it runs on. -->
+        <env name="AGENT_DB_ALLOW_PRIVATE_HOSTS" value="false"/>
     </php>
 </phpunit>
