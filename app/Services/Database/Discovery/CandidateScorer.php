@@ -96,6 +96,20 @@ class CandidateScorer
     public const PLAUSIBLE_SCORE = 40;
 
     /**
+     * Findings that settle what a table IS, whatever its columns turn out to
+     * mean. A table carrying one of these is never handed to the model
+     * fallback — it is not an unread catalog, it is not a catalog.
+     *
+     * @var string[]
+     */
+    protected const DISQUALIFYING_REASONS = [
+        'looks_like_orders',
+        'looks_like_service_table',
+        'looks_like_link_table',
+        'looks_like_supporting_table',
+    ];
+
+    /**
      * Two candidates within this many points are a genuine choice, not a
      * ranking. Both are surfaced and neither is presented as certain.
      */
@@ -141,23 +155,94 @@ class CandidateScorer
      */
     public function rank(DiscoveredSchema $schema): array
     {
-        $candidates = [];
+        return $this->survey($schema)['ranked'];
+    }
+
+    /**
+     * Rank the schema, keeping the tables that ALMOST qualified.
+     *
+     * A table with no reachable name or price is not a candidate — see rank().
+     * But "we could not read this table's column names" and "this table is not a
+     * catalog" are different findings, and the first one has a remedy: a shop
+     * whose columns are `atalishi` and `qiymati` has a perfectly good catalog
+     * written in a language the vocabulary does not carry. Those tables come
+     * back under `unresolved`, with `missing` naming exactly what could not be
+     * read, so the model fallback can be asked a narrow question about a
+     * specific table instead of a broad one about the schema.
+     *
+     * Tables that failed for any OTHER reason are not in either list: no amount
+     * of interpretation makes `migrations` a product catalog.
+     *
+     * @return array{ranked: array<int, TableCandidate>, unresolved: array<int, TableCandidate>}
+     */
+    public function survey(DiscoveredSchema $schema): array
+    {
+        $ranked = [];
+        $unresolved = [];
 
         foreach ($schema->tableNames() as $table) {
             $candidate = $this->score($schema, $table);
 
-            if ($candidate !== null) {
-                $candidates[] = $candidate;
+            if ($candidate === null) {
+                continue;
+            }
+
+            if ($candidate->missing === []) {
+                $ranked[] = $candidate;
+            } elseif ($this->worthInterpreting($schema, $candidate)) {
+                $unresolved[] = $candidate;
             }
         }
 
+        return [
+            'ranked' => $this->applyRelativeConfidence($this->sorted($ranked)),
+            'unresolved' => $this->sorted($unresolved),
+        ];
+    }
+
+    /**
+     * @param  array<int, TableCandidate>  $candidates
+     * @return array<int, TableCandidate>
+     */
+    protected function sorted(array $candidates): array
+    {
         usort($candidates, function (TableCandidate $a, TableCandidate $b) {
             // A stable tie-break by name keeps the order deterministic, so the
             // same schema always produces the same screen.
             return [$b->score, $a->table] <=> [$a->score, $b->table];
         });
 
-        return $this->applyRelativeConfidence($candidates);
+        return $candidates;
+    }
+
+    /**
+     * Whether asking a model about this table could possibly be worth a call.
+     *
+     * The bar is deliberately structural rather than clever, because the point
+     * is to avoid spending a model call on a question with no answer:
+     *
+     *  - a table the NAME vocabulary has already identified as orders, plumbing
+     *    or a lookup is not a catalog whatever its columns are called;
+     *  - a table with no text column cannot hold a product name, and one with no
+     *    numeric column cannot hold a price worth filtering on — there is
+     *    nothing there for a model to find.
+     */
+    protected function worthInterpreting(DiscoveredSchema $schema, TableCandidate $candidate): bool
+    {
+        foreach ($candidate->reasons as $reason) {
+            if (in_array($reason['code'], self::DISQUALIFYING_REASONS, true)) {
+                return false;
+            }
+        }
+
+        $text = 0;
+        $numeric = 0;
+
+        foreach ($schema->columns($candidate->table) as $column) {
+            $column['numeric'] ? $numeric++ : $text++;
+        }
+
+        return $text >= 1 && $numeric >= 1;
     }
 
     /**
@@ -221,6 +306,11 @@ class CandidateScorer
 
         $nameFrom = null;
 
+        // What the deterministic pass could not read. A table with anything in
+        // here is not a candidate; whether it is worth ASKING about is
+        // survey()'s question, not this method's.
+        $missing = [];
+
         if ($roles->hasName()) {
             $score += self::W_HAS_NAME_COLUMN;
             $reasons[] = ['code' => 'has_name_column', 'params' => ['column' => $roles->column('name')]];
@@ -235,11 +325,11 @@ class CandidateScorer
             $nameFrom = $this->relations->nameSource($schema, $table);
 
             if ($nameFrom === null) {
-                return null;
+                $missing[] = 'name';
+            } else {
+                $score += self::W_NAME_VIA_RELATION;
+                $reasons[] = ['code' => 'name_column_in_related', 'params' => ['table' => $nameFrom]];
             }
-
-            $score += self::W_NAME_VIA_RELATION;
-            $reasons[] = ['code' => 'name_column_in_related', 'params' => ['table' => $nameFrom]];
         }
 
         $priceFrom = null;
@@ -267,14 +357,27 @@ class CandidateScorer
             $priceFrom = $this->relations->fieldSource($schema, $table, 'price');
 
             if ($priceFrom === null) {
-                return null;
+                $missing[] = 'price';
+            } else {
+                // Said, but not SCORED. A price next door is what makes this
+                // table admissible; it is not evidence that this table rather
+                // than its neighbour is the catalog, and awarding points for it
+                // lifted a narrow `product_stock` link table over the
+                // plausibility floor.
+                $reasons[] = ['code' => 'price_column_in_related', 'params' => ['table' => $priceFrom]];
             }
+        }
 
-            // Said, but not SCORED. A price next door is what makes this table
-            // admissible; it is not evidence that this table rather than its
-            // neighbour is the catalog, and awarding points for it lifted a
-            // narrow `product_stock` link table over the plausibility floor.
-            $reasons[] = ['code' => 'price_column_in_related', 'params' => ['table' => $priceFrom]];
+        // A column we read by transliterating it is a column the owner should
+        // glance at. Said once, listing them, rather than once per field: it is
+        // one fact about how this table was read.
+        $transliterated = $roles->from(ColumnRoles::TRANSLITERATED);
+
+        if ($transliterated !== []) {
+            $reasons[] = [
+                'code' => 'transliterated_columns',
+                'params' => ['columns' => implode(', ', $transliterated)],
+            ];
         }
 
         // ---- Supporting shape ----------------------------------------------
@@ -330,6 +433,7 @@ class CandidateScorer
             roles: $roles,
             rowCount: $rowCount,
             nameFrom: $nameFrom,
+            missing: $missing,
         );
     }
 

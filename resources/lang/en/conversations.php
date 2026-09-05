@@ -27,6 +27,15 @@ return [
             'threatening_to_leave' => 'Threatening to leave',
             'fallback' => 'The agent could not answer',
         ],
+        'auto_summary' => [
+            // Written by the pipeline's own detector rather than by the model,
+            // so the owner sees why the handover fired without a summary having
+            // to be generated for it.
+            'abuse' => 'The customer is abusive towards the assistant',
+            'repeated_rudeness' => 'The customer is being rude to the assistant again',
+            'asked_for_human' => 'The customer asked to speak to a person',
+            'repeated_question' => 'The customer has asked the same question several times',
+        ],
         'notify' => [
             'title' => 'A customer needs a human',
             'cta' => 'Open the conversation and reply personally:',

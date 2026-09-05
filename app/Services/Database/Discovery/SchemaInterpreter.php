@@ -56,10 +56,97 @@ class SchemaInterpreter
         - Output the JSON and nothing else. No explanation, no code fence.
         PROMPT;
 
+    /**
+     * The second, NARROWER question: not "which table" but "what do these two
+     * columns of this one table mean".
+     *
+     * It is asked only when the deterministic pass — vocabulary plus
+     * transliteration — could not read a REQUIRED field, which on a
+     * conventionally or even a transliterated schema never happens. The shape
+     * that reaches it is a real one: an Uzbek or Tajik shop whose columns are
+     * `atalishi` and `qiymati`, words no vocabulary of ours carries and no
+     * transliteration turns into one.
+     *
+     * The constraints are identical to the broad question above — names and
+     * types only, answer validated against the schema, discarded whole if it
+     * names anything unreal, owner confirms — with one more on top: it may only
+     * answer about the fields it was asked about.
+     */
+    protected const FIELD_SYSTEM = <<<'PROMPT'
+        You are reading the column names of one table in a shop's database. Some of them are
+        in a language or spelling that our dictionary does not cover.
+
+        You will be given the table's column names with their SQL types, and a list of the
+        fields we could not identify. You will NEVER be given any row data, and you must
+        never ask for any.
+
+        Answer with JSON only, in exactly this shape:
+        {"mapping": {"<field>": "<column>"}}
+
+        Rules:
+        - Use ONLY the field names you were asked about. Do not answer about any other field.
+        - Every column MUST be one of the columns listed for that table. Do not invent one.
+        - "name" is the column holding the product's name as a customer would read it, and
+          must be a text column. "price" is what the product costs, and should be numeric
+          if such a column exists.
+        - Omit any field you are not confident about. An incomplete answer is useful; a
+          guessed one is not.
+        - Output the JSON and nothing else. No explanation, no code fence.
+        PROMPT;
+
     public function __construct(
         protected LlmProviderInterface $llm,
         protected SuggestionValidator $validator,
     ) {}
+
+    /**
+     * Ask what specific columns of ONE table mean.
+     *
+     * @param  array<int, string>  $fields  The unresolved fields, and the only ones an
+     *                                      answer may speak about.
+     * @return array<string, string> field => column, validated. [] when there is no usable answer.
+     */
+    public function resolveFields(DiscoveredSchema $schema, string $table, array $fields): array
+    {
+        if ($fields === [] || ! $schema->hasTable($table)) {
+            return [];
+        }
+
+        try {
+            $response = $this->llm->generate(self::FIELD_SYSTEM, [
+                ['role' => 'user', 'text' => $this->describeTable($schema, $table, $fields)],
+            ], [
+                'temperature' => 0.0,
+                'max_output_tokens' => 300,
+            ]);
+        } catch (Throwable $e) {
+            // Never fatal. Without an answer the table simply stays unoffered,
+            // which is exactly where it was before we asked.
+            Log::info('Column interpretation unavailable; the table stays unresolved', [
+                'table' => $table,
+                'error' => $e->getMessage(),
+            ]);
+
+            return [];
+        }
+
+        $decoded = $this->decode((string) ($response['text'] ?? ''));
+
+        if ($decoded === null) {
+            return [];
+        }
+
+        $mapping = $this->validator->validateFields($schema, $table, $fields, $decoded);
+
+        if ($mapping === []) {
+            Log::info('Column interpretation rejected: it named something the schema does not contain', [
+                'table' => $table,
+                'asked' => $fields,
+            ]);
+        }
+
+        return $mapping;
+    }
 
     /**
      * Ask the model to choose between the shortlisted tables.
@@ -136,6 +223,27 @@ class SchemaInterpreter
         }
 
         return (string) json_encode($described, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+    }
+
+    /**
+     * One table's columns and the fields we are stuck on. Same payload rules as
+     * describe(): names and types, nothing else exists to send.
+     *
+     * @param  array<int, string>  $fields
+     */
+    protected function describeTable(DiscoveredSchema $schema, string $table, array $fields): string
+    {
+        $columns = [];
+
+        foreach (array_slice($schema->columns($table), 0, self::MAX_COLUMNS) as $column) {
+            $columns[] = ['name' => $column['name'], 'type' => $column['type']];
+        }
+
+        return (string) json_encode([
+            'table' => $table,
+            'columns' => $columns,
+            'identify' => array_values($fields),
+        ], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
     }
 
     /**

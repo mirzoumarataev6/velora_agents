@@ -202,6 +202,65 @@ class CatalogReplyTest extends TestCase
     }
 
     /**
+     * The repetition bug, at the level it is actually caused: what the reply
+     * pipeline puts in front of the model.
+     *
+     * The owner's fallback_message used to be handed over as a line to say ("you
+     * may phrase it close to: ..."), and the model said it — the same sentence,
+     * every turn, for every question it could not answer. It may still be shown
+     * as a tone sample; it may never be presented as text to send.
+     */
+    public function test_the_owners_fallback_text_is_offered_as_tone_not_as_a_line_to_repeat(): void
+    {
+        $captured = $this->fakeLlm([['text' => 'Здравствуйте!']]);
+
+        $agent = $this->agentWithCatalog();
+        $agent->update(['response_format' => ['fallback_message' => 'Уточню и вернусь с ответом.']]);
+        $conversation = $agent->conversations()->create(['status' => 'ai']);
+
+        $this->app->make(AgentReplyService::class)->reply($conversation, 'Сколько стоит куртка?');
+
+        $prompt = $captured->prompts[0];
+
+        $this->assertStringNotContainsString('You may phrase it close to', $prompt);
+        $this->assertStringContainsString('For tone only', $prompt);
+        $this->assertStringContainsString('Do NOT send it as written', $prompt);
+        $this->assertStringContainsString('never repeat', $prompt);
+    }
+
+    /**
+     * The other half of the same bug: the tool result. A model handed the same
+     * sentence on every miss has nothing to write a different reply from, so the
+     * result must name this search's own filters and the near misses it found.
+     */
+    public function test_an_empty_search_reaches_the_model_as_this_searchs_own_result(): void
+    {
+        $captured = $this->fakeLlm([
+            ['text' => '', 'tool_calls' => [[
+                'id' => 'call-1',
+                'name' => ProductSearchService::TOOL_NAME,
+                'arguments' => ['query' => 'куртка', 'max_price' => 100],
+            ]]],
+            ['text' => 'Под 100 сомони куртки нет — самая доступная 450.'],
+        ]);
+
+        $agent = $this->agentWithCatalog();
+        $conversation = $agent->conversations()->create(['status' => 'ai']);
+
+        $this->app->make(AgentReplyService::class)->reply($conversation, 'Куртка до 100 сомони есть?');
+
+        $toolResult = collect($captured->contents[1])->firstWhere('role', 'tool_result');
+
+        $this->assertStringContainsString('"count":0', $toolResult['result']);
+        // What was searched for, in this turn's own terms...
+        $this->assertStringContainsString('a price up to 100', $toolResult['result']);
+        // ...the real product that was one filter away...
+        $this->assertStringContainsString('Куртка зимняя', $toolResult['result']);
+        // ...and the instruction not to send the last reply again.
+        $this->assertStringContainsString('Do NOT repeat', $toolResult['result']);
+    }
+
+    /**
      * The search tool must not swallow a lead the model recorded on the same
      * turn — that generation is superseded, but the lead it asked for is not.
      */

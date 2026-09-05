@@ -329,6 +329,8 @@ return [
                 'looks_like_supporting_table' => 'Looks like a lookup table (categories or stock) rather than the catalog itself',
                 'looks_like_link_table' => 'Looks like a link table — it holds nothing but identifiers',
                 'no_declared_keys' => 'This database declares no relationships, so they were matched by column name',
+                'transliterated_columns' => 'The columns :columns were read as Cyrillic words spelled in latin — please check the samples',
+                'interpreted_column' => '“:column” was read as “:field” automatically — please check it',
                 'interpreted_by_model' => 'Several tables fit — a language model suggested this one from the column names. Please check the sample rows below',
             ],
 

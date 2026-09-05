@@ -22,10 +22,38 @@ class DatasetProduct extends Model
      *
      * Built here rather than in SQL so MySQL and SQLite agree: see the migration
      * for why leaving case folding to the database does not work across both.
+     *
+     * The CATEGORY and the EXTRA attributes are part of the haystack, and that
+     * is not cosmetic. A customer asking for "игровые ноутбуки" is using the
+     * words the shop wrote in its Категория column, not in its Модель column,
+     * and one asking for "ноутбук с 16 ГБ" is using the words from its ОЗУ
+     * column. With only name, description and sku in here, both of those found
+     * nothing in a catalog that plainly contained the product.
+     *
+     * @param  array<string, mixed>|null  $extra  Attribute columns kept under their own header names.
      */
-    public static function searchText(?string $name, ?string $description = null, ?string $sku = null): string
-    {
-        return mb_strtolower(trim(implode(' ', array_filter([$name, $description, $sku]))));
+    public static function searchText(
+        ?string $name,
+        ?string $description = null,
+        ?string $sku = null,
+        ?string $category = null,
+        ?array $extra = null,
+    ): string {
+        $parts = [$name, $description, $sku, $category];
+
+        foreach ($extra ?? [] as $key => $value) {
+            if (is_scalar($value) && (string) $value !== '') {
+                // The header name goes in as well as the value: "озу 16 гб"
+                // answers a question phrased with either.
+                $parts[] = $key.' '.$value;
+            }
+        }
+
+        return mb_strtolower(trim((string) preg_replace(
+            '/\s+/u',
+            ' ',
+            implode(' ', array_filter($parts, fn ($part) => $part !== null && $part !== '')),
+        )));
     }
 
     public static function categoryKey(?string $category): ?string
@@ -39,7 +67,13 @@ class DatasetProduct extends Model
         // future edit-in-place UI). The bulk importer sets these itself, since
         // it inserts rows without instantiating them.
         static::saving(function (DatasetProduct $product) {
-            $product->search_text = static::searchText($product->name, $product->description, $product->sku);
+            $product->search_text = static::searchText(
+                $product->name,
+                $product->description,
+                $product->sku,
+                $product->category,
+                is_array($product->extra) ? $product->extra : null,
+            );
             $product->category_key = static::categoryKey($product->category);
         });
     }

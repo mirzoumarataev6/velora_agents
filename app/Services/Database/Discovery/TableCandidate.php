@@ -35,6 +35,15 @@ final class TableCandidate
         public readonly ?int $rowCount = null,
         /** Set when the product NAME is not on this table but on a related one. */
         public readonly ?string $nameFrom = null,
+        /**
+         * Required fields the deterministic pass could not resolve — here or
+         * one safe hop away. A candidate with anything in here is NOT offered:
+         * it is the input to the model fallback, and either comes back complete
+         * or does not come back.
+         *
+         * @var array<int, string>
+         */
+        public readonly array $missing = [],
     ) {}
 
     public function isView(): bool
@@ -58,6 +67,7 @@ final class TableCandidate
             $this->roles,
             $this->rowCount,
             $this->nameFrom,
+            $this->missing,
         );
     }
 

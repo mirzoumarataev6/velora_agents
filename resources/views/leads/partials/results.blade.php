@@ -34,9 +34,25 @@
                 <div class="flex flex-wrap items-start justify-between gap-3">
                     <div class="min-w-0">
                         <h3 class="text-base font-semibold">{{ $lead->customer_name ?: __('leads.index.no_name') }}</h3>
-                        @if ($lead->contact)
-                            <p class="mt-0.5 text-sm text-brand">{{ $lead->contact }}</p>
-                        @endif
+                        <div class="mt-0.5 flex flex-wrap items-center gap-2">
+                            @if ($lead->phone)
+                                <p class="text-sm text-brand">{{ $lead->phone }}</p>
+                            @endif
+                            @if ($lead->contact && $lead->contact !== $lead->phone)
+                                <p class="text-sm {{ $lead->phone ? 'text-muted dark:text-night-muted' : 'text-brand' }}">{{ $lead->contact }}</p>
+                            @endif
+                            {{-- The order was taken without a number, on purpose: the
+                                 customer declined and the sale was kept anyway. The owner
+                                 has to see that calling is not an option here before they
+                                 go looking for a number that was never given. --}}
+                            @if ($lead->isChatOnly())
+                                <span title="{{ __('leads.index.chat_only_hint') }}"
+                                    class="inline-flex items-center gap-1 rounded-full bg-warning/10 px-2 py-0.5 text-[11px] font-medium text-warning dark:text-warning-light">
+                                    <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.86 9.86 0 01-4-.8L3 20l1.4-3.5A7.9 7.9 0 013 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+                                    {{ __('leads.index.chat_only') }}
+                                </span>
+                            @endif
+                        </div>
                     </div>
                     <div class="flex flex-col items-end gap-1 text-right">
                         @php $sourceKey = "leads.source.{$lead->source}"; @endphp

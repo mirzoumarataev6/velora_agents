@@ -38,7 +38,10 @@ class LiveProductSource implements ProductSource
     public const FIELDS = ['name', 'price', 'stock', 'category', 'description', 'sku', 'url'];
 
     /** Columns a free-text query is matched against, in order of usefulness. */
-    protected const TEXT_FIELDS = ['name', 'description', 'sku'];
+    // The category is searched as text as well as filtered on, for the same
+    // reason the imported catalog folds it into its search text: "игровые
+    // ноутбуки" is the shop's category column talking, not its name column.
+    protected const TEXT_FIELDS = ['name', 'description', 'sku', 'category'];
 
     public function __construct(
         protected DatabaseConnection $connection,
@@ -60,6 +63,23 @@ class LiveProductSource implements ProductSource
     public function hasProducts(): bool
     {
         return $this->connection->isUsable() && $this->columns() !== [];
+    }
+
+    /**
+     * Answered from the stored mapping, like hasProducts() and for the same
+     * reason: no round trip to the customer's server to decide what to ask it.
+     *
+     * A shop that mapped no stock column, or mapped a textual one ("да"/"нет"),
+     * cannot answer a stock filter — buildQuery() has always dropped it in that
+     * case rather than comparing a word to zero. This exposes that same fact
+     * before the query is built, so the model can be told the filter was not
+     * applied instead of quietly getting unfiltered rows back.
+     */
+    public function tracksStock(): bool
+    {
+        $columns = $this->withJoinedFields($this->columns(), $this->joins());
+
+        return isset($columns['stock']) && $this->isNumeric($columns['stock']);
     }
 
     public function fetch(array $filters, int $limit): array
@@ -152,10 +172,11 @@ class LiveProductSource implements ProductSource
         }
 
         if (isset($filters['category'], $columns['category'])) {
-            $category = $this->escapeLike(mb_strtolower($filters['category']));
-
-            if ($category !== '') {
-                $textGroups[] = ['columns' => [$columns['category']], 'value' => $category];
+            // Every stem of the filter must appear in the category name, in any
+            // order — see DatasetProductSource for why a whole-string LIKE loses
+            // "Ноутбук (игровой)".
+            foreach ($this->categoryTerms($filters['category']) as $term) {
+                $textGroups[] = ['columns' => [$columns['category']], 'value' => $term];
             }
         }
 

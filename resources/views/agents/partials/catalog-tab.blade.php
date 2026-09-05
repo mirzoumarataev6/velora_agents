@@ -182,22 +182,25 @@
                     <div class="relative overflow-x-auto" :class="pageLoading && 'opacity-50 transition-opacity'">
                         <table class="w-full text-left text-sm">
                             <thead class="bg-black/[0.03] text-xs uppercase tracking-wide text-muted dark:bg-white/5 dark:text-night-muted/70">
+                                {{-- Whatever the file actually has. A catalog with no
+                                     stock or article column must not be shown two empty
+                                     columns headed as if it had them. --}}
                                 <tr>
-                                    <th class="px-5 py-3 font-medium">{{ __('agents.catalog.preview.name') }}</th>
-                                    <th class="px-5 py-3 font-medium">{{ __('agents.catalog.preview.price') }}</th>
-                                    <th class="px-5 py-3 font-medium">{{ __('agents.catalog.preview.stock') }}</th>
-                                    <th class="px-5 py-3 font-medium">{{ __('agents.catalog.preview.category') }}</th>
-                                    <th class="px-5 py-3 font-medium">{{ __('agents.catalog.preview.sku') }}</th>
+                                    <template x-for="column in previewColumns()" :key="column.key">
+                                        <th class="px-5 py-3 font-medium" x-text="column.label"></th>
+                                    </template>
                                 </tr>
                             </thead>
                             <tbody>
                                 <template x-for="(product, index) in preview" :key="index">
                                     <tr class="border-t border-black/5 dark:border-white/10">
-                                        <td class="max-w-xs truncate px-5 py-3 font-medium" x-text="product.name"></td>
-                                        <td class="px-5 py-3 text-muted dark:text-night-muted" x-text="show(product.price)"></td>
-                                        <td class="px-5 py-3 text-muted dark:text-night-muted" x-text="show(product.stock)"></td>
-                                        <td class="px-5 py-3 text-muted dark:text-night-muted" x-text="show(product.category)"></td>
-                                        <td class="px-5 py-3 text-muted dark:text-night-muted" x-text="show(product.sku)"></td>
+                                        <template x-for="column in previewColumns()" :key="column.key">
+                                            <td class="px-5 py-3"
+                                                :class="column.key === 'name'
+                                                    ? 'max-w-xs truncate font-medium'
+                                                    : 'text-muted dark:text-night-muted'"
+                                                x-text="cell(product, column)"></td>
+                                        </template>
                                     </tr>
                                 </template>
                             </tbody>
@@ -269,6 +272,7 @@
             skippedLabel: @json(__('agents.catalog.status_skipped')),
             skipReasons: @json(__('agents.catalog.skip_reasons')),
             emptyValue: @json(__('agents.catalog.preview.empty')),
+            previewLabels: @json(__('agents.catalog.preview')),
             summaryLabel: @json(__('agents.catalog.pagination.summary')),
             pageAriaLabel: @json(__('agents.catalog.pagination.page_aria')),
 
@@ -395,6 +399,47 @@
                     .filter((value) => value !== undefined && value !== null && value !== '')
                     .slice(0, 3)
                     .join(' · ') || this.emptyValue;
+            },
+
+            /**
+             * The preview's columns, taken from what this file was mapped to.
+             *
+             * The core fields the owner actually assigned, in a fixed order, then
+             * the file's own attribute columns under their own header names. A
+             * catalog with no Артикул column simply has no Артикул column here —
+             * showing one full of dashes reads as an import that lost the data.
+             */
+            previewColumns() {
+                const mapping = this.dataset?.mapping ?? {};
+                const columns = this.dataset?.columns ?? [];
+
+                // A catalog imported before mappings were stored still has to
+                // render something: fall back to the core fields.
+                if (Object.keys(mapping).length === 0) {
+                    return ['name', 'price', 'stock', 'category', 'sku']
+                        .map((field) => ({ key: field, label: this.previewLabels[field] ?? field, extra: false }));
+                }
+
+                const entries = [];
+
+                for (const field of ['name', 'price', 'stock', 'category', 'sku']) {
+                    if (mapping[field] !== undefined && mapping[field] !== null) {
+                        entries.push({ key: field, label: this.previewLabels[field] ?? field, extra: false });
+                    }
+                }
+
+                for (const index of mapping.extra ?? []) {
+                    const header = columns[index] ?? '';
+                    if (header !== '') {
+                        entries.push({ key: `extra:${header}`, label: header, extra: true, header });
+                    }
+                }
+
+                return entries;
+            },
+
+            cell(product, column) {
+                return this.show(column.extra ? (product.extra ?? {})[column.header] : product[column.key]);
             },
 
             mappingSummary() {

@@ -758,7 +758,13 @@
 
             interpolate(text, params) {
                 for (const [key, value] of Object.entries(params ?? {})) {
-                    text = text.replace(`:${key}`, value);
+                    // A `field` parameter is a catalog field key, not prose:
+                    // "«narkh» определили как price" is not a sentence anyone
+                    // reads. It goes through the same labels the rest of the
+                    // tab uses.
+                    const rendered = key === 'field' ? (this.fieldLabels[value] ?? value) : value;
+
+                    text = text.replace(`:${key}`, rendered);
                 }
 
                 return text;

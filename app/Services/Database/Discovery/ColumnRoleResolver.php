@@ -4,6 +4,7 @@ namespace App\Services\Database\Discovery;
 
 use App\Services\Database\LiveProductSource;
 use App\Services\Dataset\ColumnMapper;
+use App\Services\Dataset\Transliterator;
 
 /**
  * What each column of a table means, judged by its NAME and its TYPE.
@@ -21,6 +22,24 @@ use App\Services\Dataset\ColumnMapper;
  *
  * The vocabulary itself is ColumnMapper's, unchanged and shared, so an owner who
  * has mapped a spreadsheet before meets the same words here.
+ *
+ * IT IS READ IN TWO LAYERS. The vocabulary is written in Cyrillic and English,
+ * and a great many real databases spell the same words in latin — `nazvanie`,
+ * `cena`, `narkh`. Rather than list those spellings (hundreds per language, and
+ * a new set for every language added), a latin name is transliterated back to
+ * Cyrillic and looked up in the SAME vocabulary. See Transliterator.
+ *
+ * The layers are ordered so that certainty wins over cleverness:
+ *
+ *   1. exact, in the vocabulary's own languages
+ *   2. exact, after transliteration
+ *   3. substring, in the vocabulary's own languages
+ *   4. substring, after transliteration
+ *
+ * A direct hit always beats a transliterated one at the same precision, which is
+ * what keeps a latin word that happens to read as a Cyrillic one — `tip`, `art`,
+ * `sum` — from stealing a column that a real word already claimed. Layer 1
+ * cannot be overridden by layer 2, only completed by it.
  */
 class ColumnRoleResolver
 {
@@ -70,20 +89,29 @@ class ColumnRoleResolver
             return new ColumnRoles;
         }
 
+        // Two readings of every column: what it says, and what it would say if
+        // it were a latin spelling of one of the vocabulary's own words. The
+        // second list is empty for a name already written in Cyrillic.
         $folded = [];
+        $latin = [];
+
         foreach ($columns as $index => $column) {
             $folded[$index] = ColumnMapper::fold($column['name']);
+            $latin[$index] = Transliterator::candidates($folded[$index]);
         }
 
-        $aliases = ColumnMapper::aliases();
+        $aliases = ColumnMapper::foldedAliases();
         $roles = [];
         $numeric = [];
+        $sources = [];
         $taken = [];
 
         // Exact matches across every field first, so a precise column name always
         // wins before any substring rule gets a chance at it — "цена" claims
-        // `Цена` before the loose pass hands it `Цена закупки`.
-        foreach ([true, false] as $exactPass) {
+        // `Цена` before the loose pass hands it `Цена закупки`. Within each
+        // precision the vocabulary's own languages are read before any
+        // transliteration of them.
+        foreach ([[true, false], [true, true], [false, false], [false, true]] as [$exactPass, $translitPass]) {
             foreach (LiveProductSource::FIELDS as $field) {
                 if (isset($roles[$field]) || ! isset($aliases[$field])) {
                     continue;
@@ -97,10 +125,16 @@ class ColumnRoleResolver
                         continue;
                     }
 
-                    if (! $this->matches($folded[$index], $aliases[$field], $exactPass)) {
+                    $forms = $translitPass ? $latin[$index] : [$folded[$index]];
+
+                    if (! $this->matchesAny($forms, $aliases[$field], $exactPass)) {
                         continue;
                     }
 
+                    // Judged on the REAL column name, never on a transliterated
+                    // reading of it: `id` is a surrogate key whichever alphabet
+                    // it is written in, and a guess must not be able to talk its
+                    // way past a rule the direct pass would have applied.
                     if ($this->isSurrogateKey($field, $folded[$index], (bool) $column['numeric'])) {
                         continue;
                     }
@@ -124,11 +158,26 @@ class ColumnRoleResolver
                     $roles[$field] = $columns[$best]['name'];
                     $numeric[$field] = (bool) $columns[$best]['numeric'];
                     $taken[$best] = true;
+
+                    if ($translitPass) {
+                        $sources[$field] = ColumnRoles::TRANSLITERATED;
+                    }
                 }
             }
         }
 
-        return new ColumnRoles($roles, $numeric);
+        return new ColumnRoles($roles, $numeric, $sources);
+    }
+
+    /**
+     * Whether a field will accept a column of this type at all.
+     *
+     * Public because the model fallback has to obey the same rule: a numeric
+     * column is not the product name however confidently anything says it is.
+     */
+    public static function accepts(string $field, bool $numeric): bool
+    {
+        return ! ($numeric && in_array($field, self::TEXT_ONLY, true));
     }
 
     /**
@@ -138,6 +187,22 @@ class ColumnRoleResolver
     public function supplies(DiscoveredSchema $schema, string $table, string $field): bool
     {
         return $this->resolve($schema, $table)->has($field);
+    }
+
+    /**
+     * @param  string[]  $forms  Readings of one column name. Any of them matching is a match:
+     *                           they are alternative spellings of the same word, not several words.
+     * @param  string[]  $aliases
+     */
+    protected function matchesAny(array $forms, array $aliases, bool $exact): bool
+    {
+        foreach ($forms as $form) {
+            if ($form !== '' && $this->matches($form, $aliases, $exact)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -183,7 +248,7 @@ class ColumnRoleResolver
      */
     protected function typeFit(string $field, bool $numeric): int
     {
-        if ($numeric && in_array($field, self::TEXT_ONLY, true)) {
+        if (! self::accepts($field, $numeric)) {
             return -1;
         }
 

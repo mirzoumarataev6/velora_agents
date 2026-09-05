@@ -27,6 +27,15 @@ return [
             'threatening_to_leave' => 'Таҳдиди рафтан ба рақибон',
             'fallback' => 'Агент ҷавоб дода натавонист',
         ],
+        'auto_summary' => [
+            // Written by the pipeline's own detector rather than by the model,
+            // so the owner sees why the handover fired without a summary having
+            // to be generated for it.
+            'abuse' => 'Муштарӣ ба ассистент дағалӣ мекунад',
+            'repeated_rudeness' => 'Муштарӣ такроран дағалӣ мекунад',
+            'asked_for_human' => 'Муштарӣ одами зиндаро талаб мекунад',
+            'repeated_question' => 'Муштарӣ якчанд бор як саволро такрор мекунад',
+        ],
         'notify' => [
             'title' => 'Ба муштарӣ одам лозим аст',
             'cta' => 'Муколамаро кушоед ва шахсан ҷавоб диҳед:',

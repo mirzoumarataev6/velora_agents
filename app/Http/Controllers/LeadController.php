@@ -28,6 +28,7 @@ class LeadController extends Controller
             // three things an owner actually remembers a lead by.
             ->when($term, fn ($q, $needle) => $q->where(fn ($w) => $w
                 ->where('leads.customer_name', 'like', "%{$needle}%")
+                ->orWhere('leads.phone', 'like', "%{$needle}%")
                 ->orWhere('leads.contact', 'like', "%{$needle}%")
                 ->orWhere('leads.items', 'like', "%{$needle}%")
             ))
@@ -77,6 +78,7 @@ class LeadController extends Controller
             ->map(fn (Lead $lead) => [
                 'id' => $lead->id,
                 'customer_name' => $lead->customer_name,
+                'phone' => $lead->phone,
                 'contact' => $lead->contact,
                 'items' => $lead->items,
                 'agent_name' => $lead->agent?->name,

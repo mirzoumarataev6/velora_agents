@@ -303,14 +303,24 @@ return [
          * Automatic schema discovery — the deterministic pass that proposes
          * WHERE the products are, so the owner confirms rather than maps.
          *
-         * `use_llm` is off on purpose. Discovery is decided by declared facts —
-         * foreign keys, column types, a name vocabulary — and on a
-         * conventionally named schema those settle it without a model. The LLM
-         * is a tie-breaker for the shortlist and nothing else: it is given table
-         * and column NAMES only (never row data, never credentials), it returns
-         * a suggestion, and that suggestion is discarded whole if it names
-         * anything the schema does not actually contain. It can never produce
-         * SQL, and its answer is still confirmed by the owner.
+         * Discovery is decided by declared facts: foreign keys, column types,
+         * and a name vocabulary read both in its own languages and through
+         * transliteration, so `nazvanie` and `narkh` need no model.
+         *
+         * `use_llm` is ON, because the case it now covers cannot be solved by
+         * any word list we could maintain: a shop whose columns are Uzbek or
+         * Tajik words the vocabulary does not carry. It is consulted only when
+         * the deterministic pass came up short — never on a scan that already
+         * has an answer — and the constraints on it are unchanged: it is given
+         * table and column NAMES only (never row data, never credentials), it
+         * returns a suggestion, and that suggestion is discarded whole if it
+         * names anything the schema does not actually contain or gives a column
+         * a type its field cannot have. It can never produce SQL, what it
+         * resolves is reported at LOW confidence with the column named, and its
+         * answer is still confirmed by the owner before anything is stored.
+         *
+         * Set AGENT_DB_DISCOVERY_USE_LLM=false to run discovery entirely on the
+         * deterministic layers.
          */
         'discovery' => [
             // Tables automatic discovery will read the columns of. Above this,
@@ -325,7 +335,7 @@ return [
             // Rows in the confirmation preview the owner reviews before saving.
             'preview_rows' => 5,
 
-            'use_llm' => env('AGENT_DB_DISCOVERY_USE_LLM', false),
+            'use_llm' => env('AGENT_DB_DISCOVERY_USE_LLM', true),
         ],
 
         // "Test connection" attempts per minute, per user. This endpoint dials

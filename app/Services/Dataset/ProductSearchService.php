@@ -42,6 +42,12 @@ class ProductSearchService
     /** Used when the model names no limit — a chat reply quotes a few items, not twenty. */
     public const DEFAULT_LIMIT = 5;
 
+    /**
+     * Rows fetched for the "nearest thing we do have" consolation search. Small
+     * on purpose: it is a suggestion attached to a miss, not a second catalog.
+     */
+    public const NEAREST_LIMIT = 3;
+
     /** Longest text query accepted; anything beyond is noise for a LIKE match. */
     protected const MAX_QUERY_LENGTH = 120;
 
@@ -79,8 +85,10 @@ class ProductSearchService
                 'properties' => [
                     'query' => [
                         'type' => 'string',
-                        'description' => 'Words to match against the product name and description. Use the product '
-                            .'words the customer actually said, without extra qualifiers. Omit to browse by filter alone.',
+                        'description' => 'Words to match against the product name, description, category and its other '
+                            .'attributes (processor, memory, size, colour — whatever this catalog lists). Use the product '
+                            .'words the customer actually said, without extra qualifiers; word endings do not have to match '
+                            .'the catalog\'s. Omit to browse by filter alone.',
                     ],
                     'min_price' => [
                         'type' => 'number',
@@ -92,12 +100,17 @@ class ProductSearchService
                     ],
                     'in_stock_only' => [
                         'type' => 'boolean',
-                        'description' => 'When true, return only products currently in stock. Use it when the customer '
-                            .'asks what is available or wants to buy now.',
+                        'description' => 'When true, return ONLY products with stock on hand right now. Use it just for '
+                            .'"what can I pick up today", "what is left", "in stock only". Do NOT use it for "do you '
+                            .'have X?", "есть ли у вас X", "у вас есть X" — those ask whether the shop SELLS the thing, '
+                            .'which is an ordinary search with no stock filter. When in doubt leave it out: a catalog '
+                            .'that does not track stock cannot answer it.',
                     ],
                     'category' => [
                         'type' => 'string',
-                        'description' => 'Restrict to one product category, matched loosely against the catalog\'s own category names.',
+                        'description' => 'Restrict to one product category, matched loosely against the catalog\'s own '
+                            .'category names — every word you give must appear somewhere in the category name, in any '
+                            .'order and in any grammatical form, so "игровые ноутбуки" finds "Ноутбук (игровой)".',
                     ],
                     'sort' => [
                         'type' => 'string',
@@ -164,6 +177,11 @@ class ProductSearchService
                 .'for a list, and never mention the tool, the search, the catalog file, or any internal system.',
             '- If it returns nothing, say briefly that you could not find a match, then offer the nearest alternative you '
                 .'did see or to check with a colleague. Never present an empty result as "we have no products".',
+            '- Write EVERY reply, and a not-found reply above all, from the result you were just handed and from what '
+                .'this conversation has already covered. Never send the same sentence twice: if you have already told '
+                .'this customer you could not find something, the next one must be worded differently and must move '
+                .'the conversation on — a new suggestion, a different question, the budget they named. Repeating '
+                .'yourself verbatim is the single clearest sign to a customer that they are talking to a broken bot.',
         ]);
     }
 
@@ -179,6 +197,8 @@ class ProductSearchService
         $limit = $this->limit($args['limit'] ?? null);
         $filters = $this->filters($args);
         $source = $this->sources->for($agent);
+
+        $dropped = $this->dropUnanswerableFilters($agent, $source, $filters);
 
         try {
             if ($source === null) {
@@ -210,23 +230,31 @@ class ProductSearchService
         }
 
         if ($products === []) {
+            $nearest = $this->nearest($source, $filters);
+
             return [
                 'count' => 0,
                 'limit' => $limit,
                 'filters' => $filters,
                 'products' => [],
-                'note' => 'No products matched these filters. This does NOT mean the business sells nothing — the '
-                    .'catalog may simply not have this item, or the filters were too narrow. Say you could not find a '
-                    .'match, then offer an alternative or to check with a colleague. Do not apologize at length.',
+                'nearest' => $nearest['products'],
+                'nearest_note' => $nearest['note'],
+                'note' => trim($this->emptyResultNote($filters, $nearest).' '.($dropped['note'] ?? '')),
             ];
         }
 
-        return [
+        $result = [
             'count' => count($products),
             'limit' => $limit,
             'filters' => $filters,
             'products' => $products,
         ];
+
+        if (isset($dropped['note'])) {
+            $result['note'] = $dropped['note'];
+        }
+
+        return $result;
     }
 
     /**
@@ -308,6 +336,187 @@ class ProductSearchService
         $value = trim((string) preg_replace('/\s+/u', ' ', $value));
 
         return $value === '' ? null : mb_substr($value, 0, $limit);
+    }
+
+    /**
+     * Remove filters this source physically cannot answer, and say so.
+     *
+     * THE BUG THIS EXISTS FOR. A catalog uploaded without a stock column stores
+     * NULL stock on every row. `stock > 0` is false for NULL, so a single
+     * in_stock_only argument excluded the entire catalog — every query, every
+     * category, ten rows in and nothing out. And the model reaches for that
+     * argument constantly, because "есть ли у вас игровые ноуты" means "do you
+     * HAVE gaming laptops", which reads exactly like asking what is available.
+     * The shop looked empty to its own assistant.
+     *
+     * Dropping the filter is right, but silently dropping it is not: the model
+     * asked for in-stock products and would otherwise assume that is what came
+     * back, and go on to tell the customer the item is in stock. So the note
+     * says the catalog does not track stock and forbids the claim.
+     *
+     * @param  array<string, mixed>  $filters  Modified in place.
+     * @return array{note?: string}
+     */
+    protected function dropUnanswerableFilters(Agent $agent, ?ProductSource $source, array &$filters): array
+    {
+        if (empty($filters['in_stock_only']) || $source === null || $source->tracksStock()) {
+            return [];
+        }
+
+        unset($filters['in_stock_only']);
+
+        Log::info('search_products dropped an in_stock_only filter the source cannot answer', [
+            'agent_id' => $agent->id,
+            'source' => $source->key(),
+        ]);
+
+        return ['note' => 'You asked for in-stock products only. This catalog does not record stock at all, so that '
+            .'filter was ignored and these results are the whole range regardless of availability. Do NOT tell the '
+            .'customer these items are in stock or in any way confirm availability — you were not given that. If they '
+            .'need to know, offer to check.'];
+    }
+
+    /**
+     * The nearest thing the catalog does have, found by dropping one filter.
+     *
+     * An empty result is where this feature used to fail the customer: the model
+     * was handed nothing but a fixed sentence saying so, and wrote the same
+     * apology every turn because that was genuinely all it had. Giving it the
+     * products that were ONE filter away — the same laptops just over budget,
+     * the same category without the price cap — means the not-found reply has
+     * something real and different in it every time.
+     *
+     * Bounded, and tried in the order a customer would accept them: the budget
+     * stretched first, then availability, then the category widened.
+     *
+     * @param  array<string, mixed>  $filters
+     * @return array{products: array<int, array<string, mixed>>, note: string|null, relaxed: string|null}
+     */
+    protected function nearest(?ProductSource $source, array $filters): array
+    {
+        $none = ['products' => [], 'note' => null, 'relaxed' => null];
+
+        if ($source === null) {
+            return $none;
+        }
+
+        $relaxations = [];
+
+        if (isset($filters['min_price']) || isset($filters['max_price'])) {
+            $relaxations['price'] = array_diff_key($filters, array_flip(['min_price', 'max_price']));
+        }
+
+        if (! empty($filters['in_stock_only'])) {
+            // Before the category, deliberately. Asked for a gaming laptop that
+            // is in stock, "we have that one, it is just not in right now" is
+            // the answer the customer wants; a monitor from a wider search is
+            // not. Widening the category is the last resort, not the first.
+            $relaxations['stock'] = array_diff_key($filters, array_flip(['in_stock_only']));
+        }
+
+        if (isset($filters['category'])) {
+            $relaxations['category'] = array_diff_key($filters, array_flip(['category', 'min_price', 'max_price']));
+        }
+
+        foreach ($relaxations as $relaxed => $wider) {
+            try {
+                $products = $source->fetch($wider, self::NEAREST_LIMIT);
+            } catch (\Throwable $e) {
+                // The first query already failed loudly enough; a failed
+                // consolation query is not worth a second log line or a turn.
+                return $none;
+            }
+
+            if ($products !== []) {
+                return [
+                    'products' => $products,
+                    'relaxed' => $relaxed,
+                    'note' => match ($relaxed) {
+                        'price' => 'These matched everything the customer asked for EXCEPT the price. Say plainly that '
+                            .'nothing fits the budget they named, then mention what the nearest one actually costs — '
+                            .'do not present these as being within budget.',
+                        'stock' => 'These are what the customer asked for, but they are NOT currently in stock. Say '
+                            .'that plainly and offer to let them know when it arrives — never imply availability.',
+                        default => 'These are from the catalog more widely rather than the category asked about. Offer '
+                            .'them as a suggestion, not as the thing that was asked for.',
+                    },
+                ];
+            }
+        }
+
+        return $none;
+    }
+
+    /**
+     * What the model is told about an empty result.
+     *
+     * Written per call, from the filters that were actually applied, and it says
+     * so out loud. The static version of this string was the reason a customer
+     * got the identical "к сожалению, ничего не нашлось" on every turn: given the
+     * same sentence each time, the model repeated it each time. Naming this
+     * search's own filters, and forbidding the reuse of an earlier reply, gives
+     * it something specific to say and no template to fall back on.
+     *
+     * @param  array<string, mixed>  $filters
+     * @param  array{products: array<int, array<string, mixed>>, note: string|null, relaxed: string|null}  $nearest
+     */
+    protected function emptyResultNote(array $filters, array $nearest): string
+    {
+        $note = $filters === []
+            ? 'This search had no filters at all and still returned nothing, so the catalog is empty right now. '
+            : 'Nothing in the catalog matched '.$this->describeFilters($filters).'. ';
+
+        $note .= 'This is a fact about THIS search only — it does not mean the business sells nothing, and it does '
+            .'not mean the product does not exist. ';
+
+        $note .= $nearest['products'] !== []
+            ? 'The "nearest" list holds real products from the catalog: '.$nearest['note'].' '
+            : 'Say briefly that you could not find a match, then offer to check with a colleague or ask one '
+                .'question that would widen the search (a different budget, a different type). ';
+
+        return $note.'Write this reply from scratch for this turn. Answer in terms of what the customer actually '
+            .'asked for here and what has already been discussed in this conversation — the budget, the type of '
+            .'product, anything you have already offered them. Do NOT repeat, and do not lightly reword, anything '
+            .'you have already said earlier in this conversation: they have read it, and hearing the same sentence '
+            .'again reads as a broken bot rather than a person. Vary the wording every time.';
+    }
+
+    /**
+     * The applied filters in words, so the model's reply can be about this
+     * search rather than about searching in general.
+     *
+     * @param  array<string, mixed>  $filters
+     */
+    protected function describeFilters(array $filters): string
+    {
+        $parts = [];
+
+        if (isset($filters['query'])) {
+            $parts[] = '"'.$filters['query'].'"';
+        }
+
+        if (isset($filters['category'])) {
+            $parts[] = 'category "'.$filters['category'].'"';
+        }
+
+        if (isset($filters['min_price']) && isset($filters['max_price'])) {
+            $parts[] = 'a price between '.$this->amount($filters['min_price']).' and '.$this->amount($filters['max_price']);
+        } elseif (isset($filters['min_price'])) {
+            $parts[] = 'a price from '.$this->amount($filters['min_price']);
+        } elseif (isset($filters['max_price'])) {
+            $parts[] = 'a price up to '.$this->amount($filters['max_price']);
+        }
+
+        if (! empty($filters['in_stock_only'])) {
+            $parts[] = 'in stock now';
+        }
+
+        return $parts === [] ? 'these filters' : implode(', ', $parts);
+    }
+
+    protected function amount(float $value): string
+    {
+        return rtrim(rtrim(number_format($value, 2, '.', ''), '0'), '.') ?: '0';
     }
 
     protected function money(mixed $value): ?float

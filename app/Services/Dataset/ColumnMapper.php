@@ -33,12 +33,14 @@ class ColumnMapper
     protected const ALIASES = [
         'name' => [
             'name', 'title', 'product', 'product name', 'item', 'goods',
-            'название', 'наименование', 'товар', 'продукт', 'имя',
+            'название', 'название товара', 'наименование', 'наименование товара',
+            'товар', 'продукт', 'имя', 'модель',
             'ном', 'номи мол', 'мол',
         ],
         'price' => [
             'price', 'cost', 'amount', 'retail price', 'sale price', 'unit price',
             'цена', 'стоимость', 'цена продажи', 'розничная цена', 'прайс',
+            'сомони',
             'нарх', 'арзиш',
         ],
         'stock' => [
@@ -86,6 +88,43 @@ class ColumnMapper
     }
 
     /**
+     * The same aliases, folded the way a header is folded before comparison.
+     *
+     * A header is always folded before it is matched, so an alias that is not
+     * folded can never match one: `кол-во` becomes "кол во" on the header side
+     * and stays "кол-во" on the alias side, and the two never meet. Folding both
+     * ends is what makes the comparison symmetric — and it matters more now that
+     * transliteration feeds candidates like "kol vo" into the same lookup.
+     *
+     * @return array<string, string[]>
+     */
+    public static function foldedAliases(): array
+    {
+        static $folded = null;
+
+        if ($folded !== null) {
+            return $folded;
+        }
+
+        $folded = [];
+
+        foreach (self::ALIASES as $field => $aliases) {
+            $seen = [];
+
+            foreach ($aliases as $alias) {
+                $value = self::fold($alias);
+
+                if ($value !== '' && ! isset($seen[$value])) {
+                    $seen[$value] = true;
+                    $folded[$field][] = $value;
+                }
+            }
+        }
+
+        return $folded;
+    }
+
+    /**
      * Fold a header to its comparable form. Public for the same reason as
      * aliases(): the two matchers must agree on what "the same name" means.
      */
@@ -104,20 +143,45 @@ class ColumnMapper
      * one field — a spreadsheet with both "Цена" and "Цена со скидкой" must not
      * end up with two prices fighting over the same key.
      *
+     * A header spelled in latin — `nazvanie`, `cena`, `narkh` — is read by
+     * transliterating it back into the vocabulary's own alphabet, the same way
+     * a live database's columns are. Exports out of a CMS or a hosting panel
+     * carry those headers constantly, and the alternative is listing every
+     * latin spelling of every word in three languages.
+     *
+     * The layers are ordered so certainty wins over cleverness: an exact match
+     * in the vocabulary's own languages, then an exact transliterated one, then
+     * the loose passes in the same order. A transliterated guess can never take
+     * a column a real word already claimed.
+     *
+     * Whatever is left over after the core fields have been claimed becomes an
+     * `extra` column rather than being dropped. Shops describe their goods with
+     * whatever attributes matter to them — Процессор, ОЗУ, Память on a laptop
+     * export, Размер and Цвет on a clothing one — and there is no fixed set of
+     * fields those could ever be forced into. Kept as extras they are stored
+     * verbatim under the owner's own header names, shown to the model with the
+     * product, and searchable; dropped, they were the reason the agent could not
+     * answer "which one has 16GB".
+     *
      * @param  string[]  $headers
-     * @return array<string, int>
+     * @param  array<int, array<int, string>>  $rows  Sample data rows, if available.
+     * @return array<string, int|int[]>
      */
-    public function suggest(array $headers): array
+    public function suggest(array $headers, array $rows = []): array
     {
         $normalized = array_map(fn ($h) => $this->normalize($h), $headers);
+
+        // Every reading of each header, computed once: this is a header row, so
+        // there is no point transliterating the same word per field per pass.
+        $latin = array_map(fn ($h) => Transliterator::candidates($h), $normalized);
+
+        $aliases = self::foldedAliases();
 
         $mapping = [];
         $takenColumns = [];
 
-        // Exact matches across every field first, so a precise header always
-        // wins its column before any substring rule gets a chance at it.
-        foreach ([true, false] as $exactPass) {
-            foreach (self::ALIASES as $field => $aliases) {
+        foreach ([[true, false], [true, true], [false, false], [false, true]] as [$exactPass, $translitPass]) {
+            foreach ($aliases as $field => $words) {
                 if (isset($mapping[$field])) {
                     continue;
                 }
@@ -127,7 +191,9 @@ class ColumnMapper
                         continue;
                     }
 
-                    if ($this->matches($header, $aliases, $exactPass)) {
+                    $forms = $translitPass ? $latin[$index] : [$header];
+
+                    if ($this->matchesAny($forms, $words, $exactPass)) {
                         $mapping[$field] = $index;
                         $takenColumns[$index] = true;
                         break;
@@ -136,7 +202,127 @@ class ColumnMapper
             }
         }
 
+        // A file whose name column is headed something the vocabulary has never
+        // seen is not an unusable file — it is the common case, because a shop
+        // headed it after what it sells ("Модель", "Позиция", "Бренд"). The
+        // name is the one field the import cannot proceed without, so when no
+        // header claimed it the values decide instead.
+        if (! isset($mapping['name']) && $rows !== []) {
+            $index = $this->columnThatLooksLikeAName($headers, $normalized, $rows, $takenColumns);
+
+            if ($index !== null) {
+                $mapping['name'] = $index;
+                $takenColumns[$index] = true;
+            }
+        }
+
+        $extra = [];
+
+        foreach ($normalized as $index => $header) {
+            // An unnamed column is a row number or a spreadsheet artefact, not
+            // an attribute — "№" folds to nothing and stays out.
+            if ($header === '' || isset($takenColumns[$index])) {
+                continue;
+            }
+
+            if ($rows === [] || $this->columnHasValues($rows, $index)) {
+                $extra[] = $index;
+            }
+        }
+
+        if ($extra !== []) {
+            $mapping['extra'] = $extra;
+        }
+
         return $mapping;
+    }
+
+    /**
+     * The leftmost unclaimed column whose values read like product names.
+     *
+     * Deliberately conservative: a column of numbers is a quantity or a code, a
+     * column of near-identical values is a category, and a column that is mostly
+     * empty is neither. Anything that survives all three is text that varies per
+     * row — which is what a product name is.
+     *
+     * @param  string[]  $headers
+     * @param  string[]  $normalized
+     * @param  array<int, array<int, string>>  $rows
+     * @param  array<int, bool>  $taken
+     */
+    protected function columnThatLooksLikeAName(array $headers, array $normalized, array $rows, array $taken): ?int
+    {
+        foreach (array_keys($headers) as $index) {
+            if (($normalized[$index] ?? '') === '' || isset($taken[$index])) {
+                continue;
+            }
+
+            $values = $this->columnValues($rows, $index);
+
+            if (count($values) < max(1, (int) ceil(count($rows) / 2))) {
+                continue;
+            }
+
+            $textual = array_filter($values, fn (string $value) => ! is_numeric(str_replace([' ', ',', "\u{00A0}"], '', $value)));
+
+            if (count($textual) < count($values)) {
+                continue;
+            }
+
+            // One repeated value across several rows is a category column.
+            if (count($values) > 2 && count(array_unique($values)) < 2) {
+                continue;
+            }
+
+            return $index;
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<int, array<int, string>>  $rows
+     */
+    protected function columnHasValues(array $rows, int $index): bool
+    {
+        return $this->columnValues($rows, $index) !== [];
+    }
+
+    /**
+     * The non-blank values a column holds across the sampled rows.
+     *
+     * @param  array<int, array<int, string>>  $rows
+     * @return string[]
+     */
+    protected function columnValues(array $rows, int $index): array
+    {
+        $values = [];
+
+        foreach ($rows as $row) {
+            $value = trim((string) ($row[$index] ?? ''));
+
+            if ($value !== '') {
+                $values[] = $value;
+            }
+        }
+
+        return $values;
+    }
+
+    /**
+     * @param  string[]  $forms  Readings of one header. Any of them matching is a match:
+     *                           they are alternative spellings of one word, not several words.
+     * @param  string[]  $aliases
+     */
+    protected function matchesAny(array $forms, array $aliases, bool $exact): bool
+    {
+        foreach ($forms as $form) {
+            if ($form !== '' && $this->matches($form, $aliases, $exact)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

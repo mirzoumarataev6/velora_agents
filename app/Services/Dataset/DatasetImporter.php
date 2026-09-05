@@ -87,7 +87,7 @@ class DatasetImporter
                 'url' => isset($mapping['url']) ? $this->values->url($row[$mapping['url']] ?? null) : null,
                 // Set here, not by the model's saving hook: these rows are bulk
                 // inserted and never instantiated.
-                'search_text' => DatasetProduct::searchText($name, $description, $sku),
+                'search_text' => DatasetProduct::searchText($name, $description, $sku, $category, $extra),
                 'category_key' => DatasetProduct::categoryKey($category),
                 'extra' => $extra === [] ? null : json_encode($extra, JSON_UNESCAPED_UNICODE),
                 'position' => $position++,

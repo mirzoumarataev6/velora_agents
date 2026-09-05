@@ -263,6 +263,70 @@ class SchemaDiscovererTest extends TestCase
         $this->assertSame(DiscoveryResult::DETERMINISTIC, $result->method);
     }
 
+    public function test_a_clear_leader_is_never_second_guessed_however_low_its_confidence(): void
+    {
+        config(['agent.database.discovery.use_llm' => true]);
+
+        $this->mock(LlmProviderInterface::class, function ($mock) {
+            $mock->shouldNotReceive('generate');
+        });
+
+        // A table whose NAME says nothing — `tbl_data` — but whose columns are
+        // unmistakable. That reads as LOW confidence, correctly: the owner
+        // should look at it. But there is no DECISION in doubt here, because
+        // there is only one candidate, and a model call to re-confirm the only
+        // answer is a cost with nothing attached to it.
+        $result = $this->discoverer()->discover($this->driver([
+            'tables' => [['name' => 'tbl_data', 'type' => 'table']],
+            'schema' => [
+                'tbl_data' => [
+                    ['name' => 'id', 'type' => 'int', 'numeric' => true],
+                    ['name' => 'name', 'type' => 'varchar', 'numeric' => false],
+                    ['name' => 'price', 'type' => 'decimal', 'numeric' => true],
+                ],
+            ],
+            'keys' => [],
+            'counts' => [],
+            'unique' => [['table' => 'tbl_data', 'column' => 'id']],
+        ]));
+
+        $this->assertSame('tbl_data', $result->best()->table);
+        $this->assertSame(TableCandidate::LOW, $result->best()->confidence);
+        $this->assertSame(DiscoveryResult::DETERMINISTIC, $result->method);
+    }
+
+    public function test_a_genuine_tie_is_still_taken_to_the_model(): void
+    {
+        config(['agent.database.discovery.use_llm' => true]);
+
+        // Retail and wholesale: identical shape, equally catalog-ish names, and
+        // therefore identical scores. This IS a decision — quoting wholesale
+        // prices to retail customers is what getting it wrong costs — and it is
+        // the one the tie-break exists for.
+        $this->mock(LlmProviderInterface::class, function ($mock) {
+            $mock->shouldReceive('generate')->once()->andReturn([
+                'text' => '{"table": "tovary_opt", "mapping": {"name": "name", "price": "price"}}',
+                'input_tokens' => 30,
+                'output_tokens' => 10,
+                'finish_reason' => 'STOP',
+            ]);
+        });
+
+        $result = $this->discoverer()->discover($this->driver([
+            'tables' => [['name' => 'tovary_roznica', 'type' => 'table'], ['name' => 'tovary_opt', 'type' => 'table']],
+            'schema' => [
+                'tovary_roznica' => [['name' => 'name', 'type' => 'varchar', 'numeric' => false], ['name' => 'price', 'type' => 'decimal', 'numeric' => true]],
+                'tovary_opt' => [['name' => 'name', 'type' => 'varchar', 'numeric' => false], ['name' => 'price', 'type' => 'decimal', 'numeric' => true]],
+            ],
+            'keys' => [],
+            'counts' => [],
+            'unique' => [],
+        ]));
+
+        $this->assertSame(DiscoveryResult::LLM_ASSISTED, $result->method);
+        $this->assertSame('tovary_opt', $result->best()->table);
+    }
+
     public function test_the_model_is_not_consulted_at_all_while_the_feature_is_off(): void
     {
         config(['agent.database.discovery.use_llm' => false]);

@@ -78,6 +78,71 @@ class SuggestionValidator
     }
 
     /**
+     * The same gate for the narrow question: which columns of ONE table mean the
+     * handful of fields we could not read.
+     *
+     * Three things are checked beyond "does this column exist", and each of them
+     * is a rule the deterministic pass would have applied itself:
+     *
+     *  - the answer may only speak about the fields it was asked about, so a
+     *    model cannot volunteer a re-reading of a column the vocabulary already
+     *    resolved;
+     *  - the TYPE has to suit the field — a numeric column is not a product
+     *    name, however confident the answer sounds;
+     *  - one column cannot be two fields at once, the same rule the mapping
+     *    screen enforces.
+     *
+     * Discarded whole on any violation, for the reason in the class comment: an
+     * answer wrong about a part we checked is not evidence about the parts we
+     * did not.
+     *
+     * @param  array<int, string>  $wanted  Fields the model was asked about.
+     * @param  array<string, mixed>  $suggestion
+     * @return array<string, string> field => column. Empty when unusable.
+     */
+    public function validateFields(DiscoveredSchema $schema, string $table, array $wanted, array $suggestion): array
+    {
+        if ($table === '' || $wanted === [] || ! $schema->hasTable($table)) {
+            return [];
+        }
+
+        $mapping = $suggestion['mapping'] ?? null;
+
+        if (! is_array($mapping) || $mapping === []) {
+            return [];
+        }
+
+        $checked = [];
+
+        foreach ($mapping as $field => $column) {
+            if (! is_string($field) || ! in_array($field, $wanted, true)) {
+                return [];
+            }
+
+            if (! is_string($column) || $column === '') {
+                return [];
+            }
+
+            // The question this class exists to ask.
+            if (! $schema->hasColumn($table, $column)) {
+                return [];
+            }
+
+            if (! ColumnRoleResolver::accepts($field, $schema->isNumeric($table, $column))) {
+                return [];
+            }
+
+            if (in_array($column, $checked, true)) {
+                return [];
+            }
+
+            $checked[$field] = $column;
+        }
+
+        return $checked;
+    }
+
+    /**
      * Turn a validated mapping into roles, taking each column's type from the
      * schema rather than from anything the model said about it.
      *

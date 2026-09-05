@@ -40,7 +40,12 @@ return [
             'connection' => env('DB_QUEUE_CONNECTION'),
             'table' => env('DB_QUEUE_TABLE', 'jobs'),
             'queue' => env('DB_QUEUE', 'default'),
-            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 90),
+            // Longer than HandleIncomingMessageJob's 120s timeout plus its
+            // backoff, and deliberately so: when retry_after is the shorter of
+            // the two, the queue hands a still-running job to a second worker
+            // and the customer is answered twice. The default used to be 90,
+            // which is under that job's timeout on its own.
+            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 360),
             'after_commit' => false,
         ],
 

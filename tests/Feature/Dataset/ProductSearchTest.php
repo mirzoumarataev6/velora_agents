@@ -269,7 +269,203 @@ class ProductSearchTest extends TestCase
         $this->assertSame(0, $result['count']);
         // The note must steer away from "we sell nothing", which is the failure
         // an empty result invites.
-        $this->assertStringContainsString('does NOT mean', $result['note']);
+        $this->assertStringContainsString('does not mean the business sells nothing', $result['note']);
+        // And it must be about THIS search, not a sentence the model could have
+        // memorised — see the repetition test below.
+        $this->assertStringContainsString('холодильник', $result['note']);
+    }
+
+    // --- the shop that reported this: a laptop catalog -----------------------
+
+    /**
+     * The catalog behind the bug report, kept close to the file that was
+     * uploaded: a laptop shop whose columns are №, Модель, Категория, Процессор,
+     * ОЗУ, Память, Цена (сомони). The product type is in the CATEGORY, the
+     * attributes are in extras, and the customer asks in the plural.
+     */
+    protected function agentWithLaptops(): Agent
+    {
+        $agent = Agent::factory()->for(User::factory())->create();
+
+        // description and sku are pinned to null rather than left to the factory:
+        // a random sku like "QX-4812" would put stray digits into the search
+        // text this fixture exists to make assertions about.
+        $this->catalog($agent, [
+            [
+                'name' => 'Lenovo LOQ 15', 'price' => 14999, 'stock' => 2,
+                'description' => null, 'sku' => null,
+                'category' => 'Ноутбук (игровой)',
+                'extra' => ['Процессор' => 'Core i5-12450H', 'ОЗУ' => '16 ГБ', 'Память' => '512 ГБ SSD'],
+            ],
+            [
+                'name' => 'HP Victus 16', 'price' => 18500, 'stock' => 1,
+                'description' => null, 'sku' => null,
+                'category' => 'Ноутбук (игровой)',
+                'extra' => ['Процессор' => 'Ryzen 7', 'ОЗУ' => '16 ГБ', 'Память' => '1 ТБ SSD'],
+            ],
+            [
+                'name' => 'Acer Aspire 3', 'price' => 6200, 'stock' => 5,
+                'description' => null, 'sku' => null,
+                'category' => 'Ноутбук (офисный)',
+                'extra' => ['Процессор' => 'Core i3', 'ОЗУ' => '8 ГБ', 'Память' => '256 ГБ SSD'],
+            ],
+            [
+                'name' => 'Logitech M190', 'price' => 180, 'stock' => 40,
+                'description' => null, 'sku' => null,
+                'category' => 'Мышь',
+                'extra' => ['Тип' => 'Беспроводная'],
+            ],
+        ]);
+
+        return $agent;
+    }
+
+    /**
+     * The reported failure, end to end: "игровые ноутбуки до 15000 сомони"
+     * returned nothing while a 14999 gaming laptop sat in the catalog. Three
+     * separate things had to be wrong for that, and this asserts all three at
+     * once — the plural, the category wording, and the budget.
+     */
+    public function test_a_plural_query_for_a_category_within_a_budget_finds_the_product(): void
+    {
+        $agent = $this->agentWithLaptops();
+
+        $result = $this->search->search($agent, [
+            'query' => 'игровые ноутбуки',
+            'max_price' => 15000,
+        ]);
+
+        $this->assertSame(['Lenovo LOQ 15'], $this->names($result['products']));
+    }
+
+    public function test_a_query_matches_words_that_only_appear_in_the_category(): void
+    {
+        $agent = $this->agentWithLaptops();
+
+        // "игровой" is in no product name — only in the category column.
+        $result = $this->search->search($agent, ['query' => 'игровой ноутбук', 'limit' => 20]);
+
+        $this->assertSame(['Lenovo LOQ 15', 'HP Victus 16'], $this->names($result['products']));
+    }
+
+    public function test_a_query_matches_the_attribute_columns_the_shop_uploaded(): void
+    {
+        $agent = $this->agentWithLaptops();
+
+        // Neither the header nor the value is a fixed field: they arrived as
+        // extras because this shop's file happened to have them.
+        $this->assertSame(
+            ['Acer Aspire 3'],
+            $this->names($this->search->search($agent, ['query' => 'ноутбук 8 ГБ'])['products']),
+        );
+
+        $this->assertSame(
+            ['Lenovo LOQ 15'],
+            $this->names($this->search->search($agent, ['query' => 'i5-12450H'])['products']),
+        );
+    }
+
+    public function test_the_category_filter_matches_a_word_inside_the_shops_own_category_name(): void
+    {
+        $agent = $this->agentWithLaptops();
+
+        // The model states the category the way the customer said it; the shop
+        // wrote "Ноутбук (игровой)". Every word has to land, in any form.
+        $result = $this->search->search($agent, ['category' => 'игровые ноутбуки', 'limit' => 20]);
+
+        $this->assertSame(['Lenovo LOQ 15', 'HP Victus 16'], $this->names($result['products']));
+    }
+
+    public function test_the_category_filter_still_requires_every_word_to_match(): void
+    {
+        $agent = $this->agentWithLaptops();
+
+        // "мышь" is a real category and "игровая" is a real word, but nothing is
+        // both — a filter where one word matches must not open the whole shop.
+        $result = $this->search->search($agent, ['category' => 'игровая мышь', 'limit' => 20]);
+
+        $this->assertSame(0, $result['count']);
+    }
+
+    public function test_a_category_and_a_price_range_narrow_together(): void
+    {
+        $agent = $this->agentWithLaptops();
+
+        $result = $this->search->search($agent, [
+            'category' => 'ноутбук',
+            'min_price' => 10000,
+            'max_price' => 20000,
+            'sort' => 'price_asc',
+            'limit' => 20,
+        ]);
+
+        // The office laptop is in the category and out of the band; the mouse is
+        // in neither.
+        $this->assertSame(['Lenovo LOQ 15', 'HP Victus 16'], $this->names($result['products']));
+    }
+
+    public function test_the_price_bound_is_inclusive_of_the_bound_itself(): void
+    {
+        $agent = $this->agentWithLaptops();
+
+        // 14999 under a 14999 ceiling: an exclusive comparison here is how a
+        // catalog loses the one product that fits the customer's budget exactly.
+        $this->assertSame(
+            ['Lenovo LOQ 15'],
+            $this->names($this->search->search($agent, ['max_price' => 14999, 'min_price' => 14999])['products']),
+        );
+    }
+
+    // --- what an empty result tells the model (BUG 3) ------------------------
+
+    public function test_an_empty_result_offers_the_products_that_were_one_filter_away(): void
+    {
+        $agent = $this->agentWithLaptops();
+
+        // Gaming laptops exist; none is under 10000. The model must be handed
+        // the near misses rather than only the news that there was no match.
+        $result = $this->search->search($agent, [
+            'category' => 'игровой',
+            'max_price' => 10000,
+        ]);
+
+        $this->assertSame(0, $result['count']);
+        $this->assertSame(['Lenovo LOQ 15', 'HP Victus 16'], $this->names($result['nearest']));
+        $this->assertStringContainsString('EXCEPT the price', $result['nearest_note']);
+        // And it must not be able to pass them off as being within budget.
+        $this->assertStringContainsString('nothing fits the budget', $result['nearest_note']);
+    }
+
+    public function test_an_empty_result_widens_the_category_when_the_budget_was_not_the_problem(): void
+    {
+        $agent = $this->agentWithLaptops();
+
+        $result = $this->search->search($agent, ['category' => 'планшет']);
+
+        $this->assertSame(0, $result['count']);
+        $this->assertNotSame([], $result['nearest']);
+        $this->assertStringContainsString('more widely', $result['nearest_note']);
+    }
+
+    /**
+     * The repetition bug: the model used to be handed one fixed sentence for
+     * every miss and, unsurprisingly, sent one fixed sentence back every time.
+     * Two different misses must not produce the same guidance.
+     */
+    public function test_two_different_empty_searches_do_not_produce_the_same_guidance(): void
+    {
+        $agent = $this->agentWithLaptops();
+
+        $first = $this->search->search($agent, ['query' => 'холодильник']);
+        $second = $this->search->search($agent, ['category' => 'ноутбук', 'max_price' => 500]);
+
+        $this->assertNotSame($first['note'], $second['note']);
+        $this->assertStringContainsString('холодильник', $first['note']);
+        $this->assertStringContainsString('up to 500', $second['note']);
+        // Whatever else it says, it has to forbid reusing the last reply.
+        foreach ([$first, $second] as $result) {
+            $this->assertStringContainsString('Do NOT repeat', $result['note']);
+        }
     }
 
     public function test_results_are_presented_without_internal_identifiers(): void

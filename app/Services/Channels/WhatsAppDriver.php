@@ -35,7 +35,10 @@ class WhatsAppDriver implements ChannelDriverInterface
     // customer's last inbound message.
     protected const CUSTOMER_SERVICE_WINDOW_HOURS = 24;
 
-    public function __construct(protected LlmProviderInterface $llm) {}
+    public function __construct(
+        protected LlmProviderInterface $llm,
+        protected OutboundMarkdown $markdown = new OutboundMarkdown,
+    ) {}
 
     public function authenticateIncomingRequest(Request $request, Channel $channel): bool
     {
@@ -178,7 +181,24 @@ class WhatsAppDriver implements ChannelDriverInterface
         $phoneNumberId = $this->phoneNumberId($channel);
         $token = $this->accessToken($channel);
 
-        foreach ($this->splitMessage($text, self::MAX_MESSAGE_LENGTH) as $chunk) {
+        // Converted before splitting, not after: WhatsApp's markers are plain
+        // characters, so a span cut across two messages degrades to a visible
+        // asterisk rather than to a rejected message. Converting first keeps the
+        // chunk sizes honest about what is actually sent.
+        // Falls back to the model's own text if the conversion throws: visible
+        // asterisks are a blemish, an undelivered message is a lost customer.
+        try {
+            $body = $this->markdown->toWhatsApp($text);
+        } catch (Throwable $e) {
+            Log::warning('Markdown conversion failed; sending the raw text', [
+                'channel_id' => $channel->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            $body = $text;
+        }
+
+        foreach ($this->splitMessage($body, self::MAX_MESSAGE_LENGTH) as $chunk) {
             $this->call($token, $phoneNumberId, [
                 'messaging_product' => 'whatsapp',
                 'to' => $externalUserId,

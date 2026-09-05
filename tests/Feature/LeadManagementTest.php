@@ -29,6 +29,61 @@ class LeadManagementTest extends TestCase
         $response->assertDontSee('Чужая заявка');
     }
 
+    /**
+     * An order taken without a number is still an order — but the owner has to
+     * see, before they go looking for a phone number that was never given, that
+     * this customer can only be answered in the chat they wrote from.
+     */
+    public function test_the_chat_only_badge_marks_orders_that_have_no_phone_number(): void
+    {
+        $owner = User::factory()->create();
+        $agent = Agent::factory()->for($owner)->create();
+
+        Lead::factory()->for($agent)->chatOnly()->create(['customer_name' => 'Без номера']);
+
+        $response = $this->actingAs($owner)->get(route('leads.index'));
+
+        $response->assertOk();
+        $response->assertSee('Без номера');
+        $response->assertSee(__('leads.index.chat_only'));
+        // And it says why, for an owner who has not met the badge before.
+        $response->assertSee(__('leads.index.chat_only_hint'), false);
+    }
+
+    public function test_the_chat_only_badge_is_absent_when_a_phone_number_was_given(): void
+    {
+        $owner = User::factory()->create();
+        $agent = Agent::factory()->for($owner)->create();
+
+        Lead::factory()->for($agent)->create([
+            'customer_name' => 'С номером',
+            'phone' => '+992901234567',
+        ]);
+
+        $response = $this->actingAs($owner)->get(route('leads.index'));
+
+        $response->assertOk();
+        $response->assertSee('+992901234567');
+        $response->assertDontSee(__('leads.index.chat_only'));
+    }
+
+    /**
+     * Both kinds in one list: the badge has to distinguish them, not decorate
+     * every row.
+     */
+    public function test_only_the_phoneless_order_is_badged_in_a_mixed_list(): void
+    {
+        $owner = User::factory()->create();
+        $agent = Agent::factory()->for($owner)->create();
+
+        Lead::factory()->for($agent)->create(['customer_name' => 'Звонить можно', 'phone' => '+992905550101']);
+        Lead::factory()->for($agent)->chatOnly()->create(['customer_name' => 'Только чат']);
+
+        $html = $this->actingAs($owner)->get(route('leads.index'))->assertOk()->getContent();
+
+        $this->assertSame(1, substr_count($html, __('leads.index.chat_only')));
+    }
+
     public function test_visiting_the_index_marks_leads_seen(): void
     {
         $owner = User::factory()->create();

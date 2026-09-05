@@ -99,8 +99,12 @@ class LiveProductSearchTest extends TestCase
         $this->assertSame('products', $query->table);
         // Column names come from the mapping, never from the model's arguments.
         $this->assertSame('title', $query->columns['name']->column);
-        $this->assertSame(['title', 'descr', 'article'], array_column($query->textGroups[0]['columns'], 'column'));
-        $this->assertSame('куртка', $query->textGroups[0]['value']);
+        // The category column is searched as text too: a customer's words for a
+        // product are as often the shop's category as its product name.
+        $this->assertSame(['title', 'cat', 'descr', 'article'], array_column($query->textGroups[0]['columns'], 'column'));
+        // Matched on the stem, so the plural the customer typed still finds the
+        // singular the shop stored.
+        $this->assertSame('куртк', $query->textGroups[0]['value']);
         $this->assertCount(1, $query->conditions);
         $this->assertSame('price', $query->conditions[0]['column']->column);
         $this->assertSame('<=', $query->conditions[0]['operator']);

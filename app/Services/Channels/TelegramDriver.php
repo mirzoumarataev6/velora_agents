@@ -22,9 +22,16 @@ class TelegramDriver implements ChannelDriverInterface
 
     protected const MAX_MESSAGE_LENGTH = 4096;
 
+    /**
+     * Room left for the HTML tags the conversion adds after the split. A chunk
+     * measured at the raw limit could cross it once "**x**" becomes "<b>x</b>".
+     */
+    protected const FORMATTING_MARGIN = 256;
+
     public function __construct(
         protected LlmProviderInterface $llm,
         protected VoiceTranscriber $transcriber,
+        protected OutboundMarkdown $markdown = new OutboundMarkdown,
     ) {}
 
     public function verifyWebhook(Request $request, Channel $channel): ?Response
@@ -275,15 +282,56 @@ class TelegramDriver implements ChannelDriverInterface
         }
     }
 
+    /**
+     * Sent as HTML, converted from the Markdown the model writes.
+     *
+     * The conversion runs PER CHUNK, after splitting, so every tag a chunk opens
+     * it also closes — Telegram rejects a message with an unbalanced tag, and a
+     * rejected message is one the customer never sees. A bold span that happens
+     * to straddle a chunk boundary simply is not converted; the worst case is a
+     * literal "**", which is where this started and is survivable.
+     *
+     * If Telegram refuses the HTML anyway, the same chunk goes again as plain
+     * text with the markup stripped. Formatting is a nicety; delivery is not.
+     */
     public function sendMessage(Channel $channel, string $externalUserId, string $text): void
     {
         $token = $this->token($channel);
 
-        foreach ($this->splitMessage($text, self::MAX_MESSAGE_LENGTH) as $chunk) {
-            $this->call($token, 'sendMessage', [
+        foreach ($this->splitMessage($text, self::MAX_MESSAGE_LENGTH - self::FORMATTING_MARGIN) as $chunk) {
+            // Formatting must never be the reason a message is not delivered.
+            // A conversion that throws costs the customer their answer, which is
+            // an absurd price for a bold product name.
+            try {
+                $formatted = $this->markdown->toTelegramHtml($chunk);
+            } catch (\Throwable $e) {
+                Log::warning('Markdown conversion failed; sending the raw text', [
+                    'channel_id' => $channel->id,
+                    'error' => $e->getMessage(),
+                ]);
+
+                $this->call($token, 'sendMessage', ['chat_id' => $externalUserId, 'text' => $chunk]);
+
+                continue;
+            }
+
+            $response = $this->call($token, 'sendMessage', [
                 'chat_id' => $externalUserId,
-                'text' => $chunk,
+                'text' => $formatted,
+                'parse_mode' => 'HTML',
             ]);
+
+            if (! ($response['ok'] ?? false)) {
+                Log::warning('Telegram rejected a formatted message; resending it as plain text', [
+                    'channel_id' => $channel->id,
+                    'description' => $response['description'] ?? null,
+                ]);
+
+                $this->call($token, 'sendMessage', [
+                    'chat_id' => $externalUserId,
+                    'text' => $this->markdown->toPlainText($chunk),
+                ]);
+            }
         }
     }
 

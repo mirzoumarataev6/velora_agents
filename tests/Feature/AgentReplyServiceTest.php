@@ -240,8 +240,54 @@ class AgentReplyServiceTest extends TestCase
         $this->assertStringContainsString('2-4 sentences', $captured);
         $this->assertStringContainsString('not an email', $captured);
         $this->assertStringContainsString('bullet points', $captured);
-        $this->assertStringContainsString('at most ONE product', $captured);
+        // Up to three, not one: a consultant comparing two options for a
+        // customer who is choosing is the behaviour we now want. The ceiling is
+        // still there — it is a recommendation, not a catalogue dump.
+        $this->assertStringContainsString('at most THREE products', $captured);
         $this->assertStringContainsString('at most ONE question', $captured);
+    }
+
+    /**
+     * Tone cannot be unit tested, but its absence from the prompt can. This is
+     * the smoke test behind the consultant-not-catalogue change: the four moves
+     * a salesperson makes, and the two limits that keep them from turning into
+     * invention or into a template.
+     */
+    public function test_system_prompt_asks_for_consultative_selling_not_a_product_list(): void
+    {
+        $captured = $this->capturePrompt(Agent::factory()->create(), 'какие ноутбуки у вас есть?');
+
+        $this->assertStringContainsString('you are a salesperson, not a catalogue', $captured);
+
+        // Start from the need, recommend rather than enumerate, explain in the
+        // customer's terms, name a trade-off, ask the narrowing question.
+        $this->assertStringContainsString('START FROM THE NEED', $captured);
+        $this->assertStringContainsString('RECOMMEND, DO NOT ENUMERATE', $captured);
+        $this->assertStringContainsString("SAY WHY, IN THE CUSTOMER'S TERMS", $captured);
+        $this->assertStringContainsString('GIVE ONE HONEST TRADE-OFF PER RECOMMENDATION', $captured);
+        $this->assertStringContainsString('ASK THE ONE QUESTION THAT NARROWS IT', $captured);
+
+        // The two guardrails. Without the first this licenses invented
+        // drawbacks; without the second it becomes a four-part template, which
+        // is the robot it replaced wearing a better suit.
+        $this->assertStringContainsString('Never invent a drawback', $captured);
+        $this->assertStringContainsString('SOUND LIKE A PERSON EACH TIME', $captured);
+    }
+
+    /**
+     * The consultative style must not walk back the anti-repetition work: a
+     * salesperson who says the same thing twice is the bug we just fixed.
+     */
+    public function test_the_consultative_style_still_forbids_repeating_yourself(): void
+    {
+        $agent = Agent::factory()->create(['response_format' => ['fallback_message' => 'Уточню и вернусь.']]);
+
+        $captured = $this->capturePrompt($agent, 'какие ноутбуки у вас есть?');
+
+        $this->assertStringContainsString('do not repeat a phrase you used earlier', $captured);
+        // And the owner's fallback text is still tone guidance, not a line to send.
+        $this->assertStringContainsString('For tone only', $captured);
+        $this->assertStringNotContainsString('You may phrase it close to', $captured);
     }
 
     public function test_proactivity_level_shapes_the_system_prompt(): void
@@ -348,11 +394,18 @@ class AgentReplyServiceTest extends TestCase
         $conversation = $agent->conversations()->create(['status' => 'ai']);
         $service = $this->app->make(AgentReplyService::class);
 
-        $service->reply($conversation, 'Salom');
+        // A message with no language in it at all. Detection declines to guess,
+        // and the fallback instructions still have to cover the case.
+        $service->reply($conversation, '?');
         $this->assertStringContainsString('default to Russian', $captured);
 
-        $service->reply($conversation, '?');
+        $service->reply($conversation, '👍');
         $this->assertStringContainsString('keep using whatever language your own earlier replies', $captured);
+
+        // Once the customer writes something with a language in it, the prompt
+        // names that language instead of asking the model to work it out.
+        $service->reply($conversation, 'Salom, narkh chand somoni?');
+        $this->assertStringContainsString('WRITE YOUR REPLY IN Tajik', $captured);
     }
 
     public function test_ask_for_product_name_skips_retrieval_and_stays_short(): void

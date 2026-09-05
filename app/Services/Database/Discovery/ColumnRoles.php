@@ -15,14 +15,83 @@ namespace App\Services\Database\Discovery;
  */
 final class ColumnRoles
 {
+    /** Read straight off the vocabulary, in one of the platform's languages. */
+    public const DIRECT = 'direct';
+
+    /** Read after transliterating a latin spelling back to Cyrillic. */
+    public const TRANSLITERATED = 'transliterated';
+
+    /** Identified by a language model when nothing else could. */
+    public const INTERPRETED = 'interpreted';
+
     /**
      * @param  array<string, string>  $columns  field => column name
      * @param  array<string, bool>  $numeric  field => whether that column is numeric
+     * @param  array<string, string>  $sources  field => how it was recognized. Absent means
+     *                                          DIRECT, which is both the commonest case and the one that needs no
+     *                                          explaining to the owner.
      */
     public function __construct(
         public readonly array $columns = [],
         public readonly array $numeric = [],
+        public readonly array $sources = [],
     ) {}
+
+    /** How this field's column was recognized. */
+    public function source(string $field): string
+    {
+        return $this->sources[$field] ?? self::DIRECT;
+    }
+
+    /**
+     * The fields recognized by one route, in the catalog's field order.
+     *
+     * What the owner is shown is built from this: a column we transliterated or
+     * asked a model about is a column they should look at twice, and saying
+     * which ones costs nothing while leaving it unsaid costs them the chance to
+     * catch it.
+     *
+     * @return array<string, string> field => column
+     */
+    public function from(string $source): array
+    {
+        $fields = [];
+
+        foreach ($this->columns as $field => $column) {
+            if ($this->source($field) === $source) {
+                $fields[$field] = $column;
+            }
+        }
+
+        return $fields;
+    }
+
+    /**
+     * The same roles with more fields added, each tagged with where it came
+     * from. Existing fields are never overwritten: whatever resolved a field
+     * first did so from stronger evidence than whatever is arriving now.
+     *
+     * @param  array<string, string>  $columns  field => column
+     * @param  array<string, bool>  $numeric  field => whether that column is numeric
+     */
+    public function with(array $columns, array $numeric, string $source): self
+    {
+        $merged = $this->columns;
+        $mergedNumeric = $this->numeric;
+        $sources = $this->sources;
+
+        foreach ($columns as $field => $column) {
+            if (isset($merged[$field])) {
+                continue;
+            }
+
+            $merged[$field] = $column;
+            $mergedNumeric[$field] = (bool) ($numeric[$field] ?? false);
+            $sources[$field] = $source;
+        }
+
+        return new self($merged, $mergedNumeric, $sources);
+    }
 
     public function has(string $field): bool
     {

@@ -27,6 +27,15 @@ return [
             'threatening_to_leave' => 'Угрожает уйти к конкурентам',
             'fallback' => 'Агент не смог ответить',
         ],
+        'auto_summary' => [
+            // Written by the pipeline's own detector rather than by the model,
+            // so the owner sees why the handover fired without a summary having
+            // to be generated for it.
+            'abuse' => 'Клиент грубит ассистенту',
+            'repeated_rudeness' => 'Клиент повторно грубит ассистенту',
+            'asked_for_human' => 'Клиент просит позвать человека',
+            'repeated_question' => 'Клиент несколько раз задаёт один и тот же вопрос',
+        ],
         'notify' => [
             'title' => 'Клиенту нужен человек',
             'cta' => 'Откройте диалог и ответьте лично:',

@@ -7,6 +7,7 @@ use App\Services\Llm\LlmProviderInterface;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
 use Throwable;
 
@@ -27,7 +28,10 @@ class InstagramDriver implements ChannelDriverInterface
     // Instagram Messaging enforces the same 2000-character text limit as Messenger.
     protected const MAX_MESSAGE_LENGTH = 2000;
 
-    public function __construct(protected LlmProviderInterface $llm) {}
+    public function __construct(
+        protected LlmProviderInterface $llm,
+        protected OutboundMarkdown $markdown = new OutboundMarkdown,
+    ) {}
 
     public function authenticateIncomingRequest(Request $request, Channel $channel): bool
     {
@@ -143,7 +147,23 @@ class InstagramDriver implements ChannelDriverInterface
         $accountId = $this->accountId($channel);
         $token = $this->accessToken($channel);
 
-        foreach ($this->splitMessage($text, self::MAX_MESSAGE_LENGTH) as $chunk) {
+        // Instagram DMs render no formatting whatsoever, so the markers are not
+        // converted, they are removed — anything left behind is punctuation the
+        // customer reads as a mistake.
+        // Same reasoning as the other drivers: formatting is cosmetic, delivery
+        // is not.
+        try {
+            $body = $this->markdown->toPlainText($text);
+        } catch (Throwable $e) {
+            Log::warning('Markdown conversion failed; sending the raw text', [
+                'channel_id' => $channel->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            $body = $text;
+        }
+
+        foreach ($this->splitMessage($body, self::MAX_MESSAGE_LENGTH) as $chunk) {
             $this->call($token, $accountId, [
                 'recipient' => ['id' => $externalUserId],
                 'message' => ['text' => $chunk],

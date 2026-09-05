@@ -105,7 +105,11 @@ class DatasetController extends Controller
             'sample' => array_slice($parsed['rows'], 0, (int) config('agent.dataset.sample_rows')),
             'row_count' => count($parsed['rows']),
             'truncated' => $parsed['truncated'],
-            'mapping' => $reused ? $previous->mapping : $this->mapper->suggest($parsed['headers']),
+            // The sample rows go in with the headers: they are what lets a
+            // column headed something the vocabulary has never seen still be
+            // recognised as the product name, and what keeps an empty column out
+            // of the extras.
+            'mapping' => $reused ? $previous->mapping : $this->mapper->suggest($parsed['headers'], $parsed['rows']),
             'mapping_reused' => (bool) $reused,
         ]);
     }
@@ -282,6 +286,12 @@ class DatasetController extends Controller
                 'category' => $product->category,
                 'sku' => $product->sku,
                 'url' => $product->url,
+                // The shop's own attribute columns, under its own header names.
+                // The preview renders whatever this file actually has rather
+                // than a fixed five columns, so a laptop catalog shows Процессор
+                // and ОЗУ instead of two empty columns headed Артикул and
+                // Остаток — which read as data that failed to import.
+                'extra' => $product->extra ?? [],
             ])
             ->all();
 

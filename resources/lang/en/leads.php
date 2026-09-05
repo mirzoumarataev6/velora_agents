@@ -6,6 +6,8 @@ return [
         'heading' => 'Leads',
         'subheading' => 'Orders and requests your assistants captured from customers.',
         'all_agents' => 'All agents',
+        'chat_only' => 'chat only',
+        'chat_only_hint' => 'No phone number — the order was taken anyway; reach this customer in the chat',
         'no_name' => 'Unnamed customer',
         'items_label' => 'Wants',
         'note_label' => 'Note',

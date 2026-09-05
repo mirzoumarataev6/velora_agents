@@ -6,6 +6,7 @@ use App\Models\Agent;
 use App\Models\Dataset;
 use App\Models\DatasetProduct;
 use App\Models\User;
+use App\Services\Dataset\ProductSearchService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
@@ -94,6 +95,65 @@ class CatalogImportTest extends TestCase
             ->assertJsonPath('mapping.url', 4);
     }
 
+    public function test_analyze_suggests_transliterated_headers_too(): void
+    {
+        $user = User::factory()->create();
+        $agent = Agent::factory()->for($user)->create();
+
+        // The shape a CMS or hosting-panel export actually has: Russian words
+        // typed on a latin keyboard. They are read by transliterating them back
+        // into the vocabulary's own alphabet rather than by listing every latin
+        // spelling of every word — see Transliterator.
+        $this->actingAs($user)->post(
+            route('agents.catalog.analyze', $agent),
+            ['file' => $this->csv("nazvanie;cena;ostatok;kategoriya;artikul\nКуртка;1200;5;Верхняя одежда;AB-1\n")],
+            ['Accept' => 'application/json'],
+        )
+            ->assertOk()
+            ->assertJsonPath('mapping.name', 0)
+            ->assertJsonPath('mapping.price', 1)
+            ->assertJsonPath('mapping.stock', 2)
+            ->assertJsonPath('mapping.category', 3)
+            ->assertJsonPath('mapping.sku', 4);
+    }
+
+    public function test_analyze_reads_a_tajik_header_row(): void
+    {
+        $user = User::factory()->create();
+        $agent = Agent::factory()->for($user)->create();
+
+        // `nom` and `narkh` are in the vocabulary in Cyrillic; the latin
+        // spellings come free with the transliteration, which is the point of
+        // doing it this way rather than adding aliases per language.
+        $this->actingAs($user)->post(
+            route('agents.catalog.analyze', $agent),
+            ['file' => $this->csv("nom;narkh;miqdor\nКуртка;1200;5\n")],
+            ['Accept' => 'application/json'],
+        )
+            ->assertOk()
+            ->assertJsonPath('mapping.name', 0)
+            ->assertJsonPath('mapping.price', 1)
+            ->assertJsonPath('mapping.stock', 2);
+    }
+
+    public function test_a_real_header_beats_a_transliterated_reading_of_another_one(): void
+    {
+        $user = User::factory()->create();
+        $agent = Agent::factory()->for($user)->create();
+
+        // "cena" reads as "цена", but "Цена" IS that word. A transliterated
+        // guess must never take a column a real word already claimed — the
+        // latin column here is the wholesale one.
+        $this->actingAs($user)->post(
+            route('agents.catalog.analyze', $agent),
+            ['file' => $this->csv("Название;cena;Цена\nКуртка;600;1200\n")],
+            ['Accept' => 'application/json'],
+        )
+            ->assertOk()
+            ->assertJsonPath('mapping.name', 0)
+            ->assertJsonPath('mapping.price', 2);
+    }
+
     /**
      * The reason the mapping step exists: an export whose first price-ish column
      * is the wholesale price must not silently become THE price.
@@ -110,6 +170,124 @@ class CatalogImportTest extends TestCase
         )
             ->assertOk()
             ->assertJsonPath('mapping.price', 2);
+    }
+
+    /**
+     * The file behind the bug report. Its columns are not the ones the mapper
+     * was written around: there is no Артикул and no Остаток, the product name
+     * is headed "Модель", and three of the seven columns (Процессор, ОЗУ,
+     * Память) are attributes that belong to laptops and to nothing else.
+     *
+     * All three failure modes are asserted here: the name must be found, the
+     * fields the file does not have must not be invented, and the attributes
+     * must be kept rather than dropped.
+     */
+    public function test_analyze_maps_a_file_whose_columns_are_not_the_usual_ones(): void
+    {
+        $user = User::factory()->create();
+        $agent = Agent::factory()->for($user)->create();
+
+        $response = $this->actingAs($user)->post(
+            route('agents.catalog.analyze', $agent),
+            ['file' => $this->csv(
+                "№;Модель;Категория;Процессор;ОЗУ;Память;Цена (сомони)\n"
+                ."1;Lenovo LOQ 15;Ноутбук (игровой);Core i5-12450H;16 ГБ;512 ГБ SSD;14 999\n"
+                ."2;Acer Aspire 3;Ноутбук (офисный);Core i3;8 ГБ;256 ГБ SSD;6 200\n"
+            )],
+            ['Accept' => 'application/json'],
+        );
+
+        $response->assertOk()
+            ->assertJsonPath('mapping.name', 1)
+            ->assertJsonPath('mapping.category', 2)
+            ->assertJsonPath('mapping.price', 6)
+            // The attributes are kept as extras, under the file's own headers.
+            ->assertJsonPath('mapping.extra', [3, 4, 5]);
+
+        // Nothing is claimed for a field the file has no column for. A suggested
+        // "Артикул ← ОЗУ" is worse than no suggestion: the owner confirms it and
+        // the agent starts quoting memory sizes as article numbers.
+        $mapping = $response->json('mapping');
+        $this->assertArrayNotHasKey('sku', $mapping);
+        $this->assertArrayNotHasKey('stock', $mapping);
+        $this->assertArrayNotHasKey('description', $mapping);
+        $this->assertArrayNotHasKey('url', $mapping);
+
+        // The row-number column is neither a field nor an attribute.
+        $this->assertNotContains(0, $mapping['extra']);
+    }
+
+    /**
+     * The name is the one field an import cannot proceed without, so when no
+     * header claims it the sampled values are allowed to.
+     */
+    public function test_a_name_column_is_found_from_its_values_when_its_header_is_unknown(): void
+    {
+        $user = User::factory()->create();
+        $agent = Agent::factory()->for($user)->create();
+
+        $this->actingAs($user)->post(
+            route('agents.catalog.analyze', $agent),
+            ['file' => $this->csv("Код;Позиция;Цена\n1;Куртка зимняя;1200\n2;Шапка вязаная;450\n")],
+            ['Accept' => 'application/json'],
+        )
+            ->assertOk()
+            // "Позиция" is in no vocabulary; it holds text that differs per row,
+            // which the numeric "Код" column does not.
+            ->assertJsonPath('mapping.name', 1)
+            ->assertJsonPath('mapping.price', 2);
+    }
+
+    public function test_extra_attributes_survive_the_import_and_are_searchable(): void
+    {
+        $user = User::factory()->create();
+        $agent = Agent::factory()->for($user)->create();
+
+        $this->upload($user, $agent,
+            "Модель;Категория;ОЗУ;Цена (сомони)\nLenovo LOQ 15;Ноутбук (игровой);16 ГБ;14 999\n",
+        )['import']->assertOk();
+
+        $product = DatasetProduct::sole();
+
+        $this->assertSame('Lenovo LOQ 15', $product->name);
+        $this->assertSame('14999.00', $product->price);
+        $this->assertSame(['ОЗУ' => '16 ГБ'], $product->extra);
+
+        // The catalog is asked about in the customer's words, not the file's:
+        // the category and the attributes have to be part of what is matched.
+        $this->assertStringContainsString('игровой', $product->search_text);
+        $this->assertStringContainsString('озу 16 гб', $product->search_text);
+    }
+
+    /**
+     * The whole reported bug in one pass: the file is uploaded with the mapping
+     * the app suggested for it, and then asked the question the customer asked.
+     * Every earlier test here covers one link of that chain; this is the chain.
+     */
+    public function test_the_uploaded_catalog_answers_the_question_the_customer_asked(): void
+    {
+        $user = User::factory()->create();
+        $agent = Agent::factory()->for($user)->create();
+
+        $this->upload($user, $agent,
+            "№;Модель;Категория;Процессор;ОЗУ;Память;Цена (сомони)\n"
+            ."1;Lenovo LOQ 15;Ноутбук (игровой);Core i5-12450H;16 ГБ;512 ГБ SSD;14 999\n"
+            ."2;HP Victus 16;Ноутбук (игровой);Ryzen 7;16 ГБ;1 ТБ SSD;18 500\n"
+            ."3;Acer Aspire 3;Ноутбук (офисный);Core i3;8 ГБ;256 ГБ SSD;6 200\n",
+        )['import']->assertOk();
+
+        // "игровые ноутбуки до 15000 сомони" as the model would fill it in.
+        $result = app(ProductSearchService::class)->search($agent, [
+            'query' => 'игровые ноутбуки',
+            'max_price' => 15000,
+        ]);
+
+        $this->assertSame(1, $result['count']);
+        $this->assertSame('Lenovo LOQ 15', $result['products'][0]['name']);
+        $this->assertSame('14999', $result['products'][0]['price']);
+        // The attributes travel with it, so the model can answer the follow-up
+        // about the processor without another upload having been needed.
+        $this->assertSame('Core i5-12450H', $result['products'][0]['details']['Процессор']);
     }
 
     public function test_import_stores_typed_products_scoped_to_the_agent(): void

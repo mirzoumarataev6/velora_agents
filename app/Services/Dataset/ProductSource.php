@@ -28,6 +28,21 @@ interface ProductSource
     public function hasProducts(): bool;
 
     /**
+     * Whether this source can answer "is it in stock" at all.
+     *
+     * False for a catalog whose file had no stock column, and for a live table
+     * whose mapping has none or maps a non-numeric one. The distinction matters
+     * because the alternative is silent and total: `stock > 0` is false for
+     * every NULL, so applying the filter to a source that tracks nothing
+     * excludes the entire catalog and reports "we have none of those" about a
+     * shop that has ten.
+     *
+     * Must be cheap. It is consulted once per search, and only when the model
+     * actually asked to filter by stock.
+     */
+    public function tracksStock(): bool;
+
+    /**
      * Run one search and return presented product rows.
      *
      * @param  array<string, mixed>  $filters  Already normalized by ProductSearchService.

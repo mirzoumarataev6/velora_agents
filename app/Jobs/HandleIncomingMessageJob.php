@@ -16,6 +16,7 @@ use App\Services\TelegramNotifyLinker;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -39,12 +40,34 @@ class HandleIncomingMessageJob implements ShouldQueue
 
     public bool $deleteWhenMissingModels = true;
 
-    public int $tries = 2;
+    /**
+     * Three attempts, not two. The second exists for a network blip; the third
+     * for a provider that is rate-limiting or briefly down, which the backoff
+     * below is spaced to ride out.
+     */
+    public int $tries = 3;
 
     public int $timeout = 120;
 
-    /** Seconds before the single retry — long enough to outlast a network blip. */
-    public array $backoff = [15];
+    /**
+     * Exponential-ish, in seconds. The last gap is deliberately long: if two
+     * attempts have already failed the cause is not transient jitter, and a
+     * customer waiting a minute for an answer is better than one who gets none.
+     *
+     * MUST stay well under the connection's retry_after (see config/queue.php),
+     * or the queue hands the job to a second worker while the first still holds
+     * it and the customer is answered twice.
+     */
+    public array $backoff = [10, 45];
+
+    /**
+     * How long a redelivered update stays recognised as one already seen.
+     *
+     * Telegram retries a webhook it thinks was not acknowledged, and its retry
+     * window is minutes, not seconds. Comfortably longer than every attempt plus
+     * its backoff, so a retry of THIS job is never mistaken for a duplicate.
+     */
+    protected const UPDATE_DEDUP_TTL = 900;
 
     /**
      * @param  array<string, mixed>  $payload  Decoded webhook JSON body.
@@ -57,6 +80,19 @@ class HandleIncomingMessageJob implements ShouldQueue
         TelegramNotifyLinker $linker,
         HumanizedReplySender $sender,
     ): void {
+        // Telegram redelivers an update it believes was not acknowledged, and
+        // it does so with the same update_id. Claimed atomically, before any
+        // parsing or database work: whichever execution gets the lock owns this
+        // update, the rest stop here.
+        //
+        // Deliberately keyed on the delivery, not the message, so a redelivered
+        // NON-message update (an edit, a reaction, a callback) also costs
+        // nothing. The message-level constraints further down remain the source
+        // of truth; this is what stops the work from being done twice at all.
+        if (! $this->claimUpdate()) {
+            return;
+        }
+
         $driver = $drivers->for($this->channel);
 
         $incoming = $driver->parseIncomingMessage($this->payload, $this->channel);
@@ -72,15 +108,16 @@ class HandleIncomingMessageJob implements ShouldQueue
             return;
         }
 
-        // Fast-path dedup: cheap optimization that avoids most duplicate work
-        // (Vision calls, embeddings, generation). Not the source of truth —
-        // the unique constraints below are what actually prevent a duplicate
-        // reply if two executions race past this check.
-        $alreadyProcessed = Message::where('external_message_id', $incoming->externalMessageId)
-            ->whereHas('conversation', fn ($q) => $q->where('channel_id', $this->channel->id))
-            ->exists();
-
-        if ($alreadyProcessed) {
+        // Already stored AND already answered. Both halves matter.
+        //
+        // This check used to be "already stored", full stop — which quietly
+        // disabled every retry this job has. An attempt that stored the
+        // customer's message and then failed (a missing column, a provider
+        // error) left the row behind, so the retry saw it, returned
+        // immediately, and reported success. The customer was never answered
+        // and nothing looked wrong. Requiring an actual reply is what makes a
+        // retry able to finish the work its predecessor started.
+        if ($this->alreadyAnswered($incoming->externalMessageId)) {
             return;
         }
 
@@ -91,13 +128,15 @@ class HandleIncomingMessageJob implements ShouldQueue
             $conversation->update(['external_user_name' => $incoming->externalUserName]);
         }
 
-        $userMessage = $this->createUserMessageOrNull($conversation, $incoming);
+        $userMessage = $this->claimUserMessage($conversation, $incoming);
 
         if ($userMessage === null) {
             return; // A concurrent/duplicate execution already claimed this update — nothing more to do.
         }
 
-        MessageReceived::dispatch($userMessage);
+        if ($userMessage->wasRecentlyCreated) {
+            MessageReceived::dispatch($userMessage);
+        }
 
         // Human takeover or a paused agent: record the message but don't auto-reply.
         if ($conversation->status === 'human_takeover' || $agent->status === 'paused') {
@@ -167,6 +206,156 @@ class HandleIncomingMessageJob implements ShouldQueue
             'channel_type' => $this->channel->type,
             'error' => $e?->getMessage(),
         ]);
+
+        // Silence is the worst outcome available. Every attempt is spent, so
+        // nothing here can produce a real answer — but a customer who is told
+        // something went wrong knows to wait or write again, while one who is
+        // told nothing concludes the business ignored them.
+        //
+        // Wrapped whole: failed() throwing would replace a logged failure with
+        // an unlogged one.
+        try {
+            $this->apologiseToCustomer();
+            $this->alertOwner($e);
+        } catch (Throwable $inner) {
+            Log::error('Could not deliver the technical-failure notice', [
+                'channel_id' => $this->channel->id,
+                'error' => $inner->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * The last-resort message to the customer. Plain text, sent directly rather
+     * than through the humanized sender — this is not a reply to pace out, and
+     * the fewer moving parts on this path the better.
+     */
+    protected function apologiseToCustomer(): void
+    {
+        $driver = app(ChannelDriverManager::class)->for($this->channel);
+        $incoming = $driver->parseIncomingMessage($this->payload, $this->channel);
+
+        if ($incoming === null) {
+            return;
+        }
+
+        // Only once per update, however many attempts failed, and never if the
+        // customer somehow did get answered in the meantime.
+        if (! Cache::add($this->apologyKey($incoming->externalUserId), true, self::UPDATE_DEDUP_TTL)) {
+            return;
+        }
+
+        if ($this->alreadyAnswered($incoming->externalMessageId)) {
+            return;
+        }
+
+        $driver->sendMessage(
+            $this->channel,
+            $incoming->externalUserId,
+            $this->channel->agent?->response_format['technical_error_message']
+                ?? 'Извините, произошла техническая ошибка, мы уже разбираемся.',
+        );
+    }
+
+    /**
+     * Tell the owner, on the Telegram chat they already linked for lead alerts.
+     *
+     * A customer who was never answered is invisible in the dashboard — the
+     * conversation just stops — so this is the only signal that a sale may have
+     * been lost to a bug.
+     */
+    protected function alertOwner(?Throwable $e): void
+    {
+        $agent = $this->channel->agent;
+
+        if (! $agent?->notifiesOwnerViaTelegram()) {
+            return;
+        }
+
+        $telegram = $agent->channels()
+            ->where('type', 'telegram')
+            ->where('status', 'connected')
+            ->first();
+
+        if ($telegram === null) {
+            return;
+        }
+
+        app(ChannelDriverManager::class)->for($telegram)->sendMessage(
+            $telegram,
+            $agent->notify_telegram_chat_id,
+            "⚠️ Сообщение клиента осталось без ответа из-за технической ошибки в «{$agent->name}». "
+                .'Откройте диалог и ответьте вручную.'
+        );
+    }
+
+    /**
+     * Claim this webhook delivery, atomically.
+     *
+     * Cache::add is the atomic half: it writes only if the key is absent, so of
+     * several executions racing on one update exactly one is told to proceed.
+     *
+     * The attempts() check is what keeps this from eating its own retries — the
+     * first attempt claims the update, and without it every later attempt would
+     * see its own claim and stop, which is a worse bug than the one this
+     * prevents.
+     */
+    protected function claimUpdate(): bool
+    {
+        $updateId = $this->payload['update_id'] ?? null;
+
+        if ($updateId === null) {
+            return true; // Not a Telegram-shaped delivery; nothing to key on.
+        }
+
+        if (Cache::add("webhook-update:{$this->channel->id}:{$updateId}", true, self::UPDATE_DEDUP_TTL)) {
+            return true;
+        }
+
+        if ($this->attempts() > 1) {
+            return true;
+        }
+
+        Log::info('Duplicate webhook update ignored', [
+            'channel_id' => $this->channel->id,
+            'update_id' => $updateId,
+        ]);
+
+        return false;
+    }
+
+    /**
+     * Whether this inbound message has already been ANSWERED — not merely
+     * stored. See the call site for why the distinction is the whole point.
+     */
+    protected function alreadyAnswered(?string $externalMessageId): bool
+    {
+        if ($externalMessageId === null) {
+            return false;
+        }
+
+        $message = Message::where('external_message_id', $externalMessageId)
+            ->where('role', 'user')
+            ->whereHas('conversation', fn ($q) => $q->where('channel_id', $this->channel->id))
+            ->latest('id')
+            ->first();
+
+        if ($message === null) {
+            return false;
+        }
+
+        // An operator's own reply counts: a human got there first.
+        return Message::where('conversation_id', $message->conversation_id)
+            ->whereIn('role', ['assistant', 'operator'])
+            ->where('id', '>', $message->id)
+            ->exists();
+    }
+
+    protected function apologyKey(string $externalUserId): string
+    {
+        $updateId = $this->payload['update_id'] ?? md5(json_encode($this->payload));
+
+        return "webhook-apology:{$this->channel->id}:{$externalUserId}:{$updateId}";
     }
 
     /**
@@ -222,7 +411,17 @@ class HandleIncomingMessageJob implements ShouldQueue
         }
     }
 
-    protected function createUserMessageOrNull(Conversation $conversation, IncomingMessage $incoming): ?Message
+    /**
+     * The stored inbound message for this update: created now, or the one a
+     * previous attempt stored before it failed.
+     *
+     * Returning null on the constraint violation — the old behaviour — is what
+     * made the retry a no-op: the row from the failed attempt was there, so the
+     * retry declined to do anything with it. Reusing the row lets the retry pick
+     * the turn up exactly where it broke. It is safe because the caller has
+     * already established, one check earlier, that nothing has answered it.
+     */
+    protected function claimUserMessage(Conversation $conversation, IncomingMessage $incoming): ?Message
     {
         try {
             return $conversation->messages()->create([
@@ -235,7 +434,11 @@ class HandleIncomingMessageJob implements ShouldQueue
                 'voice_duration' => $incoming->voiceDuration,
             ]);
         } catch (UniqueConstraintViolationException) {
-            return null;
+            return $conversation->messages()
+                ->where('role', 'user')
+                ->where('external_message_id', $incoming->externalMessageId)
+                ->latest('id')
+                ->first();
         }
     }
 }

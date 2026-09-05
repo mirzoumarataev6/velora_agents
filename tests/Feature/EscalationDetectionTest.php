@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Exceptions\LlmException;
 use App\Jobs\SendEscalationNotificationJob;
 use App\Models\Agent;
 use App\Models\Channel;
@@ -121,6 +122,215 @@ class EscalationDetectionTest extends TestCase
     /**
      * The whole design rests on this: an ordinary question must never flag.
      */
+    // ---------------------------------------------------------------
+    // Flagging the pipeline does itself, without waiting for the model
+    // ---------------------------------------------------------------
+
+    /**
+     * The reported failure. Four hostile messages, no handover, the bot
+     * apologising each time — because the only trigger was the model choosing to
+     * call the tool, and a model prompted to be warm and de-escalating reads
+     * abuse as something to apologise for.
+     *
+     * Note what is mocked: a generation with NO tool call at all. That is the
+     * production behaviour, and the handover has to happen anyway.
+     */
+    public function test_profanity_hands_the_conversation_over_even_when_the_model_does_not_flag_it(): void
+    {
+        Queue::fake();
+
+        $agent = $this->agent();
+        $conversation = $agent->conversations()->create(['status' => 'ai']);
+
+        $this->mockLlm('Извините, если я вас расстроил. Сейчас подключу коллегу.');
+
+        $this->app->make(AgentReplyService::class)->reply($conversation, 'Ебень ты тупорылая');
+
+        $conversation->refresh();
+
+        $this->assertNotNull($conversation->needs_human_at);
+        $this->assertSame('frustration', $conversation->needs_human_signal);
+        $this->assertSame('human_takeover', $conversation->status);
+        $this->assertNotEmpty($conversation->needs_human_summary);
+
+        Queue::assertPushed(SendEscalationNotificationJob::class);
+    }
+
+    /**
+     * Each of the four messages from the report, on its own, in a fresh
+     * conversation. Any one of them should have been enough.
+     */
+    public function test_each_of_the_reported_hostile_messages_triggers_a_handover(): void
+    {
+        Queue::fake();
+
+        $agent = $this->agent();
+
+        foreach (['Ебень ты тупорылая', 'Иди нах', 'Пошла ты к черту', 'Сука ты'] as $message) {
+            $conversation = $agent->conversations()->create(['status' => 'ai']);
+
+            $this->mockLlm('Извините за неудобства.');
+            $this->app->make(AgentReplyService::class)->reply($conversation, $message);
+
+            $this->assertSame(
+                'human_takeover',
+                $conversation->refresh()->status,
+                "[{$message}] should have handed the conversation over",
+            );
+        }
+    }
+
+    public function test_asking_for_an_operator_hands_the_conversation_over(): void
+    {
+        Queue::fake();
+
+        $agent = $this->agent();
+        $conversation = $agent->conversations()->create(['status' => 'ai']);
+
+        $this->mockLlm('Конечно, сейчас позову коллегу.');
+
+        $this->app->make(AgentReplyService::class)->reply($conversation, 'Позовите оператора, пожалуйста');
+
+        $conversation->refresh();
+
+        $this->assertSame('explicit_request', $conversation->needs_human_signal);
+        $this->assertSame('human_takeover', $conversation->status);
+
+        Queue::assertPushed(SendEscalationNotificationJob::class);
+    }
+
+    /**
+     * A question asked for the third time is an assistant that cannot help,
+     * whatever it thinks of its own answers. This is the `fallback` signal —
+     * present in SIGNALS from the start, and until now never raised.
+     */
+    public function test_the_same_question_asked_a_third_time_hands_the_conversation_over(): void
+    {
+        Queue::fake();
+
+        $agent = $this->agent();
+        $conversation = $agent->conversations()->create(['status' => 'ai']);
+
+        $this->mockLlm('К сожалению, не могу подтвердить эту информацию.');
+
+        $service = $this->app->make(AgentReplyService::class);
+        $question = 'Когда будет доставка моего заказа в Худжанд, скажите точную дату?';
+
+        $service->reply($conversation, $question);
+        $this->assertNull($conversation->refresh()->needs_human_at);
+
+        $service->reply($conversation, 'Когда всё-таки будет доставка моего заказа в Худжанд, точную дату скажите?');
+        $this->assertNull($conversation->refresh()->needs_human_at);
+
+        // Third time of asking.
+        $service->reply($conversation, 'Скажите точную дату, когда будет доставка моего заказа в Худжанд?');
+
+        $conversation->refresh();
+
+        $this->assertSame('fallback', $conversation->needs_human_signal);
+        $this->assertSame('human_takeover', $conversation->status);
+
+        Queue::assertPushed(SendEscalationNotificationJob::class);
+    }
+
+    /**
+     * The customer has to be TOLD. A handover the customer cannot see is a
+     * conversation that goes quiet on them.
+     */
+    public function test_the_model_is_told_to_say_a_person_is_taking_over(): void
+    {
+        Queue::fake();
+
+        $agent = $this->agent();
+        $conversation = $agent->conversations()->create(['status' => 'ai']);
+
+        $prompt = null;
+        $this->mockLlm('Сейчас подключу коллегу — он ответит здесь через минуту.', null, $prompt);
+
+        $this->app->make(AgentReplyService::class)->reply($conversation, 'Сука ты');
+
+        $this->assertStringContainsString('A COLLEAGUE IS BEING BROUGHT INTO THIS CONVERSATION', $prompt);
+        $this->assertStringContainsString('a person is taking over', $prompt);
+        // And it must not turn into an argument or a grovel.
+        $this->assertStringContainsString('do not argue, defend yourself, or match their tone', $prompt);
+    }
+
+    /**
+     * The provider being down must not cost the customer the handover: the flag
+     * and the alert do not depend on a generation succeeding.
+     */
+    public function test_a_handover_still_fires_when_the_provider_is_down(): void
+    {
+        Queue::fake();
+
+        $this->mock(LlmProviderInterface::class, function ($mock) {
+            $mock->shouldReceive('embed')->andReturn(['vector' => [1, 0, 0], 'input_tokens' => 3]);
+            $mock->shouldReceive('generate')->andThrow(new LlmException('upstream is down'));
+        });
+
+        $agent = $this->agent();
+        $agent->update(['response_format' => ['escalation_message' => 'Передаю вас коллеге, он ответит здесь.']]);
+        $conversation = $agent->conversations()->create(['status' => 'ai']);
+
+        $reply = $this->app->make(AgentReplyService::class)->reply($conversation, 'Иди нах');
+
+        $this->assertSame('human_takeover', $conversation->refresh()->status);
+        // Not the generic "we'll get back to you": they were promised a person.
+        $this->assertSame('Передаю вас коллеге, он ответит здесь.', $reply['assistant']->content);
+
+        Queue::assertPushed(SendEscalationNotificationJob::class);
+    }
+
+    /**
+     * An owner who switched detection off meant all of it — the pipeline's own
+     * verdict included.
+     */
+    public function test_profanity_does_not_hand_over_when_detection_is_off(): void
+    {
+        Queue::fake();
+
+        $agent = $this->agent(['escalation' => 'off']);
+        $conversation = $agent->conversations()->create(['status' => 'ai']);
+
+        $this->mockLlm('Извините за неудобства.');
+
+        $this->app->make(AgentReplyService::class)->reply($conversation, 'Сука ты');
+
+        $this->assertNull($conversation->refresh()->needs_human_at);
+        $this->assertSame('ai', $conversation->status);
+
+        Queue::assertNotPushed(SendEscalationNotificationJob::class);
+    }
+
+    /**
+     * The other direction, and the one that would make this feature a nuisance:
+     * ordinary messages that merely contain an abusive substring.
+     */
+    public function test_ordinary_messages_do_not_hand_the_conversation_over(): void
+    {
+        Queue::fake();
+
+        $agent = $this->agent();
+
+        foreach ([
+            'У меня ребенок школьник, нужен ноутбук для учёбы',
+            'Где вы находитесь? Хочу заехать сегодня',
+            'Этот нож тупой, можно вернуть по гарантии?',
+        ] as $message) {
+            $conversation = $agent->conversations()->create(['status' => 'ai']);
+
+            $this->mockLlm('Конечно, подскажу.');
+            $this->app->make(AgentReplyService::class)->reply($conversation, $message);
+
+            $this->assertNull(
+                $conversation->refresh()->needs_human_at,
+                "[{$message}] should not have handed the conversation over",
+            );
+        }
+
+        Queue::assertNotPushed(SendEscalationNotificationJob::class);
+    }
+
     public function test_a_normal_question_does_not_flag_anything(): void
     {
         Queue::fake();

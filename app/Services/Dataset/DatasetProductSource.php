@@ -36,6 +36,23 @@ class DatasetProductSource implements ProductSource
         return DatasetProduct::query()->where('agent_id', $this->agent->id)->exists();
     }
 
+    /**
+     * True only if at least one row actually carries a stock number.
+     *
+     * An uploaded catalog has a stock column or it does not — the owner either
+     * mapped one at import or left it unmapped, and in the second case every row
+     * holds NULL. Asked for in-stock products, this source would then return
+     * nothing at all, for any query, and the agent would tell the customer the
+     * shop sells none of what it plainly sells.
+     */
+    public function tracksStock(): bool
+    {
+        return DatasetProduct::query()
+            ->where('agent_id', $this->agent->id)
+            ->whereNotNull('stock')
+            ->exists();
+    }
+
     public function fetch(array $filters, int $limit): array
     {
         return $this->query($filters)
@@ -54,10 +71,11 @@ class DatasetProductSource implements ProductSource
         $query = DatasetProduct::query()->where('agent_id', $this->agent->id);
 
         if (isset($filters['query'])) {
-            // Every term must appear in the row's search text (name, description
-            // and sku, folded to lowercase at import), so "red winter jacket"
-            // doesn't match everything merely red — and matching is
-            // case-insensitive for Cyrillic on MySQL and SQLite alike.
+            // Every term must appear in the row's search text (name, description,
+            // sku, category and the extra attributes, folded to lowercase at
+            // import), so "red winter jacket" doesn't match everything merely
+            // red — and matching is case-insensitive for Cyrillic on MySQL and
+            // SQLite alike.
             $terms = $this->terms($filters['query']);
 
             if ($terms === []) {
@@ -70,10 +88,11 @@ class DatasetProductSource implements ProductSource
         }
 
         if (isset($filters['category'])) {
-            $category = $this->escapeLike(mb_strtolower($filters['category']));
-
-            if ($category !== '') {
-                $query->where('category_key', 'like', '%'.$category.'%');
+            // Every stem of the filter must appear in the category name, in any
+            // order: "игровые ноутбуки" finds "Ноутбук (игровой)", which no
+            // single substring of the filter would have.
+            foreach ($this->categoryTerms($filters['category']) as $term) {
+                $query->where('category_key', 'like', '%'.$term.'%');
             }
         }
 
