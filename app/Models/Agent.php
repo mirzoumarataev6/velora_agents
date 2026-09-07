@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Policies\AgentPolicy;
+use App\Services\Haggling\HagglingService;
 use Database\Factories\AgentFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\UsePolicy;
@@ -13,10 +14,19 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Str;
 
+/**
+ * `language`, `capture_leads`, `humanize_replies` and `transcribe_voice` are
+ * deliberately absent. They were owner-facing toggles; they are now always-on
+ * behaviour (language is detected per message, orders are always collected,
+ * replies are always humanized, voice is always transcribed). The columns
+ * survive for backward compatibility, but nothing may write them again — an
+ * absent fillable is what stops a stray form field from reintroducing an
+ * "off" that no code path reads any more.
+ */
 #[Fillable([
-    'name', 'slug', 'avatar', 'description', 'status', 'language', 'tone',
-    'response_format', 'custom_system_prompt', 'rules_instructions', 'behavior', 'capture_leads', 'proactivity',
-    'humanize_replies', 'transcribe_voice',
+    'name', 'slug', 'avatar', 'description', 'status', 'tone',
+    'response_format', 'custom_system_prompt', 'rules_instructions', 'behavior', 'proactivity',
+    'haggling_enabled', 'haggling_level', 'haggle_min_price_percent', 'haggling_instructions',
 ])]
 #[UsePolicy(AgentPolicy::class)]
 class Agent extends Model
@@ -29,9 +39,8 @@ class Agent extends Model
         return [
             'response_format' => 'array',
             'behavior' => 'array',
-            'capture_leads' => 'boolean',
-            'humanize_replies' => 'boolean',
-            'transcribe_voice' => 'boolean',
+            'haggling_enabled' => 'boolean',
+            'haggle_min_price_percent' => 'integer',
             'notify_telegram_linked_at' => 'datetime',
         ];
     }
@@ -100,6 +109,40 @@ class Agent extends Model
     public function databaseConnection(): HasOne
     {
         return $this->hasOne(DatabaseConnection::class);
+    }
+
+    /**
+     * Whether this agent is allowed to negotiate on price at all.
+     *
+     * Negotiating never means conceding: even with this on, a below-floor offer
+     * goes to the owner for approval. See HagglingService.
+     */
+    public function hagglesOnPrice(): bool
+    {
+        return (bool) $this->haggling_enabled;
+    }
+
+    /** The conversational style the negotiation is played in. */
+    public function hagglingLevel(): string
+    {
+        return in_array($this->haggling_level, HagglingService::LEVELS, true)
+            ? $this->haggling_level
+            : HagglingService::DEFAULT_LEVEL;
+    }
+
+    /**
+     * The lowest price this agent may confirm on its own for a product listed
+     * at $listed — the owner's floor, expressed as a percentage of the list
+     * price so one setting covers a whole catalog.
+     *
+     * 100 (the default) means "no discount at all without me".
+     */
+    public function minimumPriceFor(float $listed): float
+    {
+        $percent = (int) ($this->haggle_min_price_percent ?? 100);
+        $percent = max(1, min(100, $percent));
+
+        return round($listed * $percent / 100, 2);
     }
 
     public function usesLiveDatabase(): bool

@@ -7,6 +7,7 @@ use App\Services\Llm\GeminiProvider;
 use App\Services\Llm\LlmProviderInterface;
 use App\Services\Llm\OpenAiProvider;
 use App\Services\Llm\UsageRecorder;
+use App\Services\Quality\FeedbackCadence;
 use App\Services\Queue\WorkerHeartbeat;
 use App\Services\Rag\MySqlCosineVectorStore;
 use App\Services\Rag\VectorStoreInterface;
@@ -46,6 +47,10 @@ class AppServiceProvider extends ServiceProvider
 
         // One usage context per request/job, reset between them.
         $this->app->scoped(UsageRecorder::class);
+
+        // Built from config rather than autowired: its two thresholds ARE the
+        // cadence, and a test that changes them wants the change to take.
+        $this->app->bind(FeedbackCadence::class, fn () => FeedbackCadence::fromConfig());
 
         $this->app->bind(LlmProviderInterface::class, function ($app) {
             $configured = (string) config('agent.llm_provider');

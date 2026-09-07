@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Models\Lead;
 use App\Services\Channels\ChannelDriverManager;
+use App\Services\Haggling\HagglingService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
@@ -69,6 +70,10 @@ class SendLeadNotificationJob implements ShouldQueue
 
     protected function message(string $agentName): string
     {
+        if ($this->lead->isHaggle()) {
+            return $this->priceRequestMessage($agentName);
+        }
+
         $lines = ["🔔 Новая заявка · {$agentName}"];
 
         if ($this->lead->customer_name) {
@@ -86,6 +91,48 @@ class SendLeadNotificationJob implements ShouldQueue
 
         $lines[] = '';
         $lines[] = route('leads.index');
+
+        return implode("\n", $lines);
+    }
+
+    /**
+     * A price the customer asked for that the assistant was not allowed to give.
+     *
+     * Shaped differently from an order on purpose: this one is a DECISION the
+     * owner has to make, and a customer is waiting on it in a live chat. The
+     * numbers come first, and the link goes straight to the pending list rather
+     * than to the whole inbox.
+     */
+    protected function priceRequestMessage(string $agentName): string
+    {
+        $lines = ["💬 Запрос цены · {$agentName}"];
+
+        if ($this->lead->customer_name) {
+            $lines[] = "👤 {$this->lead->customer_name}";
+        }
+        if ($this->lead->phone) {
+            $lines[] = "📞 {$this->lead->phone}";
+        }
+        if ($this->lead->items) {
+            $lines[] = "🛒 {$this->lead->items}";
+        }
+
+        $requested = Lead::formatPrice($this->lead->requested_price);
+        $listed = Lead::formatPrice($this->lead->listed_price);
+
+        if ($requested !== null) {
+            $discount = $this->lead->requestedDiscountPercent();
+            $lines[] = '💰 Просит: '.$requested
+                .($listed !== null ? " (в каталоге {$listed}".($discount !== null ? ", −{$discount}%" : '').')' : '');
+        }
+
+        if ($this->lead->negotiation_summary) {
+            $lines[] = "📝 {$this->lead->negotiation_summary}";
+        }
+
+        $lines[] = '';
+        $lines[] = 'Клиент ждёт ответа — согласуйте или откажите:';
+        $lines[] = route('leads.index', ['status' => HagglingService::STATUS_PENDING]);
 
         return implode("\n", $lines);
     }

@@ -4,6 +4,7 @@ namespace App\Http\Requests;
 
 use App\Models\Agent;
 use App\Services\EscalationService;
+use App\Services\Haggling\HagglingService;
 use Illuminate\Foundation\Http\FormRequest;
 
 class StoreAgentRequest extends FormRequest
@@ -20,7 +21,6 @@ class StoreAgentRequest extends FormRequest
         return [
             'name' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:5000'],
-            'language' => ['required', 'string', 'in:auto,ru,en,tj,uz'],
             'tone' => ['required', 'string', 'in:friendly,professional,casual,formal'],
             'greeting_message' => ['nullable', 'string', 'max:1000'],
             'fallback_message' => ['nullable', 'string', 'max:1000'],
@@ -30,15 +30,23 @@ class StoreAgentRequest extends FormRequest
             'rules_instructions' => ['nullable', 'string', 'max:5000'],
             'on_not_found' => ['required', 'string', 'in:apologize,human_handoff,suggest_alternatives'],
             'escalation' => ['nullable', 'string', 'in:'.implode(',', EscalationService::SENSITIVITIES)],
-            'capture_leads' => ['boolean'],
             'proactivity' => ['required', 'string', 'in:off,subtle,active'],
-            'humanize_replies' => ['boolean'],
-            'transcribe_voice' => ['boolean'],
+            'haggling_enabled' => ['boolean'],
+            'haggling_level' => ['nullable', 'string', 'in:'.implode(',', HagglingService::LEVELS)],
+            // A percentage of the listed price, not an absolute figure: one
+            // agent covers a whole catalog. 100 means "no discount without me".
+            'haggle_min_price_percent' => ['nullable', 'integer', 'min:1', 'max:100'],
+            'haggling_instructions' => ['nullable', 'string', 'max:5000'],
         ];
     }
 
     /**
      * Map the flat form fields into the JSON column shapes used by the Agent model.
+     *
+     * `language`, `capture_leads`, `humanize_replies` and `transcribe_voice`
+     * are deliberately absent: they are no longer settings. Language is
+     * detected per message, and the other three are always on — see the note on
+     * the Agent model.
      */
     public function agentAttributes(): array
     {
@@ -47,7 +55,6 @@ class StoreAgentRequest extends FormRequest
         return [
             'name' => $data['name'],
             'description' => $data['description'] ?? null,
-            'language' => $data['language'],
             'tone' => $data['tone'],
             'response_format' => [
                 'greeting_message' => $data['greeting_message'] ?? null,
@@ -63,13 +70,14 @@ class StoreAgentRequest extends FormRequest
                 // default", not "off".
                 'escalation' => $data['escalation'] ?? config('agent.escalation.default_sensitivity', 'conservative'),
             ],
-            'capture_leads' => (bool) ($data['capture_leads'] ?? false),
             'proactivity' => $data['proactivity'],
-            'humanize_replies' => (bool) ($data['humanize_replies'] ?? false),
-            // Absent from an older form post means "leave it on" — an
-            // unanswered voice note reads as a broken bot, so the safe default
-            // is the capable one.
-            'transcribe_voice' => (bool) ($data['transcribe_voice'] ?? true),
+            'haggling_enabled' => (bool) ($data['haggling_enabled'] ?? false),
+            'haggling_level' => $data['haggling_level'] ?? HagglingService::DEFAULT_LEVEL,
+            // Absent means the strictest floor. An owner who has not told us
+            // what a sale is worth to them must not have a discount inferred
+            // on their behalf.
+            'haggle_min_price_percent' => (int) ($data['haggle_min_price_percent'] ?? 100),
+            'haggling_instructions' => $data['haggling_instructions'] ?? null,
         ];
     }
 }

@@ -127,7 +127,9 @@ class RememberMeTest extends TestCase
         $response = $this->withUnencryptedCookie($this->recallerName(), $recaller->getValue())
             ->get('/home');
 
-        $response->assertRedirect(route('agents.index'));
+        // /home is the panel's front door and now opens on the dashboard; what
+        // this test is about is that the recaller alone got them through it.
+        $response->assertRedirect(route('dashboard'));
         $this->assertAuthenticatedAs($user);
     }
 }

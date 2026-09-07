@@ -6,10 +6,7 @@ use App\Jobs\HandleIncomingMessageJob;
 use App\Models\Channel;
 use App\Models\Message;
 use App\Services\AgentReplyService;
-use App\Services\Channels\ChannelDriverManager;
-use App\Services\Channels\HumanizedReplySender;
 use App\Services\Llm\LlmProviderInterface;
-use App\Services\TelegramNotifyLinker;
 use Illuminate\Contracts\Queue\Job;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
@@ -323,13 +320,26 @@ class TelegramPipelineReliabilityTest extends TestCase
     /**
      * The dependencies handle() asks the container for.
      */
+    /**
+     * Everything the job asks for, resolved from the container — except the one
+     * dependency a given test wants to control.
+     *
+     * Reflection rather than a hand-written list: the list version had to be
+     * edited every time the job gained a collaborator, which broke a dozen
+     * tests that care about none of them.
+     *
+     * @return array<int, mixed>
+     */
     protected function jobDependencies(?AgentReplyService $replyService = null): array
     {
-        return [
-            app(ChannelDriverManager::class),
-            $replyService ?? app(AgentReplyService::class),
-            app(TelegramNotifyLinker::class),
-            app(HumanizedReplySender::class),
-        ];
+        $parameters = (new \ReflectionMethod(HandleIncomingMessageJob::class, 'handle'))->getParameters();
+
+        return array_map(function (\ReflectionParameter $parameter) use ($replyService) {
+            $type = $parameter->getType()?->getName();
+
+            return $type === AgentReplyService::class && $replyService !== null
+                ? $replyService
+                : app($type);
+        }, $parameters);
     }
 }

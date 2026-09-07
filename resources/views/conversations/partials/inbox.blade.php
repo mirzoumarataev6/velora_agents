@@ -37,6 +37,10 @@
             'status' => __('conversations.status'),
             'knowledgeUnconfirmed' => __('conversations.thread.knowledge_unconfirmed'),
             'matchesInChat' => __('conversations.search.matches_in_chat'),
+            'ratingUp' => __('conversations.thread.rating_up'),
+            'ratingDown' => __('conversations.thread.rating_down'),
+            'ratingUpHint' => __('conversations.thread.rating_up_hint'),
+            'ratingDownHint' => __('conversations.thread.rating_down_hint'),
         ]) }},
     })" x-init="init()" @keydown.escape.window="openId && close()">
 
@@ -48,7 +52,7 @@
          cost the inbox a whole band of vertical space. The negative margin lets
          it bleed to the edge while scrolling rather than clipping mid-chip. --}}
     <div data-filter-bar class="{{ $scopeAgent ? '' : 'mt-6' }} -mx-1 flex flex-nowrap items-center gap-1.5 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        @foreach (['all', 'unread', 'needs_human', 'has_lead', 'closed'] as $key)
+        @foreach (['all', 'unread', 'needs_human', 'has_lead', 'rated_down', 'closed'] as $key)
             <button type="button" @click="setStatus('{{ $key }}')"
                 :class="filters.status === '{{ $key }}'
                     ? 'border-brand bg-brand/10 text-brand'
@@ -379,6 +383,23 @@
                                         <span x-show="m.voice_duration" x-text="'· ' + voiceLength(m.voice_duration)" class="tnum"></span>
                                     </div>
 
+                                    {{-- The customer's verdict on this reply, in the
+                                         place the verdict is about. A thumbs-down on
+                                         the dashboard is a number; here it sits under
+                                         the answer that earned it, with the question
+                                         still visible above — which is the difference
+                                         between knowing the agent was wrong and
+                                         knowing what it was wrong about. --}}
+                                    <div x-show="m.rating" x-cloak
+                                        class="mt-1 flex w-fit items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium"
+                                        :class="m.rating === 'thumbs_up'
+                                            ? 'bg-success/10 text-success'
+                                            : 'bg-danger/10 text-danger'"
+                                        :title="m.rating === 'thumbs_up' ? labels.ratingUpHint : labels.ratingDownHint">
+                                        <span aria-hidden="true" x-text="m.rating === 'thumbs_up' ? labels.ratingUp : labels.ratingDown"></span>
+                                        <span x-text="m.rating === 'thumbs_up' ? labels.ratingUpHint : labels.ratingDownHint"></span>
+                                    </div>
+
                                     <div class="mt-1 flex items-center gap-2 px-1 text-[11px] text-muted dark:text-night-muted">
                                         <span x-text="rolePrefix(m.role)"></span>
                                         <span x-text="fullTime(m.created_at)" class="tnum"></span>
@@ -687,6 +708,16 @@
             init() {
                 this.initWidth();
                 this.reload();
+
+                // Deep link: /conversations?conversation=123 opens that thread
+                // straight away. The dashboard's 👎 list links here, and the
+                // point of that list is landing on the reply that earned the
+                // thumbs-down — an inbox that merely opened would make the
+                // owner hunt for it. open() fetches the thread itself, so it
+                // does not matter that reload() above has not returned yet.
+                const deepLink = Number(new URLSearchParams(window.location.search).get('conversation'));
+                if (Number.isInteger(deepLink) && deepLink > 0) this.open(deepLink);
+
                 // Same cadence as the lead bell, and paused while the tab is
                 // hidden so a backgrounded inbox costs nothing.
                 this._pollTimer = setInterval(() => {

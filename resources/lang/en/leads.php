@@ -29,6 +29,7 @@ return [
     'filters' => [
         'all' => 'All',
         'new' => 'New',
+        'awaiting_price_approval' => 'Price approval',
         'in_progress' => 'In progress',
         'done' => 'Done',
     ],
@@ -74,5 +75,27 @@ return [
             'failed' => 'Something went wrong. Please try again.',
             'network' => 'Network error. Please try again.',
         ],
+    ],
+
+    'haggle' => [
+        'waiting_badge' => 'Awaiting you',
+        'requested_label' => 'Asking',
+        'listed_label' => 'Listed',
+        'settled_at' => 'Settled at :price',
+        'price_placeholder' => 'Price',
+        'approve' => 'Approve',
+        'decline' => 'Decline',
+        'approved' => 'Price approved — the customer has been told.',
+        'declined' => 'The decline has been sent to the customer.',
+        'decline_confirm' => 'Decline this price? The customer gets a polite refusal. To offer a price of your own, type it in the box next to the buttons.',
+    ],
+
+    'views' => [
+        'orders' => 'Orders',
+        'haggle' => 'Haggling',
+        'empty_orders_title' => 'No leads yet',
+        'empty_orders_description' => 'When a customer places an order or asks to be contacted, it will show up here.',
+        'empty_haggle_title' => 'No price requests',
+        'empty_haggle_description' => 'When a customer asks for a price below your floor, the assistant negotiates and brings the request here for you to approve or decline.',
     ],
 ];

@@ -390,7 +390,7 @@ class AgentReplyServiceTest extends TestCase
                 ->andReturn(['text' => 'ok', 'input_tokens' => 1, 'output_tokens' => 1, 'finish_reason' => 'STOP']);
         });
 
-        $agent = Agent::factory()->create(['language' => 'auto']);
+        $agent = Agent::factory()->create();
         $conversation = $agent->conversations()->create(['status' => 'ai']);
         $service = $this->app->make(AgentReplyService::class);
 

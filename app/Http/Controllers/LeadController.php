@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Models\Conversation;
 use App\Models\Lead;
+use App\Services\Haggling\HaggleDecisionRelay;
+use App\Services\Haggling\HagglingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -12,17 +14,44 @@ use Illuminate\View\View;
 
 class LeadController extends Controller
 {
-    /** Lead workflow states the owner can move a lead between. */
+    /** Lead workflow states the owner can move a lead between by hand. */
     protected const STATUSES = ['new', 'in_progress', 'done'];
+
+    /**
+     * The two halves of this panel, and they are genuinely different work.
+     *
+     * An order is a RECORD: somebody wants something, ring them back when you
+     * can. A price request is a DECISION with a customer sitting in a live chat
+     * waiting on it, and it expires in practice the moment they give up. Mixed
+     * into one list the second kind gets buried under the first — which is
+     * exactly what a badge on a tab is for.
+     */
+    protected const VIEWS = ['orders', 'haggle'];
+
+    /**
+     * Statuses each view can be sliced by. Deliberately different lists: 'new'
+     * is meaningless for a price request (the assistant files it already
+     * pending), and the pending state is unreachable for an order.
+     */
+    protected const VIEW_STATUSES = [
+        'orders' => ['new', 'in_progress', 'done'],
+        'haggle' => [HagglingService::STATUS_PENDING, 'in_progress', 'done'],
+    ];
 
     public function index(Request $request): View
     {
+        $view = in_array($request->query('view'), self::VIEWS, true) ? $request->query('view') : self::VIEWS[0];
         $status = $request->query('status');
         $agentId = $request->query('agent');
         $term = trim((string) $request->query('q')) ?: null;
 
+        $statuses = self::VIEW_STATUSES[$view];
+
         $leads = $this->scoped($request)
-            ->when(in_array($status, self::STATUSES, true), fn ($q) => $q->where('leads.status', $status))
+            // The tab IS a filter, and the strict one: a price request must
+            // never surface in the orders list, whatever else is narrowing it.
+            ->where('leads.type', $view === 'haggle' ? HagglingService::TYPE : 'order')
+            ->when(in_array($status, $statuses, true), fn ($q) => $q->where('leads.status', $status))
             ->when($agentId, fn ($q) => $q->where('leads.agent_id', $agentId))
             // Who they are, how to reach them, and what they asked for — the
             // three things an owner actually remembers a lead by.
@@ -42,9 +71,11 @@ class LeadController extends Controller
 
         $shared = [
             'leads' => $leads,
-            'activeStatus' => in_array($status, self::STATUSES, true) ? $status : null,
+            'activeView' => $view,
+            'activeStatus' => in_array($status, $statuses, true) ? $status : null,
             'activeAgent' => $agentId,
             'activeSearch' => $term,
+            'statusOptions' => $statuses,
         ];
 
         // The live search asks for just the result block, rendered from the same
@@ -61,6 +92,10 @@ class LeadController extends Controller
 
         return view('leads.index', $shared + [
             'agents' => $request->user()->agents()->orderBy('name')->get(['id', 'name']),
+            // Drives the badge on the Торг tab. Unfiltered on purpose: a
+            // pending decision the current filter hides is still a customer
+            // waiting, and hiding the count would be how it gets missed.
+            'pendingHaggleCount' => $this->pendingHaggleQuery($request)->count(),
         ]);
     }
 
@@ -81,6 +116,8 @@ class LeadController extends Controller
                 'phone' => $lead->phone,
                 'contact' => $lead->contact,
                 'items' => $lead->items,
+                'type' => $lead->type,
+                'requested_price' => $lead->requested_price,
                 'agent_name' => $lead->agent?->name,
                 'seen' => $lead->seen_at !== null,
                 'created_at' => $lead->created_at?->toIso8601String(),
@@ -103,6 +140,7 @@ class LeadController extends Controller
                 'at' => $c->needs_human_at?->toIso8601String(),
             ]);
 
+        $pendingPrices = $this->pendingHaggleQuery($request)->count();
         $unseenLeads = $this->scoped($request)->whereNull('leads.seen_at')->count();
         $unattended = Conversation::ownedBy($request->user())->needsHumanUnattended()->count();
 
@@ -110,6 +148,10 @@ class LeadController extends Controller
             'count' => $unseenLeads + $unattended,
             'recent' => $recent,
             'escalations' => $escalations,
+            // Surfaced separately from the badge total so the bell can say what
+            // KIND of attention is wanted: a price decision is the one item
+            // here with someone waiting on the other end of it right now.
+            'pending_prices' => $pendingPrices,
         ]);
     }
 
@@ -123,6 +165,63 @@ class LeadController extends Controller
         return response()->json([
             'count' => Conversation::ownedBy($request->user())->needsHumanUnattended()->count(),
         ]);
+    }
+
+    /**
+     * Approve a price the assistant was not allowed to give, and tell the
+     * customer so.
+     *
+     * The relay is part of the decision, not a follow-up: the customer was told
+     * "я уточню у менеджера и вернусь к вам", and an approval that never
+     * reaches the chat loses the very sale it just agreed to.
+     */
+    public function approvePrice(Request $request, Lead $lead, HaggleDecisionRelay $relay): JsonResponse|RedirectResponse
+    {
+        $this->authorize('update', $lead);
+
+        $data = $request->validate([
+            // Absent means "at the price they asked for". Present means the
+            // owner is granting a different number than the one requested.
+            'price' => ['nullable', 'numeric', 'min:0.01', 'max:99999999'],
+        ]);
+
+        abort_unless($lead->awaitsPriceApproval(), 422);
+
+        $relay->approve($lead, isset($data['price']) ? (float) $data['price'] : null);
+
+        return $this->decisionResponse($request, $lead, __('leads.haggle.approved'));
+    }
+
+    /**
+     * Decline the requested price — optionally naming one the owner WOULD do,
+     * which hands the conversation back as a counter-offer rather than a wall.
+     */
+    public function declinePrice(Request $request, Lead $lead, HaggleDecisionRelay $relay): JsonResponse|RedirectResponse
+    {
+        $this->authorize('update', $lead);
+
+        $data = $request->validate([
+            'counter_price' => ['nullable', 'numeric', 'min:0.01', 'max:99999999'],
+        ]);
+
+        abort_unless($lead->awaitsPriceApproval(), 422);
+
+        $relay->decline($lead, isset($data['counter_price']) ? (float) $data['counter_price'] : null);
+
+        return $this->decisionResponse($request, $lead, __('leads.haggle.declined'));
+    }
+
+    protected function decisionResponse(Request $request, Lead $lead, string $message): JsonResponse|RedirectResponse
+    {
+        if ($request->wantsJson()) {
+            return response()->json([
+                'status' => $lead->status,
+                'approved_price' => $lead->approved_price,
+                'message' => $message,
+            ]);
+        }
+
+        return back()->with('status', $message);
     }
 
     public function update(Request $request, Lead $lead): JsonResponse|RedirectResponse
@@ -161,6 +260,14 @@ class LeadController extends Controller
     protected function scoped(Request $request)
     {
         return Lead::whereIn('leads.agent_id', $request->user()->agents()->select('id'));
+    }
+
+    /** Price requests still waiting on this owner, across every agent. */
+    protected function pendingHaggleQuery(Request $request)
+    {
+        return $this->scoped($request)
+            ->where('leads.type', HagglingService::TYPE)
+            ->where('leads.status', HagglingService::STATUS_PENDING);
     }
 
     protected function markAllSeen(Request $request): void

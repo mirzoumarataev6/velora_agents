@@ -265,4 +265,83 @@ class ConversationInboxTest extends TestCase
 
         $this->actingAs($this->owner)->getJson('/conversations/list?page=2')->assertJsonCount(5, 'data');
     }
+
+    // -----------------------------------------------------------------
+    // The 👎 filter
+    // -----------------------------------------------------------------
+
+    /**
+     * The destination of the dashboard's quality card. Without it that card's
+     * "все негативные оценки" button would land on an unfiltered inbox and the
+     * owner would be left hunting.
+     */
+    public function test_the_rated_down_filter_returns_only_conversations_holding_a_disliked_reply(): void
+    {
+        $bad = $this->conversationFor(null, ['external_user_name' => 'Unhappy']);
+        $bad->messages()->create(['role' => 'assistant', 'content' => 'Неверный ответ'])
+            ->forceFill(['rating' => Message::RATING_DOWN, 'rated_at' => now()])->save();
+
+        $good = $this->conversationFor(null, ['external_user_name' => 'Happy']);
+        $good->messages()->create(['role' => 'assistant', 'content' => 'Верный ответ'])
+            ->forceFill(['rating' => Message::RATING_UP, 'rated_at' => now()])->save();
+
+        $this->conversationFor(null, ['external_user_name' => 'Unrated']);
+
+        $names = collect($this->actingAs($this->owner)
+            ->getJson('/conversations/list?status=rated_down')
+            ->assertOk()
+            ->json('data'))
+            ->pluck('customer');
+
+        $this->assertCount(1, $names);
+        $this->assertSame('Unhappy', $names->first());
+    }
+
+    /**
+     * The one place this filter departs from the others, deliberately: every
+     * other slice hides closed threads, and a wrong answer does not stop being
+     * a wrong answer because the thread was archived. Hiding it would also make
+     * this list disagree with the count on the card that linked here, which
+     * reads as a bug rather than as a policy.
+     */
+    public function test_a_disliked_reply_in_a_closed_conversation_is_still_listed(): void
+    {
+        $closed = $this->conversationFor(null, ['external_user_name' => 'Closed', 'status' => 'closed']);
+        $closed->messages()->create(['role' => 'assistant', 'content' => 'Неверный ответ'])
+            ->forceFill(['rating' => Message::RATING_DOWN, 'rated_at' => now()])->save();
+
+        $this->actingAs($this->owner)
+            ->getJson('/conversations/list?status=rated_down')
+            ->assertOk()
+            ->assertJsonPath('data.0.customer', 'Closed');
+
+        // The default slice still hides it, as it always did.
+        $this->actingAs($this->owner)
+            ->getJson('/conversations/list?status=all')
+            ->assertOk()
+            ->assertJsonCount(0, 'data');
+    }
+
+    public function test_another_owners_disliked_replies_are_never_listed(): void
+    {
+        $stranger = User::factory()->create();
+        $strangerAgent = Agent::factory()->for($stranger)->create();
+        $theirs = $this->conversationFor($strangerAgent, ['external_user_name' => 'Not mine']);
+        $theirs->messages()->create(['role' => 'assistant', 'content' => 'Неверный ответ'])
+            ->forceFill(['rating' => Message::RATING_DOWN, 'rated_at' => now()])->save();
+
+        $this->actingAs($this->owner)
+            ->getJson('/conversations/list?status=rated_down')
+            ->assertOk()
+            ->assertJsonCount(0, 'data');
+    }
+
+    /** The chip has to exist in the UI, or the filter is unreachable by hand. */
+    public function test_the_inbox_offers_a_rated_down_chip(): void
+    {
+        $this->actingAs($this->owner)
+            ->get('/conversations')
+            ->assertOk()
+            ->assertSee(__('conversations.filters.rated_down'), false);
+    }
 }

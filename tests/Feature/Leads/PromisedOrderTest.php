@@ -60,7 +60,7 @@ class PromisedOrderTest extends TestCase
 
     protected function agent(): Agent
     {
-        return Agent::factory()->create(['capture_leads' => true, 'language' => 'auto']);
+        return Agent::factory()->create();
     }
 
     // --- the transcript, replayed --------------------------------------------

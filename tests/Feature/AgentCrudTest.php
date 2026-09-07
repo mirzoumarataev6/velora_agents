@@ -17,7 +17,6 @@ class AgentCrudTest extends TestCase
         return array_merge([
             'name' => 'Fashion Store',
             'description' => 'Clothing store',
-            'language' => 'ru',
             'tone' => 'friendly',
             'greeting_message' => 'Здравствуйте!',
             'fallback_message' => 'Уточню и вернусь с ответом.',
@@ -40,7 +39,6 @@ class AgentCrudTest extends TestCase
         $response->assertRedirect(route('agents.show', $agent));
 
         $this->assertSame($user->id, $agent->user_id);
-        $this->assertSame('ru', $agent->language);
         $this->assertSame('friendly', $agent->tone);
         $this->assertSame('active', $agent->status);
         $this->assertNotEmpty($agent->slug);

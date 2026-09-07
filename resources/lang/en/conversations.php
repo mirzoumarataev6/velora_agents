@@ -56,6 +56,7 @@ return [
         'unread' => 'Unread',
         'needs_human' => 'Needs human',
         'has_lead' => 'With a lead',
+        'rated_down' => 'Rated 👎',
         'closed' => 'Closed',
     ],
 
@@ -88,6 +89,10 @@ return [
         'knowledge_unconfirmed' => 'weak match',
         'leads_heading' => 'Captured leads',
         'view_in_leads' => 'View in Leads',
+        'rating_up' => '👍',
+        'rating_down' => '👎',
+        'rating_up_hint' => 'Rated by the customer',
+        'rating_down_hint' => 'The customer disliked this reply',
         'voice_note' => 'voice message',
         'no_channel' => 'This conversation has no connected channel, so it cannot be replied to.',
         'back' => 'Back to the list',

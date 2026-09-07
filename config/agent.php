@@ -128,13 +128,38 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Dashboard analytics
+    |--------------------------------------------------------------------------
+    |
+    | Agents carry no configured opening hours, so "outside business hours" is
+    | this default: nights, plus the whole weekend. It is named here rather than
+    | inlined in the metrics service so it is one edit away from becoming a
+    | per-agent setting, and so the definition behind the headline number on the
+    | dashboard is written down somewhere an owner's question can be answered
+    | from.
+    |
+    | The window wraps midnight: `from_hour` is inclusive, `to_hour` exclusive,
+    | so 22 and 8 mean 22:00-07:59.
+    |
+    */
+    'analytics' => [
+        'after_hours' => [
+            'from_hour' => env('AGENT_AFTER_HOURS_FROM', 22),
+            'to_hour' => env('AGENT_AFTER_HOURS_TO', 8),
+            'weekends' => env('AGENT_AFTER_HOURS_WEEKENDS', true),
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Human-like multi-message replies
     |--------------------------------------------------------------------------
     |
     | A long reply is delivered the way a person types in a messenger: broken
     | into a few consecutive messages with a typing pause between them, rather
-    | than one wall of text. Applies to every channel; enabled per agent via
-    | the `humanize_replies` column (default on).
+    | than one wall of text. Applies to every channel, always: sounding like a
+    | person is not a preference an owner benefits from switching off, and a
+    | short reply is left as a single message anyway.
     |
     | Splitting is by MEANING only — paragraph first, then sentence boundaries.
     | Text with no boundary to split on is sent as one message, so these numbers
@@ -142,6 +167,21 @@ return [
     | the splitter tries to fill.
     |
     */
+    // How often a customer is asked to rate a reply with 👍/👎. See
+    // App\Services\Quality\FeedbackCadence for the rule these two feed, and for
+    // why asking rarely is the point rather than a limitation.
+    'feedback' => [
+        // Minimum assistant turns between one prompt and the next. Counts from
+        // a RATING as well as from a prompt, so answering one buys the same
+        // quiet as being asked one.
+        'min_turns_between' => env('AGENT_FEEDBACK_MIN_TURNS_BETWEEN', 3),
+
+        // The routine cadence when nothing notable happens in the conversation.
+        // A captured lead can bring a prompt forward, but never inside the
+        // floor above.
+        'every_n_turns' => env('AGENT_FEEDBACK_EVERY_N_TURNS', 5),
+    ],
+
     'humanize' => [
         // Replies at or below this many characters are always sent as a single
         // message (greetings, one-liners, short factual answers).

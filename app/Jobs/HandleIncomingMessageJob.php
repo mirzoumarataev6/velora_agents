@@ -12,6 +12,8 @@ use App\Services\Channels\ChannelDriverInterface;
 use App\Services\Channels\ChannelDriverManager;
 use App\Services\Channels\HumanizedReplySender;
 use App\Services\Channels\IncomingMessage;
+use App\Services\Quality\FeedbackCadence;
+use App\Services\Quality\MessageFeedbackRecorder;
 use App\Services\TelegramNotifyLinker;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -79,6 +81,8 @@ class HandleIncomingMessageJob implements ShouldQueue
         AgentReplyService $replyService,
         TelegramNotifyLinker $linker,
         HumanizedReplySender $sender,
+        MessageFeedbackRecorder $ratings,
+        FeedbackCadence $cadence,
     ): void {
         // Telegram redelivers an update it believes was not acknowledged, and
         // it does so with the same update_id. Claimed atomically, before any
@@ -94,6 +98,17 @@ class HandleIncomingMessageJob implements ShouldQueue
         }
 
         $driver = $drivers->for($this->channel);
+
+        // A 👍/👎 tap. Handled before parsing, because it is not a customer
+        // message and must never become one: it produces no conversation turn,
+        // no RAG pass and no reply — only a rating on a reply already sent.
+        $feedback = $driver->parseFeedback($this->payload, $this->channel);
+
+        if ($feedback !== null) {
+            $ratings->record($driver, $this->channel, $feedback);
+
+            return;
+        }
 
         $incoming = $driver->parseIncomingMessage($this->payload, $this->channel);
 
@@ -166,7 +181,7 @@ class HandleIncomingMessageJob implements ShouldQueue
         // text and must get the full pipeline — RAG, rules, tools and all.
         $assistantMessage = match ($incoming->type) {
             'photo_unclear' => $replyService->askForProductName($conversation, $userMessage),
-            'voice_disabled', 'voice_failed', 'voice_too_long' => $replyService->explainVoiceProblem(
+            'voice_failed', 'voice_too_long' => $replyService->explainVoiceProblem(
                 $conversation,
                 $userMessage,
                 $incoming->type,
@@ -174,16 +189,32 @@ class HandleIncomingMessageJob implements ShouldQueue
             default => $replyService->generateReplyFor($conversation, $userMessage),
         };
 
+        // Whether to ask for a rating at all. Two independent gates, and both
+        // have to open: the CHANNEL has to be able to carry a control, and the
+        // CADENCE has to say this turn is one of the rare ones worth asking on
+        // — see FeedbackCadence, which exists because asking after every reply
+        // turned the control into furniture.
+        $askForRating = $driver->supportsMessageFeedback()
+            && $cadence->shouldAsk($conversation, $assistantMessage);
+
         // One assistant turn, possibly delivered as 2-3 human-paced messages —
-        // the Message row above is still the single record of this reply.
+        // the Message row above is still the single record of this reply, and
+        // the one a 👍/👎 under the LAST of them would vote on.
         try {
             $sender->send(
                 $driver,
                 $this->channel,
                 $incoming->externalUserId,
                 $assistantMessage->content,
-                $agent,
+                $askForRating ? $assistantMessage : null,
             );
+
+            // Marked only after the reply actually went out, so a delivery that
+            // failed does not spend the conversation's next prompt on a message
+            // the customer never saw.
+            if ($askForRating) {
+                $cadence->markAsked($assistantMessage);
+            }
         } catch (Throwable $e) {
             Log::error('Failed to deliver channel reply', [
                 'channel_id' => $this->channel->id,

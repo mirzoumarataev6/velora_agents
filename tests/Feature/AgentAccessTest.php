@@ -49,7 +49,6 @@ class AgentAccessTest extends TestCase
         $this->actingAs($stranger)
             ->put(route('agents.update', $agent), [
                 'name' => 'Hijacked',
-                'language' => 'auto',
                 'tone' => 'friendly',
                 'on_not_found' => 'apologize',
             ])

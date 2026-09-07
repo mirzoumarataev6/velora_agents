@@ -146,17 +146,25 @@ class HumanizedReplyTest extends TestCase
         Sleep::assertNeverSlept();
     }
 
-    public function test_setting_off_sends_the_long_reply_as_one_message(): void
+    /**
+     * There is no per-agent off-switch any more — the setting was removed from
+     * the form and the behaviour is unconditional. A long reply is split for
+     * every agent, however the agent was configured before.
+     */
+    public function test_a_long_reply_is_split_for_every_agent(): void
     {
         $this->mockLlm(self::LONG_REPLY);
         $this->fakeTelegramApi();
-        $agent = Agent::factory()->create(['humanize_replies' => false]);
+        $agent = Agent::factory()->create();
+        // The state an upgraded account is in: an old "off" left in the column
+        // that nothing is allowed to read.
+        $agent->forceFill(['humanize_replies' => false])->save();
         $channel = Channel::factory()->for($agent)->create();
 
         $this->postWebhook($channel, $this->telegramUpdate(1004))->assertOk();
 
-        $this->assertSame([self::LONG_REPLY], $this->sentTexts());
-        Sleep::assertNeverSlept();
+        $this->assertGreaterThan(1, count($this->sentTexts()));
+        $this->assertSame(self::LONG_REPLY, implode("\n\n", $this->sentTexts()));
     }
 
     public function test_split_reply_is_stored_as_exactly_one_assistant_message(): void

@@ -4,6 +4,7 @@ use App\Http\Controllers\AgentController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\ChannelController;
 use App\Http\Controllers\ConversationController;
+use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DatabaseConnectionController;
 use App\Http\Controllers\DatasetController;
 use App\Http\Controllers\KnowledgeSourceController;
@@ -12,6 +13,7 @@ use App\Http\Controllers\LeadNotificationController;
 use App\Http\Controllers\LocaleController;
 use App\Http\Controllers\OnboardingController;
 use App\Http\Controllers\PasswordResetController;
+use App\Http\Controllers\PersonaAssistantController;
 use App\Http\Controllers\PlaygroundController;
 use App\Http\Controllers\RootRedirectController;
 use App\Http\Controllers\SettingsController;
@@ -37,7 +39,11 @@ Route::middleware('guest')->group(function () {
 // password hash each session carries against the current one, so cycling the
 // hash actually ejects the other browsers instead of merely intending to.
 Route::middleware(['auth', 'auth.session'])->group(function () {
-    Route::redirect('/home', '/agents')->name('home');
+    // The panel's front page. `/home` is where every post-login redirect lands,
+    // so pointing it here is what makes the dashboard the landing surface
+    // without touching the handful of places that name that route.
+    Route::redirect('/home', '/dashboard')->name('home');
+    Route::get('/dashboard', DashboardController::class)->name('dashboard');
     Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
 
     // The only onboarding endpoint. Step progress is derived from the account's
@@ -51,6 +57,11 @@ Route::middleware(['auth', 'auth.session'])->group(function () {
     Route::get('leads/poll', [LeadController::class, 'poll'])->name('leads.poll');
     Route::post('leads/seen', [LeadController::class, 'markSeen'])->name('leads.seen');
     Route::patch('leads/{lead}', [LeadController::class, 'update'])->name('leads.update');
+    // Price-haggling decisions. Their own endpoints rather than another status
+    // value on `update`: approving is not a workflow move, it commits the
+    // business to a number and sends a message to the customer.
+    Route::post('leads/{lead}/price/approve', [LeadController::class, 'approvePrice'])->name('leads.price.approve');
+    Route::post('leads/{lead}/price/decline', [LeadController::class, 'declinePrice'])->name('leads.price.decline');
     Route::delete('leads/{lead}', [LeadController::class, 'destroy'])->name('leads.destroy');
 
     // Unified inbox across every agent and channel. `list` is declared before
@@ -72,6 +83,12 @@ Route::middleware(['auth', 'auth.session'])->group(function () {
         Route::put('theme', [SettingsController::class, 'updateTheme'])->name('theme');
         Route::delete('account', [SettingsController::class, 'destroy'])->name('account.destroy');
     });
+
+    // Declared before the resource so it reads as a sibling of the form it
+    // serves. Throttled because each call is a real LLM request the owner pays
+    // for, and the button is one click away from being held down.
+    Route::post('agents/persona-assistant', PersonaAssistantController::class)
+        ->middleware('throttle:10,1')->name('agents.persona-assistant');
 
     Route::resource('agents', AgentController::class)->parameters(['agents' => 'agent']);
     Route::patch('agents/{agent}/status', [AgentController::class, 'updateStatus'])->name('agents.status');

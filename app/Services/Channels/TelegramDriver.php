@@ -3,6 +3,7 @@
 namespace App\Services\Channels;
 
 use App\Models\Channel;
+use App\Models\Message;
 use App\Services\Llm\LlmProviderInterface;
 use App\Services\Voice\VoiceTranscriber;
 use Illuminate\Http\Client\ConnectionException;
@@ -27,6 +28,14 @@ class TelegramDriver implements ChannelDriverInterface
      * measured at the raw limit could cross it once "**x**" becomes "<b>x</b>".
      */
     protected const FORMATTING_MARGIN = 256;
+
+    /**
+     * Namespace for this driver's callback_data. Telegram gives every bot one
+     * flat 64-byte callback_data space shared by every button it ever sends, so
+     * a prefix is what keeps a feedback tap from being mistaken for whatever
+     * else gets a button later.
+     */
+    protected const FEEDBACK_PREFIX = 'fb';
 
     public function __construct(
         protected LlmProviderInterface $llm,
@@ -139,10 +148,6 @@ class TelegramDriver implements ChannelDriverInterface
 
         $agent = $channel->agent;
 
-        if ($agent && ! $agent->transcribe_voice) {
-            return $message('[Customer sent a voice message. Voice transcription is disabled for this agent.]', 'voice_disabled');
-        }
-
         $maxDuration = (int) config('agent.voice.max_duration_seconds', 300);
 
         // Checked before the download, so an hour-long note costs nothing.
@@ -164,7 +169,10 @@ class TelegramDriver implements ChannelDriverInterface
         try {
             $tempPath = $this->downloadVoice($channel, (string) ($voice['file_id'] ?? ''), $maxBytes);
 
-            $transcript = $this->transcriber->transcribe($tempPath, $this->transcriber->languageHintFor($agent?->language));
+            // No language hint: the reply language is detected per message now,
+            // so pinning Whisper to one language would only make it worse at
+            // the customer who switches.
+            $transcript = $this->transcriber->transcribe($tempPath);
 
             return $message($transcript, 'voice');
         } catch (\Throwable $e) {
@@ -229,8 +237,17 @@ class TelegramDriver implements ChannelDriverInterface
             throw new RuntimeException('Voice file exceeded the size limit after download.');
         }
 
+        // The extension has to be on the name we actually write to: ffmpeg and
+        // Whisper both decide how to read the file by it.
+        //
+        // tempnam CREATES the file it reserves, and appending the extension
+        // makes a DIFFERENT path — so the reserved one has to be released here
+        // or every voice note leaves an empty file in the temp directory
+        // forever. The finally block downstream only ever saw the extended name.
         $extension = pathinfo($filePath, PATHINFO_EXTENSION) ?: 'oga';
-        $tempPath = tempnam(sys_get_temp_dir(), 'velora-voice-').'.'.$extension;
+        $reserved = tempnam(sys_get_temp_dir(), 'velora-voice-');
+        $tempPath = $reserved.'.'.$extension;
+        @unlink($reserved);
 
         if (file_put_contents($tempPath, $body) === false) {
             throw new RuntimeException('Could not write the voice file to a temp path.');
@@ -335,6 +352,182 @@ class TelegramDriver implements ChannelDriverInterface
         }
     }
 
+    /**
+     * Telegram is the one channel that clears the bar in
+     * ChannelDriverInterface::supportsMessageFeedback(): inline keyboards ride
+     * along with an ordinary text message, callback_query names the message the
+     * button was on, and editMessageReplyMarkup can retire the control once it
+     * has been used.
+     */
+    public function supportsMessageFeedback(): bool
+    {
+        return true;
+    }
+
+    /**
+     * The reply, with 👍/👎 under it.
+     *
+     * Long text still splits, and only the LAST chunk carries the buttons —
+     * they are a verdict on the answer, and the answer is not finished until
+     * the last chunk lands. Anything that goes wrong falls back to a plain
+     * send: a rating control is worth nothing next to the reply itself.
+     */
+    public function sendMessageWithFeedback(Channel $channel, string $externalUserId, string $text, int $messageId): void
+    {
+        $token = $this->token($channel);
+        $chunks = $this->splitMessage($text, self::MAX_MESSAGE_LENGTH - self::FORMATTING_MARGIN);
+        $last = count($chunks) - 1;
+
+        foreach ($chunks as $index => $chunk) {
+            if ($index !== $last) {
+                $this->sendMessage($channel, $externalUserId, $chunk);
+
+                continue;
+            }
+
+            try {
+                $formatted = $this->markdown->toTelegramHtml($chunk);
+            } catch (\Throwable) {
+                $formatted = $chunk;
+            }
+
+            $response = $this->call($token, 'sendMessage', [
+                'chat_id' => $externalUserId,
+                'text' => $formatted,
+                'parse_mode' => 'HTML',
+                'reply_markup' => json_encode($this->feedbackKeyboard($messageId)),
+            ]);
+
+            if (! ($response['ok'] ?? false)) {
+                Log::warning('Telegram rejected a reply carrying the feedback keyboard; resending it plain', [
+                    'channel_id' => $channel->id,
+                    'description' => $response['description'] ?? null,
+                ]);
+
+                // Without the keyboard. A reply the customer can read and not
+                // rate beats a rating control on a reply they never got.
+                $this->sendMessage($channel, $externalUserId, $chunk);
+            }
+        }
+    }
+
+    public function parseFeedback(array $payload, Channel $channel): ?MessageFeedback
+    {
+        $callback = $payload['callback_query'] ?? null;
+
+        if (! is_array($callback)) {
+            return null;
+        }
+
+        $parsed = $this->parseCallbackData((string) ($callback['data'] ?? ''));
+
+        if ($parsed === null) {
+            return null;
+        }
+
+        $externalUserId = isset($callback['from']['id']) ? (string) $callback['from']['id'] : '';
+
+        if ($externalUserId === '') {
+            return null;
+        }
+
+        return new MessageFeedback(
+            messageId: $parsed['message_id'],
+            rating: $parsed['rating'],
+            externalUserId: $externalUserId,
+            platformMessageId: isset($callback['message']['message_id'])
+                ? (string) $callback['message']['message_id']
+                : null,
+            callbackId: isset($callback['id']) ? (string) $callback['id'] : null,
+        );
+    }
+
+    /**
+     * Acknowledge the tap, then retire the control.
+     *
+     * The acknowledgement goes first and unconditionally: an unanswered
+     * callback_query leaves a spinner on the customer's button for as long as
+     * Telegram feels like it, and that is the one part of this the customer can
+     * actually see going wrong.
+     *
+     * The buttons are replaced with a single, unclickable one carrying the
+     * confirmation — rather than removed outright — because a control that
+     * simply vanishes reads as a bug, while one that turns into "Спасибо!"
+     * reads as a receipt.
+     */
+    public function confirmFeedback(Channel $channel, MessageFeedback $feedback, string $confirmation): void
+    {
+        try {
+            $token = $this->token($channel);
+
+            if ($feedback->callbackId !== null) {
+                $this->call($token, 'answerCallbackQuery', [
+                    'callback_query_id' => $feedback->callbackId,
+                    'text' => $confirmation,
+                ]);
+            }
+
+            if ($feedback->platformMessageId === null) {
+                return;
+            }
+
+            $this->call($token, 'editMessageReplyMarkup', [
+                'chat_id' => $feedback->externalUserId,
+                'message_id' => $feedback->platformMessageId,
+                'reply_markup' => json_encode([
+                    'inline_keyboard' => [[[
+                        'text' => $confirmation,
+                        // Telegram requires a callback_data on a callback
+                        // button; this one is parsed as nothing and ignored,
+                        // which is what makes the button inert.
+                        'callback_data' => self::FEEDBACK_PREFIX.':done',
+                    ]]],
+                ]),
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('Could not confirm a message rating in Telegram', [
+                'channel_id' => $channel->id,
+                'message_id' => $feedback->messageId,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function feedbackKeyboard(int $messageId): array
+    {
+        return [
+            'inline_keyboard' => [[
+                ['text' => '👍', 'callback_data' => self::FEEDBACK_PREFIX.':up:'.$messageId],
+                ['text' => '👎', 'callback_data' => self::FEEDBACK_PREFIX.':down:'.$messageId],
+            ]],
+        ];
+    }
+
+    /**
+     * `fb:up:123` → the vote it encodes.
+     *
+     * Telegram caps callback_data at 64 bytes, which is why this is a terse
+     * string rather than JSON. Anything that does not match exactly — including
+     * the inert `fb:done` button a confirmed message is left wearing — parses
+     * as null.
+     *
+     * @return array{message_id: int, rating: string}|null
+     */
+    protected function parseCallbackData(string $data): ?array
+    {
+        if (! preg_match('/^'.self::FEEDBACK_PREFIX.':(up|down):(\d+)$/', $data, $matches)) {
+            return null;
+        }
+
+        return [
+            'message_id' => (int) $matches[2],
+            'rating' => $matches[1] === 'up' ? Message::RATING_UP : Message::RATING_DOWN,
+        ];
+    }
+
     public function sendTypingIndicator(Channel $channel, string $externalUserId): void
     {
         try {
@@ -363,7 +556,10 @@ class TelegramDriver implements ChannelDriverInterface
         $setWebhook = $this->call($token, 'setWebhook', [
             'url' => $webhookUrl,
             'secret_token' => $webhookSecret,
-            'allowed_updates' => ['message'],
+            // callback_query is not optional here. Telegram sends ONLY the
+            // update types named in this list, so without it a customer's 👍
+            // reaches nothing and the button spins forever.
+            'allowed_updates' => ['message', 'callback_query'],
         ]);
 
         if (empty($setWebhook['ok'])) {
