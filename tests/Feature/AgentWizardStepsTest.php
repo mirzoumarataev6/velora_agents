@@ -30,21 +30,21 @@ class AgentWizardStepsTest extends TestCase
         return $this->actingAs($this->user)->get(route('agents.create'));
     }
 
-    public function test_the_stepper_has_four_segments(): void
+    public function test_the_stepper_has_five_segments(): void
     {
         $response = $this->wizard();
 
         $response->assertOk();
-        $response->assertSee('x-for="n in 4"', false);
-        $response->assertDontSee('x-for="n in 3"', false);
+        $response->assertSee('x-for="n in 5"', false);
+        $response->assertDontSee('x-for="n in 4"', false);
     }
 
-    public function test_all_four_step_headings_are_present_and_numbered(): void
+    public function test_all_five_step_headings_are_present_and_numbered(): void
     {
         $response = $this->wizard();
 
         $response->assertOk();
-        foreach (['step1_heading', 'step2_heading', 'step3_heading', 'step4_heading'] as $key) {
+        foreach (['step1_heading', 'step2_heading', 'step3_heading', 'step4_heading', 'step5_heading'] as $key) {
             $response->assertSee(__("agents.form.{$key}"), false);
         }
     }
@@ -59,7 +59,7 @@ class AgentWizardStepsTest extends TestCase
         $content = $response->getContent();
 
         $response->assertOk();
-        foreach (['name', 'description', 'language', 'tone'] as $field) {
+        foreach (['name', 'description', 'tone'] as $field) {
             $this->assertStringContainsString('id="'.$field.'"', $content);
         }
 
@@ -104,7 +104,7 @@ class AgentWizardStepsTest extends TestCase
      */
     public function test_a_validation_error_reopens_the_step_it_belongs_to(): void
     {
-        $base = ['name' => 'Ok', 'language' => 'ru', 'tone' => 'friendly', 'on_not_found' => 'apologize', 'proactivity' => 'subtle'];
+        $base = ['name' => 'Ok', 'tone' => 'friendly', 'on_not_found' => 'apologize', 'proactivity' => 'subtle'];
 
         // from() sets the referer, so the validation redirect goes back to the
         // wizard rather than to "/" — which is what back() would otherwise pick.

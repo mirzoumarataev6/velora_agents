@@ -43,6 +43,59 @@ interface ChannelDriverInterface
      */
     public function sendMessage(Channel $channel, string $externalUserId, string $text): void;
 
+    /**
+     * Can this platform carry a per-reply 👍/👎 control?
+     *
+     * The bar is deliberately high, and it is not "can this platform draw
+     * buttons". It is all three of:
+     *
+     *  - buttons can be attached to an ordinary text reply, without changing
+     *    what the customer sees the reply as;
+     *  - the tap comes back identified against THAT message, not as a new
+     *    inbound message that has to be guessed at;
+     *  - the message can be edited afterwards, so the buttons can be taken
+     *    away and replaced with a confirmation.
+     *
+     * Today only Telegram clears it. WhatsApp and Instagram can both draw
+     * buttons, but neither can edit a message that has been sent, and both
+     * return a tap as a fresh inbound message — so a vote could not be tied to
+     * a specific reply, and the control could never be retired once used.
+     * Half-implementing it there would give the owner a rating column that
+     * quietly means something different per channel, which is worse than not
+     * offering it.
+     *
+     * A driver answering false must still be safe to call sendMessageWithFeedback
+     * on: it sends the reply, without a control.
+     */
+    public function supportsMessageFeedback(): bool;
+
+    /**
+     * Send a reply with a 👍/👎 control bound to `$messageId` (a `messages.id`).
+     *
+     * Falls back to a plain send where the platform cannot carry one, so
+     * callers never have to branch on the capability themselves.
+     */
+    public function sendMessageWithFeedback(Channel $channel, string $externalUserId, string $text, int $messageId): void;
+
+    /**
+     * Pull a 👍/👎 vote out of a webhook payload, or null if this delivery is
+     * not one. Same contract as parseIncomingMessage: decoded JSON in, a
+     * normalised value object or null out, no HTTP.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    public function parseFeedback(array $payload, Channel $channel): ?MessageFeedback;
+
+    /**
+     * Close the loop in the customer's chat: acknowledge the tap, take the
+     * buttons away so the reply cannot be voted on twice, and leave
+     * `$confirmation` in their place.
+     *
+     * Best-effort by contract — a vote that is recorded but not confirmed is a
+     * cosmetic failure, and must not cost the caller anything.
+     */
+    public function confirmFeedback(Channel $channel, MessageFeedback $feedback, string $confirmation): void;
+
     public function sendTypingIndicator(Channel $channel, string $externalUserId): void;
 
     /**

@@ -56,7 +56,7 @@ class ReplyLanguageTest extends TestCase
      */
     public function test_the_reply_language_follows_the_customer_mid_conversation(): void
     {
-        $agent = Agent::factory()->create(['language' => 'auto']);
+        $agent = Agent::factory()->create();
 
         $prompts = $this->promptsFor($agent, [
             'Здравствуйте, сколько стоит доставка?',
@@ -80,7 +80,7 @@ class ReplyLanguageTest extends TestCase
 
     public function test_the_language_switches_back_when_the_customer_does(): void
     {
-        $agent = Agent::factory()->create(['language' => 'auto']);
+        $agent = Agent::factory()->create();
 
         $prompts = $this->promptsFor($agent, ['Салом! Чӣ хел шумо?', 'А сколько стоит доставка в Худжанд?']);
 
@@ -93,7 +93,7 @@ class ReplyLanguageTest extends TestCase
      */
     public function test_a_message_with_no_language_signal_keeps_the_current_language(): void
     {
-        $agent = Agent::factory()->create(['language' => 'auto']);
+        $agent = Agent::factory()->create();
 
         $prompts = $this->promptsFor($agent, ['Мехохам ноутбук харидан', 'ок']);
 
@@ -102,7 +102,7 @@ class ReplyLanguageTest extends TestCase
 
     public function test_english_is_detected_too(): void
     {
-        $agent = Agent::factory()->create(['language' => 'auto']);
+        $agent = Agent::factory()->create();
 
         $prompts = $this->promptsFor($agent, ['Hello, do you have gaming laptops under 15000?']);
 
@@ -110,16 +110,22 @@ class ReplyLanguageTest extends TestCase
     }
 
     /**
-     * Detection is for 'auto' only. An owner who pinned the agent to one
-     * language meant it, whatever a customer types.
+     * There is no longer such a thing as an agent pinned to one language: the
+     * selector is gone from the form, and a stale value left in the column by
+     * an owner who set one before must not resurrect the old behaviour.
+     * Detection runs for everyone, on every message.
      */
-    public function test_an_agent_pinned_to_a_language_does_not_follow_the_customer(): void
+    public function test_a_stale_pinned_language_no_longer_overrides_detection(): void
     {
-        $agent = Agent::factory()->create(['language' => 'ru']);
+        $agent = Agent::factory()->create();
+        // Written past the model: `language` is not fillable any more, which is
+        // exactly the state an upgraded account is in — an old value in the
+        // column that nothing may read.
+        $agent->forceFill(['language' => 'ru'])->save();
 
-        $prompts = $this->promptsFor($agent, ['Дурустар кобед']);
+        $prompts = $this->promptsFor($agent->refresh(), ['Дурустар кобед']);
 
-        $this->assertStringContainsString('Always reply in Russian', $prompts[0]);
-        $this->assertStringNotContainsString('WRITE YOUR REPLY IN Tajik', $prompts[0]);
+        $this->assertStringContainsString('WRITE YOUR REPLY IN Tajik', $prompts[0]);
+        $this->assertStringNotContainsString('Always reply in Russian', $prompts[0]);
     }
 }

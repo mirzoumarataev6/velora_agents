@@ -56,7 +56,7 @@ class LeadCaptureTest extends TestCase
             );
         });
 
-        $agent = Agent::factory()->create(['capture_leads' => true]);
+        $agent = Agent::factory()->create();
         $conversation = $agent->conversations()->create(['status' => 'ai']);
 
         $assistant = $this->app->make(AgentReplyService::class)
@@ -99,7 +99,7 @@ class LeadCaptureTest extends TestCase
             );
         });
 
-        $agent = Agent::factory()->create(['capture_leads' => true]);
+        $agent = Agent::factory()->create();
         $conversation = $agent->conversations()->create(['status' => 'ai']);
 
         $assistant = $this->app->make(AgentReplyService::class)
@@ -130,7 +130,7 @@ class LeadCaptureTest extends TestCase
             );
         });
 
-        $agent = Agent::factory()->create(['capture_leads' => true]);
+        $agent = Agent::factory()->create();
         $conversation = $agent->conversations()->create(['status' => 'ai']);
 
         $assistant = $this->app->make(AgentReplyService::class)
@@ -169,7 +169,7 @@ class LeadCaptureTest extends TestCase
             );
         });
 
-        $agent = Agent::factory()->create(['capture_leads' => true]);
+        $agent = Agent::factory()->create();
         $conversation = $agent->conversations()->create(['status' => 'ai']);
         $service = $this->app->make(AgentReplyService::class);
 
@@ -210,7 +210,7 @@ class LeadCaptureTest extends TestCase
             );
         });
 
-        $agent = Agent::factory()->create(['capture_leads' => true]);
+        $agent = Agent::factory()->create();
         $conversation = $agent->conversations()->create(['status' => 'ai']);
         $service = $this->app->make(AgentReplyService::class);
 
@@ -242,7 +242,7 @@ class LeadCaptureTest extends TestCase
             );
         });
 
-        $agent = Agent::factory()->create(['capture_leads' => true]);
+        $agent = Agent::factory()->create();
         $conversation = $agent->conversations()->create(['status' => 'ai']);
         $service = $this->app->make(AgentReplyService::class);
 
@@ -274,7 +274,7 @@ class LeadCaptureTest extends TestCase
                 ->andReturn($this->textResult('Конечно!'));
         });
 
-        $agent = Agent::factory()->create(['capture_leads' => true]);
+        $agent = Agent::factory()->create();
         $conversation = $agent->conversations()->create(['status' => 'ai']);
 
         $this->app->make(AgentReplyService::class)->reply($conversation, 'Здравствуйте');
@@ -293,7 +293,7 @@ class LeadCaptureTest extends TestCase
             $mock->shouldReceive('generate')->once()->andReturn($this->textResult('Да, есть в наличии.'));
         });
 
-        $agent = Agent::factory()->create(['capture_leads' => true]);
+        $agent = Agent::factory()->create();
         $conversation = $agent->conversations()->create(['status' => 'ai']);
 
         $assistant = $this->app->make(AgentReplyService::class)
@@ -305,7 +305,13 @@ class LeadCaptureTest extends TestCase
         Queue::assertNotPushed(SendLeadNotificationJob::class);
     }
 
-    public function test_the_create_lead_tool_is_only_offered_when_capture_is_enabled(): void
+    /**
+     * Lead capture is no longer a setting. The per-agent toggle is gone from
+     * the form, and an agent that cannot take an order is not a cheaper agent —
+     * so the tool is offered on every generation, including for an account
+     * whose old column still says "off".
+     */
+    public function test_the_create_lead_tool_is_always_offered(): void
     {
         $capturedOptions = [];
 
@@ -326,17 +332,23 @@ class LeadCaptureTest extends TestCase
         // so "no tools at all" is no longer what "lead capture off" looks like.
         $toolNames = fn (array $options) => array_column($options['tools'] ?? [], 'name');
 
-        $enabled = Agent::factory()->create(['capture_leads' => true]);
-        $service->reply($enabled->conversations()->create(['status' => 'ai']), 'Привет');
+        $agent = Agent::factory()->create();
+        $service->reply($agent->conversations()->create(['status' => 'ai']), 'Привет');
         $this->assertContains(LeadCaptureService::TOOL_NAME, $toolNames($capturedOptions[0]));
 
         $capturedOptions = [];
-        $disabled = Agent::factory()->create(['capture_leads' => false]);
-        $service->reply($disabled->conversations()->create(['status' => 'ai']), 'Привет');
-        $this->assertNotContains(LeadCaptureService::TOOL_NAME, $toolNames($capturedOptions[0]));
+        $legacyOff = Agent::factory()->create();
+        $legacyOff->forceFill(['capture_leads' => false])->save();
+        $service->reply($legacyOff->conversations()->create(['status' => 'ai']), 'Привет');
+        $this->assertContains(LeadCaptureService::TOOL_NAME, $toolNames($capturedOptions[0]));
     }
 
-    public function test_no_tools_are_offered_when_both_capture_and_escalation_are_off(): void
+    /**
+     * With escalation off and no catalog, create_lead is the ONE tool left —
+     * the check that the tool list is built from what is actually available
+     * rather than always carrying everything.
+     */
+    public function test_only_the_lead_tool_is_offered_when_escalation_is_off(): void
     {
         $capturedOptions = [];
 
@@ -351,14 +363,16 @@ class LeadCaptureTest extends TestCase
         });
 
         $agent = Agent::factory()->create([
-            'capture_leads' => false,
             'behavior' => ['on_not_found' => 'apologize', 'escalation' => 'off'],
         ]);
 
         $this->app->make(AgentReplyService::class)
             ->reply($agent->conversations()->create(['status' => 'ai']), 'Привет');
 
-        $this->assertArrayNotHasKey('tools', $capturedOptions[0]);
+        $this->assertSame(
+            [LeadCaptureService::TOOL_NAME],
+            array_column($capturedOptions[0]['tools'] ?? [], 'name'),
+        );
     }
 
     public function test_lead_is_saved_even_when_the_confirmation_generation_fails(): void
@@ -379,7 +393,6 @@ class LeadCaptureTest extends TestCase
         });
 
         $agent = Agent::factory()->create([
-            'capture_leads' => true,
             'response_format' => ['lead_confirmation' => 'Заявка принята!'],
         ]);
         $conversation = $agent->conversations()->create(['status' => 'ai']);

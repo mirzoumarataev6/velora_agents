@@ -342,6 +342,52 @@ i {
     filter: blur(0);
 }
 
+/* ===================================================================
+   DASHBOARD MOTION
+
+   Three effects, all subtle, all switchable off by the reduced-motion block at
+   the bottom of this file. The rule they follow: motion marks something that is
+   genuinely happening — a card arriving, a number resolving, a figure that is
+   live — and never merely decorates a static one.
+   =================================================================== */
+
+/* The live dot: a slow expanding ring behind a solid centre, on the one figure
+   that is true RIGHT NOW rather than true of the period. Two seconds, so it
+   reads as a heartbeat rather than a blink — anything faster competes with the
+   content for attention, which is the opposite of the point. */
+.pulse-ring {
+    animation: pulse-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+@keyframes pulse-ring {
+    0% {
+        transform: scale(1);
+        opacity: 0.6;
+    }
+    70%,
+    100% {
+        transform: scale(2.4);
+        opacity: 0;
+    }
+}
+
+/* Cards lift very slightly under the cursor. Small enough that it registers as
+   responsiveness rather than as an effect. */
+.stat-card {
+    transition:
+        box-shadow 0.2s ease,
+        transform 0.2s ease;
+}
+.stat-card:hover {
+    transform: translateY(-2px);
+}
+
+/* A number mid-count-up. See resources/js/app.js — the class is added for the
+   duration of the animation and removed after, so a value that never animates
+   (or a browser with reduced motion) is never left dimmed. */
+.counting {
+    opacity: 0.85;
+}
+
 /* Whole-page fade on load / before an internal navigation. */
 .page-enter {
     opacity: 0;
@@ -538,5 +584,22 @@ i {
     .pg-typing-dot {
         animation: none;
         opacity: 0.6;
+    }
+    /* The live dot stays — it is a status mark, and removing it would remove
+       information. It just stops moving. */
+    .pulse-ring {
+        animation: none;
+        opacity: 0.35;
+    }
+    .stat-card {
+        transition: none;
+    }
+    .stat-card:hover {
+        transform: none;
+    }
+    /* The count-up is skipped entirely in JS; this is belt and braces for a
+       number caught mid-animation when the setting changes. */
+    .counting {
+        opacity: 1;
     }
 }

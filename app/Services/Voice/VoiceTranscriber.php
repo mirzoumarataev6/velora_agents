@@ -36,10 +36,6 @@ class VoiceTranscriber
      * Whisper code at all, so anything but ru/en is left to auto-detection
      * rather than mislabelled.
      */
-    public function languageHintFor(?string $agentLanguage): ?string
-    {
-        return in_array($agentLanguage, ['ru', 'en'], true) ? $agentLanguage : null;
-    }
 
     /**
      * @param  string  $path  A readable local file. Never a URL — the caller

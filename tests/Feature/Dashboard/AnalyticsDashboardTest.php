@@ -1,0 +1,536 @@
+<?php
+
+namespace Tests\Feature\Dashboard;
+
+use App\Models\Agent;
+use App\Models\Channel;
+use App\Models\Conversation;
+use App\Models\Lead;
+use App\Models\User;
+use App\Services\Analytics\DashboardMetrics;
+use App\Services\Haggling\HagglingService;
+use Carbon\CarbonImmutable;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\TestCase;
+
+/**
+ * The dashboard's numbers, and the promise underneath them: nothing on this page
+ * is invented. Every assertion here builds real rows and checks the figure that
+ * falls out of them.
+ */
+class AnalyticsDashboardTest extends TestCase
+{
+    use RefreshDatabase;
+
+    protected User $owner;
+
+    protected Agent $agent;
+
+    protected Channel $channel;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->owner = User::factory()->create();
+        $this->agent = Agent::factory()->for($this->owner)->create();
+        // One channel, reused: `channels` is unique on (agent_id, type), so an
+        // agent has at most one Telegram connection by design.
+        $this->channel = Channel::factory()->for($this->agent)->create(['type' => 'telegram']);
+    }
+
+    protected function metrics(int $days = 7): array
+    {
+        return (new DashboardMetrics($this->owner->fresh()))->forRange($days);
+    }
+
+    /**
+     * @param  array<string, mixed>  $meta
+     */
+    protected function conversationWith(int $assistantMessages = 1, array $meta = [], ?CarbonImmutable $at = null): Conversation
+    {
+        $at ??= CarbonImmutable::now();
+
+        $conversation = $this->agent->conversations()->create([
+            'status' => 'ai',
+            'channel_id' => $this->channel->id,
+            'external_user_id' => 'u'.uniqid(),
+            'last_message_at' => $at,
+        ]);
+
+        for ($i = 0; $i < $assistantMessages; $i++) {
+            // forceFill for the timestamp: `created_at` is not fillable on
+            // Message, so passing it to create() would be silently dropped and
+            // every one of these rows would land at "now".
+            $conversation->messages()
+                ->create(['role' => 'assistant', 'content' => 'ответ', 'meta' => $meta])
+                ->forceFill(['created_at' => $at])
+                ->save();
+        }
+
+        return $conversation;
+    }
+
+    // -----------------------------------------------------------------
+    // The page
+    // -----------------------------------------------------------------
+
+    public function test_the_dashboard_is_the_panel_landing_page(): void
+    {
+        $this->actingAs($this->owner)
+            ->get(route('home'))
+            ->assertRedirect(route('dashboard'));
+    }
+
+    public function test_the_dashboard_requires_a_signed_in_owner(): void
+    {
+        $this->get(route('dashboard'))->assertRedirect();
+    }
+
+    /**
+     * An account with no history gets one honest empty state rather than a grid
+     * of zeroes — and certainly rather than sample data.
+     */
+    public function test_an_account_with_no_conversations_sees_the_empty_state(): void
+    {
+        $response = $this->actingAs($this->owner)->get(route('dashboard'));
+
+        $response->assertOk();
+        $response->assertSee(__('dashboard.empty.title'), false);
+        $response->assertSee(__('dashboard.empty.description'), false);
+        $response->assertDontSee(__('dashboard.funnel.title'), false);
+    }
+
+    public function test_the_widgets_appear_once_there_is_history(): void
+    {
+        $this->conversationWith();
+
+        $response = $this->actingAs($this->owner)->get(route('dashboard'));
+
+        $response->assertOk();
+        $response->assertSee(__('dashboard.highlight.eyebrow'), false);
+        $response->assertSee(__('dashboard.funnel.title'), false);
+        $response->assertSee(__('dashboard.ratings.title'), false);
+        $response->assertSee(__('dashboard.response_trend.title'), false);
+        $response->assertSee(__('dashboard.leads_status.title'), false);
+        $response->assertSee(__('dashboard.heatmap.title'), false);
+        $response->assertSee(__('dashboard.products.title'), false);
+        $response->assertSee(__('dashboard.unanswered.title'), false);
+        $response->assertDontSee(__('dashboard.empty.title'), false);
+    }
+
+    public function test_the_range_toggle_is_honoured_and_falls_back_when_invalid(): void
+    {
+        $this->conversationWith();
+
+        $this->assertSame(30, $this->metrics(30)['range']);
+        $this->assertCount(30, $this->metrics(30)['series']);
+        // Not one of the offered ranges — falls back rather than 500ing.
+        $this->assertSame(7, (new DashboardMetrics($this->owner))->forRange(365)['range']);
+
+        $this->actingAs($this->owner)->get(route('dashboard', ['range' => 30]))->assertOk();
+    }
+
+    // -----------------------------------------------------------------
+    // Scoping
+    // -----------------------------------------------------------------
+
+    public function test_another_owners_data_is_never_counted(): void
+    {
+        $stranger = User::factory()->create();
+        $strangerAgent = Agent::factory()->for($stranger)->create();
+        $strangerAgent->conversations()->create(['status' => 'ai', 'last_message_at' => now()]);
+        $strangerAgent->leads()->create(['items' => 'чужая заявка', 'source' => 'telegram', 'status' => 'new']);
+
+        $metrics = $this->metrics();
+
+        $this->assertFalse($metrics['has_history']);
+        $this->assertSame(0, $metrics['summary']['leads_today']);
+        $this->assertSame(0, $metrics['summary']['conversations_total']);
+    }
+
+    // -----------------------------------------------------------------
+    // The summary numbers
+    // -----------------------------------------------------------------
+
+    public function test_active_conversations_counts_only_recent_and_unclosed_ones(): void
+    {
+        $this->conversationWith(at: CarbonImmutable::now()->subHour());
+        $this->conversationWith(at: CarbonImmutable::now()->subDays(5));            // too old
+        $this->conversationWith()->update(['status' => 'closed']);                   // closed
+
+        $this->assertSame(1, $this->metrics()['summary']['active_conversations']);
+    }
+
+    public function test_leads_today_and_this_week_are_counted_separately(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-09-03 12:00:00')); // a Thursday
+
+        $this->agent->leads()->create(['items' => 'сегодня', 'source' => 'telegram', 'status' => 'new']);
+
+        $earlier = $this->agent->leads()->create(['items' => 'в понедельник', 'source' => 'telegram', 'status' => 'new']);
+        $earlier->forceFill(['created_at' => CarbonImmutable::parse('2026-08-31 10:00:00')])->save();
+
+        $lastMonth = $this->agent->leads()->create(['items' => 'давно', 'source' => 'telegram', 'status' => 'new']);
+        $lastMonth->forceFill(['created_at' => CarbonImmutable::parse('2026-08-01 10:00:00')])->save();
+
+        $summary = $this->metrics()['summary'];
+
+        $this->assertSame(1, $summary['leads_today']);
+        $this->assertSame(2, $summary['leads_week']);
+    }
+
+    public function test_the_conversion_rate_is_the_share_of_conversations_that_produced_a_lead(): void
+    {
+        $converted = $this->conversationWith();
+        $this->conversationWith();
+        $this->conversationWith();
+        $this->conversationWith();
+
+        $this->agent->leads()->create([
+            'conversation_id' => $converted->id,
+            'items' => 'куртка',
+            'source' => 'telegram',
+            'status' => 'new',
+        ]);
+
+        $this->assertSame(25.0, $this->metrics()['summary']['conversion_rate']);
+    }
+
+    /** No replies yet means no measurement — null, never a fabricated zero. */
+    public function test_the_conversion_rate_and_response_time_are_null_without_data(): void
+    {
+        $summary = $this->metrics()['summary'];
+
+        $this->assertNull($summary['conversion_rate']);
+        $this->assertNull($summary['avg_response_ms']);
+    }
+
+    /**
+     * Read from the timing the reply pipeline already stamps on each reply,
+     * rather than from the gap between two rows — which would also measure the
+     * customer thinking.
+     */
+    public function test_average_response_time_comes_from_the_recorded_reply_timings(): void
+    {
+        $this->conversationWith(1, ['total_ms' => 1000]);
+        $this->conversationWith(1, ['total_ms' => 3000]);
+
+        $this->assertSame(2000.0, $this->metrics()['summary']['avg_response_ms']);
+    }
+
+    // -----------------------------------------------------------------
+    // Working while you sleep
+    // -----------------------------------------------------------------
+
+    public function test_after_hours_counts_nights_and_weekends(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-09-03 12:00:00')); // Thursday noon
+
+        $this->conversationWith(at: CarbonImmutable::parse('2026-09-03 02:30:00')); // night
+        $this->conversationWith(at: CarbonImmutable::parse('2026-09-03 23:10:00')); // night
+        $this->conversationWith(at: CarbonImmutable::parse('2026-08-30 14:00:00')); // Sunday afternoon
+        $this->conversationWith(at: CarbonImmutable::parse('2026-09-02 14:00:00')); // Wednesday afternoon
+
+        $afterHours = $this->metrics()['after_hours'];
+
+        $this->assertSame(3, $afterHours['messages']);
+        $this->assertSame(75.0, $afterHours['share']);
+    }
+
+    public function test_the_after_hours_window_is_configurable(): void
+    {
+        $metrics = new DashboardMetrics($this->owner);
+
+        config()->set('agent.analytics.after_hours', ['from_hour' => 22, 'to_hour' => 8, 'weekends' => false]);
+        $this->assertFalse($metrics->isAfterHours(CarbonImmutable::parse('2026-08-30 14:00:00')));
+        $this->assertTrue($metrics->isAfterHours(CarbonImmutable::parse('2026-09-02 23:00:00')));
+
+        config()->set('agent.analytics.after_hours', ['from_hour' => 22, 'to_hour' => 8, 'weekends' => true]);
+        $this->assertTrue($metrics->isAfterHours(CarbonImmutable::parse('2026-08-30 14:00:00')));
+    }
+
+    // -----------------------------------------------------------------
+    // Chart, heatmap, funnel
+    // -----------------------------------------------------------------
+
+    /** A silent day is still a day: a chart that skips them hides the quiet. */
+    public function test_the_series_includes_every_day_in_the_range(): void
+    {
+        $this->conversationWith(2, at: CarbonImmutable::now());
+
+        $series = $this->metrics()['series'];
+
+        $this->assertCount(7, $series);
+        $this->assertSame(0, $series[0]['total']);
+        $this->assertSame(2, $series[6]['total']);
+    }
+
+    /**
+     * The bars have to be visible, not merely present.
+     *
+     * The first version sized them with a percentage height inside a flex item
+     * that `items-end` had left content-sized — a percentage against an
+     * indefinite height resolves to auto, so every bar rendered at zero and the
+     * chart looked empty while the total above it read 168. This asserts the
+     * rendered geometry rather than the numbers behind it: a day with messages
+     * gets a bar with a real, absolute height, the busiest day fills the track,
+     * and a silent day stays flat.
+     */
+    public function test_days_with_messages_render_bars_with_a_real_height(): void
+    {
+        $today = CarbonImmutable::now()->startOfDay()->addHours(12);
+
+        $this->conversationWith(8, at: $today);
+        $this->conversationWith(2, at: $today->subDays(2));
+
+        $bars = $this->renderedBars();
+
+        $this->assertSame(0.0, $bars[$today->subDays(6)->format('d.m')], 'A day with no messages should be flat.');
+        $this->assertGreaterThan(0, $bars[$today->subDays(2)->format('d.m')], 'A day with messages must render a visible bar.');
+
+        // Two messages against a peak of eight is a quarter of the track.
+        $track = $bars['__track__'];
+        $this->assertEqualsWithDelta($track, $bars[$today->format('d.m')], 0.001, 'The busiest day should fill the track.');
+        $this->assertEqualsWithDelta($track / 4, $bars[$today->subDays(2)->format('d.m')], 0.001);
+    }
+
+    /** A single message against a busy peak still has to be seeable. */
+    public function test_a_barely_used_day_is_not_rounded_away(): void
+    {
+        $today = CarbonImmutable::now()->startOfDay()->addHours(12);
+
+        $this->conversationWith(200, at: $today);
+        $this->conversationWith(1, at: $today->subDays(1));
+
+        $bars = $this->renderedBars();
+
+        $this->assertGreaterThanOrEqual(0.25, $bars[$today->subDays(1)->format('d.m')]);
+    }
+
+    /**
+     * Every rendered bar height in rem, keyed by the day label the chart prints,
+     * plus `__track__` for the height of the fixed track they are measured
+     * against.
+     *
+     * Heights are read in absolute units on purpose. Asserting on a percentage
+     * would have passed against the broken markup — the percentages were all
+     * there, they just had nothing to resolve against.
+     *
+     * @return array<string, float>
+     */
+    protected function renderedBars(): array
+    {
+        $html = $this->actingAs($this->owner)->get(route('dashboard'))->assertOk()->getContent();
+
+        $document = new \DOMDocument;
+        libxml_use_internal_errors(true);
+        $document->loadHTML('<?xml encoding="utf-8"?>'.$html);
+        libxml_clear_errors();
+
+        $xpath = new \DOMXPath($document);
+        $columns = $xpath->query("//div[@title and contains(@class, 'group') and contains(@class, 'flex-col')]");
+
+        $this->assertNotNull($columns);
+        $this->assertGreaterThan(0, $columns->length, 'The chart rendered no columns at all.');
+
+        $heights = [];
+
+        foreach ($columns as $column) {
+            /** @var \DOMElement $column */
+            [$label] = explode(' — ', $column->getAttribute('title'));
+
+            $track = $xpath->query('./div', $column)->item(0);
+            $bar = $xpath->query('./div', $track)->item(0);
+
+            $trackHeight = $this->remHeight($track);
+            $this->assertGreaterThan(0, $trackHeight, 'The track must have a definite height for bars to be a fraction of.');
+
+            $heights['__track__'] = $trackHeight;
+            $heights[$label] = $this->remHeight($bar);
+        }
+
+        return $heights;
+    }
+
+    /** The `height` of one element, in rem — and never in percent. */
+    protected function remHeight(?\DOMNode $node): float
+    {
+        $this->assertInstanceOf(\DOMElement::class, $node);
+
+        $style = $node->getAttribute('style');
+
+        $this->assertMatchesRegularExpression(
+            '/height:\s*[\d.]+rem/',
+            $style,
+            "Expected an absolute height, got: {$style}",
+        );
+
+        preg_match('/height:\s*([\d.]+)rem/', $style, $matches);
+
+        return (float) $matches[1];
+    }
+
+    public function test_the_channel_breakdown_only_lists_connected_channels(): void
+    {
+        $this->conversationWith();
+
+        $this->assertSame(['telegram'], $this->metrics()['channels']);
+    }
+
+    public function test_the_heatmap_buckets_messages_by_weekday_and_hour(): void
+    {
+        // A Wednesday at 15:00 — ISO weekday 3, so row index 2.
+        $this->conversationWith(3, at: CarbonImmutable::parse('2026-09-02 15:20:00'));
+        $this->travelTo(CarbonImmutable::parse('2026-09-03 12:00:00'));
+
+        $heatmap = $this->metrics()['heatmap'];
+
+        $this->assertSame(3, $heatmap['grid'][2][15]);
+        $this->assertSame(3, $heatmap['max']);
+        $this->assertCount(7, $heatmap['grid']);
+        $this->assertCount(24, $heatmap['grid'][0]);
+    }
+
+    public function test_the_funnel_reports_each_stage_and_its_drop_off(): void
+    {
+        $converted = $this->conversationWith();
+        $this->conversationWith();
+        $this->conversationWith();
+        $this->conversationWith();
+
+        $this->agent->leads()->create(['conversation_id' => $converted->id, 'items' => 'a', 'source' => 'telegram', 'status' => 'new']);
+        $this->agent->leads()->create(['items' => 'b', 'source' => 'telegram', 'status' => 'done']);
+
+        [$conversations, $leads, $confirmed] = $this->metrics()['funnel'];
+
+        $this->assertSame(4, $conversations['value']);
+        $this->assertNull($conversations['drop_off']);
+        $this->assertSame(2, $leads['value']);
+        $this->assertSame(50.0, $leads['drop_off']);
+        // Only the `done` one counts as confirmed — a lead still at `new` is a
+        // lead, not an order.
+        $this->assertSame(1, $confirmed['value']);
+        $this->assertSame(50.0, $confirmed['drop_off']);
+    }
+
+    // -----------------------------------------------------------------
+    // Pending work
+    // -----------------------------------------------------------------
+
+    public function test_pending_orders_and_price_approvals_are_counted_apart(): void
+    {
+        $this->agent->leads()->create(['items' => 'a', 'source' => 'telegram', 'status' => 'new']);
+        $this->agent->leads()->create(['items' => 'b', 'source' => 'telegram', 'status' => 'in_progress']);
+        $this->agent->leads()->create(['items' => 'c', 'source' => 'telegram', 'status' => 'done']);
+        $this->agent->leads()->create([
+            'type' => HagglingService::TYPE,
+            'items' => 'ноутбук',
+            'source' => 'telegram',
+            'status' => HagglingService::STATUS_PENDING,
+        ]);
+
+        $pending = $this->metrics()['pending'];
+
+        $this->assertSame(2, $pending['open_orders']);
+        $this->assertSame(1, $pending['price_approvals']);
+    }
+
+    public function test_the_pending_widget_links_to_each_filtered_view(): void
+    {
+        $this->conversationWith();
+        $this->agent->leads()->create(['items' => 'a', 'source' => 'telegram', 'status' => 'new']);
+
+        $this->actingAs($this->owner)
+            ->get(route('dashboard'))
+            ->assertOk()
+            // Escaped, because Blade escapes the & in a query string when it
+            // writes the href.
+            ->assertSee(route('leads.index', ['status' => 'new']))
+            ->assertSee(route('leads.index', ['view' => 'haggle', 'status' => HagglingService::STATUS_PENDING]));
+    }
+
+    // -----------------------------------------------------------------
+    // Demand: asked-for products, and questions with no answer
+    // -----------------------------------------------------------------
+
+    public function test_most_asked_products_aggregate_searches_regardless_of_sale(): void
+    {
+        $this->conversationWith(1, ['product_queries' => [
+            ['query' => 'ноутбук', 'category' => null, 'count' => 3],
+        ]]);
+        $this->conversationWith(1, ['product_queries' => [
+            ['query' => 'Ноутбук', 'category' => null, 'count' => 0],
+            ['query' => 'мышка', 'category' => null, 'count' => 2],
+        ]]);
+
+        $products = $this->metrics()['products'];
+
+        // Case-folded into one row, labelled with the most recent spelling, and
+        // counted per search rather than per sale.
+        $this->assertSame('Ноутбук', $products[0]['term']);
+        $this->assertSame(2, $products[0]['count']);
+        // One of the two searches found nothing — a stocking signal.
+        $this->assertSame(50, $products[0]['miss_rate']);
+        $this->assertSame('мышка', $products[1]['term']);
+    }
+
+    /** A bare "what do you sell?" browse carries no demand signal. */
+    public function test_a_filterless_browse_is_not_counted_as_a_product_question(): void
+    {
+        $this->conversationWith(1, ['product_queries' => [['query' => null, 'category' => null, 'count' => 5]]]);
+
+        $this->assertSame([], $this->metrics()['products']);
+    }
+
+    public function test_unanswered_questions_are_grouped_by_what_was_asked(): void
+    {
+        $this->conversationWith(1, [
+            'unanswered' => true,
+            'unanswered_reason' => 'catalog_miss',
+            'unanswered_question' => 'Есть ли доставка в Худжанд?',
+        ]);
+        $this->conversationWith(1, [
+            'unanswered' => true,
+            'unanswered_reason' => 'catalog_miss',
+            'unanswered_question' => 'есть ли доставка в худжанд',
+        ]);
+        $this->conversationWith(1, [
+            'unanswered' => true,
+            'unanswered_reason' => 'knowledge_miss',
+            'unanswered_question' => 'Работаете в воскресенье?',
+        ]);
+        $this->conversationWith(1, ['unanswered' => false]);
+
+        $unanswered = $this->metrics()['unanswered'];
+
+        $this->assertCount(2, $unanswered);
+        // Punctuation and case fold together into one row; the phrasing shown is
+        // a real one the customer typed — the most recent of them.
+        $this->assertSame('есть ли доставка в худжанд', $unanswered[0]['question']);
+        $this->assertSame(2, $unanswered[0]['count']);
+        $this->assertSame('catalog_miss', $unanswered[0]['reason']);
+        $this->assertSame(1, $unanswered[1]['count']);
+    }
+
+    // -----------------------------------------------------------------
+    // i18n
+    // -----------------------------------------------------------------
+
+    public function test_the_dashboard_translates_across_every_supported_locale(): void
+    {
+        $this->conversationWith();
+
+        foreach (['ru', 'en', 'tg'] as $locale) {
+            // Set on the account rather than with app()->setLocale(): the
+            // SetLocale middleware re-resolves the locale on every request, so
+            // a container-level override would not survive the trip.
+            $this->owner->forceFill(['locale' => $locale])->save();
+
+            $this->actingAs($this->owner)
+                ->get(route('dashboard'))
+                ->assertOk()
+                ->assertSee(__('dashboard.highlight.eyebrow', [], $locale), false);
+        }
+    }
+}

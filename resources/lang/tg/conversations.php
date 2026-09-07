@@ -56,6 +56,7 @@ return [
         'unread' => 'Хонданашуда',
         'needs_human' => 'Одам лозим аст',
         'has_lead' => 'Бо дархост',
+        'rated_down' => 'Бо 👎',
         'closed' => 'Пӯшида',
     ],
 
@@ -88,6 +89,10 @@ return [
         'knowledge_unconfirmed' => 'мутобиқати заиф',
         'leads_heading' => 'Дархостҳо аз муколама',
         'view_in_leads' => 'Дар «Дархостҳо» кушоед',
+        'rating_up' => '👍',
+        'rating_down' => '👎',
+        'rating_up_hint' => 'Мизоҷ баҳо дод',
+        'rating_down_hint' => 'Ба мизоҷ ин ҷавоб маъқул нашуд',
         'voice_note' => 'овозӣ',
         'no_channel' => 'Ба ин муколама канал пайваст нашудааст, ҷавоб додан имконнопазир аст.',
         'back' => 'Ба рӯйхат',

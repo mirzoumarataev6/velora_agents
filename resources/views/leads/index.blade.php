@@ -6,6 +6,8 @@
 <div class="mx-auto max-w-5xl" x-data="leadsBoard({
         updateUrlBase: '{{ route('leads.update', ['lead' => '__ID__']) }}',
         deleteUrlBase: '{{ route('leads.destroy', ['lead' => '__ID__']) }}',
+        approveUrlBase: '{{ route('leads.price.approve', ['lead' => '__ID__']) }}',
+        declineUrlBase: '{{ route('leads.price.decline', ['lead' => '__ID__']) }}',
         indexUrl: '{{ route('leads.index') }}',
         labels: {{ Js::from([
             'updated' => __('leads.index.updated'),
@@ -13,6 +15,9 @@
             'failed' => __('leads.index.action_failed'),
             'network' => __('leads.index.network_error'),
             'deleteConfirm' => __('leads.index.delete_confirm'),
+            'approved' => __('leads.haggle.approved'),
+            'declined' => __('leads.haggle.declined'),
+            'declineConfirm' => __('leads.haggle.decline_confirm'),
         ]) }},
     })">
     <div class="flex flex-wrap items-end justify-between gap-4">
@@ -24,29 +29,46 @@
         @if ($agents->count() > 1)
             <select onchange="window.location.href = this.value"
                 class="field rounded-xl px-4 py-2 text-sm">
-                <option value="{{ route('leads.index', array_filter(['status' => $activeStatus, 'q' => $activeSearch])) }}" @selected(! $activeAgent)>{{ __('leads.index.all_agents') }}</option>
+                @php $tab = $activeView === 'orders' ? null : $activeView; @endphp
+                <option value="{{ route('leads.index', array_filter(['view' => $tab, 'status' => $activeStatus, 'q' => $activeSearch])) }}" @selected(! $activeAgent)>{{ __('leads.index.all_agents') }}</option>
                 @foreach ($agents as $agentOption)
-                    <option value="{{ route('leads.index', array_filter(['status' => $activeStatus, 'agent' => $agentOption->id, 'q' => $activeSearch])) }}" @selected((string) $activeAgent === (string) $agentOption->id)>{{ $agentOption->name }}</option>
+                    <option value="{{ route('leads.index', array_filter(['view' => $tab, 'status' => $activeStatus, 'agent' => $agentOption->id, 'q' => $activeSearch])) }}" @selected((string) $activeAgent === (string) $agentOption->id)>{{ $agentOption->name }}</option>
                 @endforeach
             </select>
         @endif
     </div>
 
+    {{-- Tabs first, then the status chips WITHIN the active tab.
+
+         Orders and price requests are different work, not two flavours of the
+         same list: one is a record to follow up when convenient, the other is a
+         decision with a customer waiting in a live chat. Filed together the
+         urgent kind sinks under the routine kind — which is what the badge on
+         the second tab exists to stop. --}}
+    <div class="mt-6 flex items-center gap-1 border-b border-black/10 dark:border-white/10">
+        @foreach (['orders', 'haggle'] as $viewKey)
+            <a href="{{ route('leads.index', array_filter(['view' => $viewKey === 'orders' ? null : $viewKey, 'agent' => $activeAgent])) }}"
+                class="-mb-px flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-semibold transition-colors {{ $activeView === $viewKey ? 'border-brand text-brand' : 'border-transparent text-muted hover:text-body dark:text-night-muted' }}">
+                {{ __("leads.views.$viewKey") }}
+                @if ($viewKey === 'haggle' && $pendingHaggleCount > 0)
+                    <span class="rounded-full bg-warning px-1.5 py-0.5 text-[11px] font-bold leading-none text-white">{{ $pendingHaggleCount }}</span>
+                @endif
+            </a>
+        @endforeach
+    </div>
+
     {{-- Status filter + search. A plain GET form so the query lands in the URL
          and stays shareable, reloadable and back-button friendly — the same
          thing the inbox achieves with replaceState. --}}
-    <div class="mt-6 flex flex-wrap items-center gap-2">
-        @php
-            $statusFilters = ['all' => null, 'new' => 'new', 'in_progress' => 'in_progress', 'done' => 'done'];
-        @endphp
+    <div class="mt-4 flex flex-wrap items-center gap-2">
         {{-- data-lead-chip marks the links whose `q` has to be rewritten as the
              owner types; without it a chip clicked after a live search would
              navigate back to the term the server rendered with. --}}
-        @foreach ($statusFilters as $key => $value)
-            <a href="{{ route('leads.index', array_filter(['status' => $value, 'agent' => $activeAgent, 'q' => $activeSearch])) }}"
+        @foreach (array_merge([null], $statusOptions) as $value)
+            <a href="{{ route('leads.index', array_filter(['view' => $activeView === 'orders' ? null : $activeView, 'status' => $value, 'agent' => $activeAgent, 'q' => $activeSearch])) }}"
                 data-lead-chip
                 class="rounded-full border px-4 py-1.5 text-sm font-medium transition-colors {{ $activeStatus === $value ? 'border-brand bg-brand/10 text-brand' : 'border-black/10 text-muted hover:bg-black/5 dark:border-white/10 dark:text-night-muted dark:hover:bg-white/5' }}">
-                {{ __("leads.filters.$key") }}
+                {{ __('leads.filters.'.($value ?? 'all')) }}
             </a>
         @endforeach
 
@@ -55,6 +77,9 @@
              redundant, so it is suppressed. --}}
         <form method="GET" action="{{ route('leads.index') }}" @submit.prevent="search($refs.search.value)"
             class="relative ml-auto min-w-0 flex-1 sm:max-w-xs">
+            @if ($activeView !== 'orders')
+                <input type="hidden" name="view" value="{{ $activeView }}" />
+            @endif
             @if ($activeStatus)
                 <input type="hidden" name="status" value="{{ $activeStatus }}" />
             @endif
@@ -81,7 +106,7 @@
 
 @push('scripts')
 <script>
-    function leadsBoard({ updateUrlBase, deleteUrlBase, indexUrl, labels }) {
+    function leadsBoard({ updateUrlBase, deleteUrlBase, approveUrlBase, declineUrlBase, indexUrl, labels }) {
         return {
             removed: [],
             searching: false,
@@ -103,7 +128,7 @@
 
                 // Carry whatever else is narrowing the list right now.
                 const current = new URLSearchParams(window.location.search);
-                ['status', 'agent'].forEach((key) => {
+                ['view', 'status', 'agent'].forEach((key) => {
                     if (current.get(key)) url.searchParams.set(key, current.get(key));
                 });
                 if (q) url.searchParams.set('q', q);
@@ -173,6 +198,41 @@
                 } catch (e) {
                     window.showToast?.(labels.network, 'error');
                 }
+            },
+            /**
+             * Approve or decline a haggle request. The optional number in the
+             * box means different things either way — the price to grant, or
+             * the counter to offer instead — which is why one input serves both
+             * buttons.
+             */
+            async decide(url, body, successLabel, id) {
+                try {
+                    const res = await fetch(url.replace('__ID__', id), {
+                        method: 'POST',
+                        headers: this.headers(),
+                        body: JSON.stringify(body),
+                    });
+                    if (!res.ok) {
+                        window.showToast?.(labels.failed, 'error');
+                        return;
+                    }
+                    window.showToast?.(successLabel, 'success');
+                    // The card's actions are gone now and its state has moved,
+                    // so the row is re-rendered from the server rather than
+                    // patched in place.
+                    this.search(this.$refs.search?.value ?? '');
+                } catch (e) {
+                    window.showToast?.(labels.network, 'error');
+                }
+            },
+            approvePrice(id, price) {
+                const value = parseFloat(price);
+                this.decide(approveUrlBase, Number.isFinite(value) && value > 0 ? { price: value } : {}, labels.approved, id);
+            },
+            declinePrice(id, counter) {
+                const value = parseFloat(counter);
+                if (!Number.isFinite(value) && !confirm(labels.declineConfirm)) return;
+                this.decide(declineUrlBase, Number.isFinite(value) && value > 0 ? { counter_price: value } : {}, labels.declined, id);
             },
             async remove(id) {
                 if (!confirm(labels.deleteConfirm)) return;

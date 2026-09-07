@@ -24,7 +24,7 @@ use Throwable;
  */
 class WhatsAppDriver implements ChannelDriverInterface
 {
-    use DescribesImagesWithConfidence, SplitsLongMessages, VerifiesMetaWebhook;
+    use DescribesImagesWithConfidence, HasNoMessageFeedback, SplitsLongMessages, VerifiesMetaWebhook;
 
     protected const API_VERSION = 'v21.0';
 

@@ -10,9 +10,11 @@ use App\Models\Lead;
 use App\Models\Message;
 use App\Services\Dataset\ProductSearchService;
 use App\Services\Escalation\HostilityDetector;
+use App\Services\Haggling\HagglingService;
 use App\Services\Leads\OrderConfirmationGuard;
 use App\Services\Llm\LlmProviderInterface;
 use App\Services\Llm\UsageRecorder;
+use App\Services\Quality\NonAnswerDetector;
 use App\Services\Rag\ProductQuestionDetector;
 use App\Services\Rag\RetrievedChunk;
 use App\Services\Rag\VectorStoreInterface;
@@ -115,6 +117,11 @@ class AgentReplyService
         protected ReplySimilarity $similarity,
         protected HostilityDetector $hostility,
         protected OrderConfirmationGuard $orderClaims,
+        protected HagglingService $haggling,
+        // Stateless and dependency-free, so it is defaulted rather than bound:
+        // nothing ever needs to swap it, and the backfill command constructs
+        // its own copy of the same class.
+        protected NonAnswerDetector $nonAnswers = new NonAnswerDetector,
     ) {}
 
     /**
@@ -187,8 +194,12 @@ class AgentReplyService
         $failed = false;
         /** @var Lead[] $capturedLeads */
         $capturedLeads = [];
+        /** @var Lead[] $haggleLeads Pending price approvals raised this turn. */
+        $haggleLeads = [];
         $escalation = null;
         $productSearches = 0;
+        $productQueries = [];
+        $productMisses = 0;
         $retrievalSkipped = false;
         $handover = null;
         $askedForPhone = false;
@@ -196,9 +207,11 @@ class AgentReplyService
         $rewroteRepeat = false;
 
         try {
-            $captureLeads = (bool) $agent->capture_leads;
             $detectEscalation = $this->escalation->enabledFor($agent);
             $searchProducts = $this->productSearch->enabledFor($agent);
+            // Negotiating needs something to negotiate over: with no catalog
+            // there is no listed price, and the floor is a percentage of one.
+            $negotiatesPrice = $searchProducts && $this->haggling->enabledFor($agent);
 
             // The reply the customer is answering. Held here rather than looked
             // up later because two separate decisions need it: how to prompt for
@@ -252,8 +265,12 @@ class AgentReplyService
             if ($searchProducts) {
                 $systemPrompt .= "\n\n".$this->productSearch->systemInstruction();
             }
-            if ($captureLeads) {
-                $systemPrompt .= "\n\n".$this->leadCapture->systemInstruction();
+            // Unconditional: recording what a customer wants to buy is the
+            // whole job, and an agent that cannot take an order is not a
+            // cheaper agent — it is a broken one.
+            $systemPrompt .= "\n\n".$this->leadCapture->systemInstruction();
+            if ($negotiatesPrice) {
+                $systemPrompt .= "\n\n".$this->haggling->systemInstruction($agent);
             }
             if ($detectEscalation) {
                 $systemPrompt .= "\n\n".$this->escalation->systemInstruction($agent);
@@ -280,8 +297,9 @@ class AgentReplyService
             if ($searchProducts) {
                 $tools[] = $this->productSearch->toolDefinition();
             }
-            if ($captureLeads) {
-                $tools[] = $this->leadCapture->toolDefinition();
+            $tools[] = $this->leadCapture->toolDefinition();
+            if ($negotiatesPrice) {
+                $tools[] = $this->haggling->toolDefinition();
             }
             if ($detectEscalation) {
                 $tools[] = $this->escalation->toolDefinition();
@@ -305,6 +323,8 @@ class AgentReplyService
                 $contents = $resolved['contents'];
                 $carried = $resolved['carried'];
                 $productSearches = $resolved['searches'];
+                $productQueries = $resolved['queries'];
+                $productMisses = $resolved['misses'];
                 // Replaced, not appended: $resolved carries forward the non-search
                 // calls from every superseded generation (the first one included),
                 // and $result is now the final generation. Adding the original
@@ -346,14 +366,42 @@ class AgentReplyService
                 ];
             }
 
-            $leadCalls = $captureLeads
+            $leadCalls = array_values(array_filter(
+                $toolCalls,
+                fn ($call) => ($call['name'] ?? null) === LeadCaptureService::TOOL_NAME
+            ));
+
+            $haggleCalls = $negotiatesPrice
                 ? array_values(array_filter(
                     $toolCalls,
-                    fn ($call) => ($call['name'] ?? null) === LeadCaptureService::TOOL_NAME
+                    fn ($call) => ($call['name'] ?? null) === HagglingService::TOOL_NAME
                 ))
                 : [];
 
-            if ($leadCalls !== [] && $this->leadCapture->shouldAskForPhoneFirst($conversation, $leadCalls)) {
+            // A price the assistant was already allowed to give is not a
+            // decision for the owner. Checked here rather than trusted to the
+            // prompt: the model reads the listed price off its own earlier
+            // message often enough that unfiltered escalations would train the
+            // owner to ignore the ones that matter. See isBelowFloor().
+            $haggleCalls = array_values(array_filter(
+                $haggleCalls,
+                fn ($call) => $this->haggling->isBelowFloor(
+                    $agent,
+                    $this->numeric($call['arguments']['requested_price'] ?? null),
+                    $this->numeric($call['arguments']['listed_price'] ?? null),
+                ),
+            ));
+
+            if ($haggleCalls !== []) {
+                // The price question outranks everything else this turn: until
+                // the owner answers there is no price, so there is no order to
+                // record either. Any create_lead call made alongside it is
+                // dropped rather than filed against a price nobody agreed to.
+                $request = $this->requestPriceApproval($agent, $conversation, $contents, $systemPrompt, $result, $haggleCalls);
+                $replyText = $request['text'];
+                $usage = $request['usage'];
+                $haggleLeads = $request['leads'];
+            } elseif ($leadCalls !== [] && $this->leadCapture->shouldAskForPhoneFirst($conversation, $leadCalls)) {
                 // Held back for exactly one turn, so the customer is asked for a
                 // number before the order is filed without one. Nothing is
                 // persisted here; the next attempt records it whatever they say.
@@ -407,7 +455,12 @@ class AgentReplyService
             // A confirmation the customer can read must correspond to a row
             // they can be phoned about. Runs last, on the final text, whichever
             // path produced it.
-            $replyText = $this->honourAnyOrderClaim($agent, $conversation, $replyText, $capturedLeads);
+            // Skipped while a price is out for approval: the reply deliberately
+            // promises nothing, and the guard exists to catch a confirmation
+            // that WAS given.
+            if ($haggleLeads === []) {
+                $replyText = $this->honourAnyOrderClaim($agent, $conversation, $replyText, $capturedLeads);
+            }
             $replyText = $this->rejectEmptyReply($agent, $conversation, $replyText);
 
             // Superseded generations (a turn the model spent calling
@@ -451,6 +504,19 @@ class AgentReplyService
 
         $totalMs = (microtime(true) - $startedAt) * 1000;
 
+        $unanswered = $this->classifyUnanswered(
+            failed: $failed,
+            productSearches: $productSearches,
+            productMisses: $productMisses,
+            retrieved: $retrieved,
+            retrievalSkipped: $retrievalSkipped,
+            capturedLeads: $capturedLeads,
+            userMessage: $userMsg->content,
+            replyText: $replyText,
+            escalated: $escalation !== null,
+            priceApprovalRequested: $haggleLeads !== [],
+        );
+
         $assistantMsg = $conversation->messages()->create([
             'role' => 'assistant',
             'content' => $replyText,
@@ -473,6 +539,10 @@ class AgentReplyService
                 // order attempt so the customer is only ever asked once.
                 LeadCaptureService::ASKED_FOR_PHONE => $askedForPhone,
                 'lead_ids' => array_map(fn (Lead $lead) => $lead->id, $capturedLeads),
+                // A turn that ended in "я уточню у менеджера". Visible in the
+                // Playground beside the other decisions this turn made.
+                'price_approval_requested' => $haggleLeads !== [],
+                'haggle_lead_ids' => array_map(fn (Lead $lead) => $lead->id, $haggleLeads),
                 'escalated' => $escalation !== null,
                 'escalation_signal' => $escalation['signal'] ?? null,
                 'escalation_confidence' => $escalation['confidence'] ?? null,
@@ -481,6 +551,23 @@ class AgentReplyService
                 // timings do, so an owner debugging a wrong price can see whether
                 // the dataset was consulted at all.
                 'product_searches' => $productSearches,
+                // What the catalog was asked for, so the owner's dashboard can
+                // show demand rather than only sales.
+                'product_queries' => $productQueries,
+                // Whether this turn ended without an answer, and why. Recorded
+                // here because nothing else in the schema survives it: a
+                // question the agent could not answer produces no lead, no
+                // escalation and no error — the customer simply leaves. The
+                // question itself rides along so the dashboard can group
+                // recurring ones without joining back through the transcript.
+                'unanswered' => $unanswered !== null,
+                'unanswered_reason' => $unanswered['reason'] ?? null,
+                // Which signal caught it: the facts of the turn ('retrieval',
+                // 'pipeline') or the wording of the reply ('reply_text'). The
+                // owner never sees this; it exists so a noisy detector can be
+                // told apart from a noisy agent when tuning either one.
+                'unanswered_detected_by' => $unanswered['detected_by'] ?? null,
+                'unanswered_question' => $unanswered === null ? null : mb_substr(trim($userMsg->content), 0, 300),
                 // Why a handover fired, when one did — the owner's inbox shows
                 // the signal, and this shows whether a person or a pattern
                 // decided it.
@@ -495,7 +582,7 @@ class AgentReplyService
 
         $conversation->update(['last_message_at' => now()]);
 
-        foreach ($capturedLeads as $lead) {
+        foreach ([...$capturedLeads, ...$haggleLeads] as $lead) {
             SendLeadNotificationJob::dispatch($lead);
         }
 
@@ -507,6 +594,151 @@ class AgentReplyService
         }
 
         return $assistantMsg;
+    }
+
+    /**
+     * Did this turn leave the customer without an answer, and if so why?
+     *
+     * Deliberately narrow. The temptation is to flag anything that looks
+     * uncertain, and a dashboard that cries wolf gets ignored — so only three
+     * situations count, each of which is a FACT about the turn rather than a
+     * reading of the reply text:
+     *
+     *  - catalog_miss: the model searched the catalog and every search came
+     *    back empty. The customer asked for something the shop does not list.
+     *    This is the one that pays for the feature: it is demand the owner
+     *    cannot see any other way.
+     *  - knowledge_miss: the agent was asked a real question and told the
+     *    customer it did not know. Judged from the REPLY, not from retrieval
+     *    scores — see the long note at the check itself for why scoring the
+     *    knowledge base cannot answer this on its own.
+     *  - provider_down: no answer was generated. Worth counting separately so
+     *    an outage does not masquerade as missing content.
+     *
+     * A turn that recorded an order is never unanswered, whatever else it did:
+     * the customer got what they came for.
+     *
+     * WHAT COUNTS AS UNANSWERED is what the customer was told, not what the
+     * pipeline scored. The catalog and provider branches below are facts about
+     * the turn and stay that way; the knowledge branch asks
+     * `looksLikeANonAnswer()` about the actual reply, because the knowledge
+     * base is only ONE of the agent's sources — business settings and the
+     * model's own competence are the others — and a widget that flags every
+     * answer the vector store did not supply spends its credibility on correct
+     * answers within a week of launch.
+     *
+     * @param  RetrievedChunk[]  $retrieved
+     * @param  Lead[]  $capturedLeads
+     * @return array{reason: 'catalog_miss'|'knowledge_miss'|'provider_down', detected_by: 'pipeline'|'retrieval'|'reply_text'}|null
+     */
+    protected function classifyUnanswered(
+        bool $failed,
+        int $productSearches,
+        int $productMisses,
+        array $retrieved,
+        bool $retrievalSkipped,
+        array $capturedLeads,
+        string $userMessage,
+        string $replyText,
+        bool $escalated,
+        bool $priceApprovalRequested,
+    ): ?array {
+        // Both of these ended the turn with the customer holding something real
+        // — an order, or a price the owner is about to rule on.
+        if ($capturedLeads !== [] || $priceApprovalRequested) {
+            return null;
+        }
+
+        if ($failed) {
+            return ['reason' => 'provider_down', 'detected_by' => 'pipeline'];
+        }
+
+        if ($productSearches > 0) {
+            return $productMisses === $productSearches
+                ? ['reason' => 'catalog_miss', 'detected_by' => 'retrieval']
+                : null;
+        }
+
+        // No catalog was consulted, so a knowledge miss is only meaningful if
+        // the knowledge base was actually asked. Greetings and one-word replies
+        // are excluded: they have nothing to retrieve and would drown the list.
+        if ($retrievalSkipped || ! $this->looksLikeAQuestion($userMessage)) {
+            return null;
+        }
+
+        // THE REPLY DECIDES. Not retrieval.
+        //
+        // This check used to come second, after an early return on "nothing
+        // confident was retrieved" — and that early return was wrong, because
+        // it treated the knowledge base as the agent's only source of truth.
+        // It is not. The owner's address, opening hours and house rules live in
+        // the agent's own settings (custom_system_prompt, rules_instructions,
+        // description) and reach the model directly, never through the vector
+        // store; general questions about the field are answered from the
+        // model's own competence. A correct, specific answer to "а где вы
+        // находитесь" therefore scores nothing against the uploaded documents
+        // BY DESIGN — and was being reported to the owner as "нет в базе
+        // знаний" while sitting next to the right address.
+        //
+        // So low retrieval confidence is not evidence of anything on its own.
+        // The question this widget asks is whether the CUSTOMER went away
+        // without an answer, and the only place that is visible is the reply.
+        if (! $this->looksLikeANonAnswer($replyText)) {
+            return null;
+        }
+
+        // An escalation acknowledgement ("передаю менеджеру") reads exactly like
+        // an apology to the matcher above, and a handover is already its own
+        // category in the owner's inbox. Counting it here would file one event
+        // under two problems.
+        if ($escalated) {
+            return null;
+        }
+
+        // The turn IS unanswered. Retrieval's only remaining job is to say
+        // which kind of hole it was, which is what the owner acts on
+        // differently: nothing relevant found means the knowledge base is
+        // missing the topic outright, while a confident chunk that still
+        // produced "I don't know" means the material is there but does not
+        // cover this case — the Dushanbe page answering a question about
+        // Khujand.
+        $confident = array_filter($retrieved, fn (RetrievedChunk $chunk) => $chunk->confident);
+
+        return [
+            'reason' => 'knowledge_miss',
+            'detected_by' => $confident === [] ? 'retrieval' : 'reply_text',
+        ];
+    }
+
+    /**
+     * Did the agent tell the customer, in whatever words it chose, that it does
+     * not know?
+     *
+     * The judgement itself lives in NonAnswerDetector, because the backfill
+     * command that re-judges turns recorded under the older rule has to reach
+     * exactly the same verdict this does — see that class.
+     */
+    protected function looksLikeANonAnswer(string $reply): bool
+    {
+        return $this->nonAnswers->matches($reply);
+    }
+
+    /**
+     * A crude but deliberate filter: enough words to be a request, or an
+     * explicit question mark. Its only job is to keep "ок", "привет" and a
+     * bare emoji out of the owner's unanswered list.
+     */
+    protected function looksLikeAQuestion(string $message): bool
+    {
+        $message = trim($message);
+
+        if ($message === '' || str_starts_with($message, '[')) {
+            return false; // A photo/voice placeholder, not a typed question.
+        }
+
+        return str_contains($message, '?')
+            || str_contains($message, '؟')
+            || count(preg_split('/\s+/u', $message, -1, PREG_SPLIT_NO_EMPTY) ?: []) >= 3;
     }
 
     /**
@@ -525,7 +757,7 @@ class AgentReplyService
      * @param  array<int, array<string, mixed>>  $contents
      * @param  array<string, mixed>  $result  The generation that may contain tool calls.
      * @param  array<string, mixed>  $options
-     * @return array{result: array<string, mixed>, contents: array<int, array<string, mixed>>, carried: array{input_tokens: int, output_tokens: int}, tool_calls: array<int, array<string, mixed>>, searches: int}
+     * @return array{result: array<string, mixed>, contents: array<int, array<string, mixed>>, carried: array{input_tokens: int, output_tokens: int}, tool_calls: array<int, array<string, mixed>>, searches: int, queries: array<int, array{query: ?string, category: ?string, count: int}>, misses: int}
      */
     protected function resolveProductSearches(
         Agent $agent,
@@ -537,6 +769,13 @@ class AgentReplyService
         $carried = ['input_tokens' => 0, 'output_tokens' => 0];
         $seenToolCalls = [];
         $searches = 0;
+        // What the customer was actually shopping for this turn, and how much of
+        // it the catalog could answer. Recorded on the message because the
+        // owner's dashboard has no other way to see demand: a product asked for
+        // ten times and never stocked leaves no lead, no order and no trace
+        // anywhere else in the schema.
+        $queries = [];
+        $misses = 0;
 
         for ($round = 0; $round < self::MAX_PRODUCT_SEARCH_ROUNDS; $round++) {
             $calls = array_values(array_filter(
@@ -552,6 +791,19 @@ class AgentReplyService
                 $arguments = $call['arguments'] ?? [];
                 $found = $this->productSearch->search($agent, $arguments);
                 $searches++;
+
+                $queries[] = [
+                    // The normalized filters, not the raw arguments: they are
+                    // what was really searched for, and they are already
+                    // trimmed and length-capped.
+                    'query' => $found['filters']['query'] ?? null,
+                    'category' => $found['filters']['category'] ?? null,
+                    'count' => (int) $found['count'],
+                ];
+
+                if ((int) $found['count'] === 0) {
+                    $misses++;
+                }
 
                 // Info, not debug: this is the record of what the model asked
                 // the catalog for. When an owner reports "it says we don't have
@@ -598,6 +850,8 @@ class AgentReplyService
             'carried' => $carried,
             'tool_calls' => $seenToolCalls,
             'searches' => $searches,
+            'queries' => $queries,
+            'misses' => $misses,
         ];
     }
 
@@ -781,6 +1035,118 @@ class AgentReplyService
     }
 
     /**
+     * File the customer's price request for the owner and let the model write
+     * the holding sentence with the outcome in hand.
+     *
+     * Shaped exactly like captureLeadsAndConfirm() — persist, feed the tool
+     * result back, regenerate — with one difference that is the point of the
+     * whole feature: what the model is handed back says the request was SENT,
+     * never that it was granted. There is no path through here that lets the
+     * assistant tell a customer a below-floor price is theirs, because the only
+     * party who can say that has not been asked yet.
+     *
+     * @param  array<int, array{role: string, text: string}>  $contents
+     * @param  array<int, array{id: string, name: string, arguments: array}>  $haggleCalls
+     * @return array{text: string, usage: array{input_tokens: int, output_tokens: int}, leads: Lead[]}
+     */
+    protected function requestPriceApproval(
+        Agent $agent,
+        Conversation $conversation,
+        array $contents,
+        string $systemPrompt,
+        array $firstResult,
+        array $haggleCalls,
+    ): array {
+        $source = $conversation->channel?->type ?? 'playground';
+        $leads = [];
+        $continuation = $contents;
+
+        foreach ($haggleCalls as $call) {
+            $saved = null;
+
+            try {
+                $saved = $this->haggling->persist($agent, $conversation, $call['arguments'] ?? [], $source);
+                $leads[] = $saved;
+            } catch (Throwable $e) {
+                Log::error('Failed to record a price approval request; continuing with the reply', [
+                    'agent_id' => $agent->id,
+                    'conversation_id' => $conversation->id,
+                    'arguments' => $call['arguments'] ?? [],
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
+            $continuation[] = ['role' => 'tool_call', 'id' => $call['id'], 'name' => $call['name'], 'arguments' => $call['arguments'] ?? []];
+            $continuation[] = [
+                'role' => 'tool_result',
+                'id' => $call['id'],
+                'name' => $call['name'],
+                'result' => $saved !== null
+                    ? $this->haggling->pendingInstruction()
+                    : $this->haggling->failureInstruction(),
+            ];
+        }
+
+        $inputTokens = (int) ($firstResult['input_tokens'] ?? 0);
+        $outputTokens = (int) ($firstResult['output_tokens'] ?? 0);
+
+        try {
+            $reply = $this->llm->generate($systemPrompt, $continuation, [
+                'max_output_tokens' => $this->maxOutputTokens($agent),
+                'thinking_budget' => 0,
+            ]);
+
+            $inputTokens += (int) $reply['input_tokens'];
+            $outputTokens += (int) $reply['output_tokens'];
+            $text = trim($reply['text'] ?? '');
+        } catch (LlmException $e) {
+            Log::warning('Price-request reply generation failed, using the templated holding message', [
+                'agent_id' => $agent->id,
+                'conversation_id' => $conversation->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            $text = '';
+        }
+
+        Log::info('Price approval requested from the owner', [
+            'agent_id' => $agent->id,
+            'conversation_id' => $conversation->id,
+            'lead_ids' => array_map(fn (Lead $lead) => $lead->id, $leads),
+        ]);
+
+        return [
+            // The request is already filed, so the customer must hear the
+            // holding sentence whether or not the generation came back.
+            'text' => $text !== ''
+                ? $text
+                : ($leads !== [] ? $this->haggling->pendingFallback($agent) : $this->fallbackMessage($agent)),
+            'usage' => ['input_tokens' => $inputTokens, 'output_tokens' => $outputTokens],
+            'leads' => $leads,
+        ];
+    }
+
+    /**
+     * A price out of tool arguments. Models pass "1500", 1500 and "1 500" for
+     * the same number, and a filter that only understood one of them would let
+     * the other two past the floor check.
+     */
+    protected function numeric(mixed $value): ?float
+    {
+        if (is_int($value) || is_float($value)) {
+            return $value > 0 ? (float) $value : null;
+        }
+
+        if (is_string($value)) {
+            $normalized = str_replace([' ', "\u{a0}", ','], ['', '', '.'], trim($value));
+
+            return is_numeric($normalized) && (float) $normalized > 0 ? (float) $normalized : null;
+        }
+
+        return null;
+    }
+
+    /**
      * Persist every create_lead call the model made this turn, then feed the
      * tool results back for one more generation so the reply confirms the order
      * in the customer's language. Falls back to a templated confirmation if that
@@ -960,7 +1326,6 @@ class AgentReplyService
         $startedAt = microtime(true);
 
         $situation = match ($reason) {
-            'voice_disabled' => 'This assistant cannot listen to voice messages at all.',
             'voice_too_long' => 'The voice message was too long for this assistant to process.',
             default => 'The voice message could not be understood — it may have been unclear or the audio failed to process.',
         };
@@ -1744,11 +2109,6 @@ class AgentReplyService
      */
     protected function languageInstruction(Agent $agent, Conversation $conversation): string
     {
-        if ($agent->language !== 'auto' && ! empty($agent->language)) {
-            return 'Always reply in '.(self::LANGUAGE_NAMES[$agent->language] ?? $agent->language)
-                .', regardless of what language the customer writes in, unless they explicitly ask for another language.';
-        }
-
         try {
             $detected = $this->languages->forConversation($this->recentCustomerMessages($conversation));
         } catch (Throwable $e) {

@@ -102,6 +102,13 @@
                  gives screen readers the name with nothing shown on hover, in
                  either state. It carries data-i18n-al so the instant locale
                  swap updates it too. --}}
+            <a href="{{ route('dashboard') }}" aria-label="{{ __('agents.nav.dashboard') }}" data-i18n-al="agents.nav.dashboard"
+                :class="railCollapsed && 'lg:justify-center'"
+                class="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors {{ request()->routeIs('dashboard') ? 'bg-brand/10 text-brand' : 'text-muted hover:bg-black/5 dark:text-night-muted dark:hover:bg-white/5' }}">
+                <svg class="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M3 3v18h18M7 15l4-4 3 3 5-6"/></svg>
+                <span data-i18n="agents.nav.dashboard" :class="railCollapsed && 'lg:hidden'">{{ __('agents.nav.dashboard') }}</span>
+            </a>
+
             <a href="{{ route('agents.index') }}" aria-label="{{ __('agents.nav.agents') }}" data-i18n-al="agents.nav.agents"
                 :class="railCollapsed && 'lg:justify-center'"
                 class="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors {{ request()->routeIs('agents.*') ? 'bg-brand/10 text-brand' : 'text-muted hover:bg-black/5 dark:text-night-muted dark:hover:bg-white/5' }}">

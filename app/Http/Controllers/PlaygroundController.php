@@ -112,7 +112,7 @@ class PlaygroundController extends Controller
         $path = $file->getRealPath();
 
         try {
-            $text = $transcriber->transcribe($path, $transcriber->languageHintFor($agent->language));
+            $text = $transcriber->transcribe($path);
         } catch (Throwable $e) {
             // The raw reason can carry API text; it belongs in the log, never in
             // the response.

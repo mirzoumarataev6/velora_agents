@@ -18,7 +18,6 @@ class AgentFactory extends Factory
             'name' => fake()->company(),
             'description' => fake()->sentence(),
             'status' => 'active',
-            'language' => 'auto',
             'tone' => 'friendly',
             'response_format' => [
                 'greeting_message' => null,

@@ -34,7 +34,7 @@ class PlaygroundVoiceTest extends TestCase
         config()->set('agent.voice.ffmpeg_path', null);
 
         $this->owner = User::factory()->create();
-        $this->agent = Agent::factory()->for($this->owner)->create(['language' => 'ru']);
+        $this->agent = Agent::factory()->for($this->owner)->create();
     }
 
     protected function fakeWhisper(string $transcript = 'Есть ли доставка сегодня?', int $status = 200): void
@@ -99,18 +99,16 @@ class PlaygroundVoiceTest extends TestCase
     }
 
     /**
-     * The language hint follows the same rule as the Telegram path: sent for
-     * ru/en, omitted for Tajik and auto so Whisper detects.
+     * No language hint is sent, on either path. The reply language is detected
+     * per message now, so pinning Whisper to one language would only make it
+     * worse at the customer who switches — and there is no longer a setting
+     * that could name one.
      */
-    public function test_the_language_hint_matches_the_telegram_rule(): void
+    public function test_no_language_hint_is_sent_to_whisper(): void
     {
         $this->fakeWhisper();
         $this->transcribe();
-        Http::assertSent(fn (ClientRequest $r) => str_contains($r->body(), 'name="language"'));
 
-        $this->agent->update(['language' => 'tj']);
-        $this->fakeWhisper();
-        $this->transcribe();
         Http::assertSent(fn (ClientRequest $r) => ! str_contains($r->body(), 'name="language"'));
     }
 

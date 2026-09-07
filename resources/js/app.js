@@ -5,6 +5,62 @@ Alpine.start();
 
 const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+/**
+ * Dashboard summary figures counting up from zero on first paint.
+ *
+ * The one piece of dashboard motion that cannot be done in CSS — there is no
+ * way to interpolate a text node's numeric content — so it lives here beside
+ * the reveal observer rather than as a component of its own.
+ *
+ * The element already contains its final value, server-rendered. This only ever
+ * REPLACES that text for the duration of the animation and puts the exact
+ * original string back at the end, so the number a reader ends up looking at is
+ * always the one the server sent, not one reconstructed from a float. A page
+ * with JS disabled, or reduced motion asked for, simply shows it immediately.
+ */
+function countUpNumbers() {
+    const targets = document.querySelectorAll('[data-countup]');
+
+    if (reduceMotion || targets.length === 0) return;
+
+    targets.forEach((el) => {
+        const final = Number(el.dataset.countup);
+        const suffix = el.dataset.countupSuffix ?? '';
+        const settled = el.textContent;
+
+        // Nothing to watch climb, and nothing worth animating for: a zero, a
+        // one, or a value that was not a number after all.
+        if (!Number.isFinite(final) || final <= 1) return;
+
+        // Whole numbers count in whole numbers; a percentage keeps its decimal
+        // so it does not visibly snap at the end.
+        const decimals = Number.isInteger(final) ? 0 : 1;
+        const duration = 700;
+        const started = performance.now();
+
+        el.classList.add('counting');
+
+        const step = (now) => {
+            const progress = Math.min(1, (now - started) / duration);
+            // Ease-out cubic: fast at the start, settling gently, which is what
+            // makes it read as a number arriving rather than a slot machine.
+            const eased = 1 - Math.pow(1 - progress, 3);
+
+            if (progress < 1) {
+                el.textContent = (final * eased).toFixed(decimals) + suffix;
+                requestAnimationFrame(step);
+                return;
+            }
+
+            el.textContent = settled;
+            el.classList.remove('counting');
+        };
+
+        el.textContent = (0).toFixed(decimals) + suffix;
+        requestAnimationFrame(step);
+    });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     requestAnimationFrame(() => document.body.classList.add('ready'));
 
@@ -24,6 +80,8 @@ document.addEventListener('DOMContentLoaded', () => {
         );
         document.querySelectorAll('.reveal').forEach((el) => revealObserver.observe(el));
     }
+
+    countUpNumbers();
 
     document.getElementById('theme-toggle')?.addEventListener('click', () => {
         const isDark = document.documentElement.classList.toggle('dark');

@@ -6,11 +6,7 @@ use App\Jobs\HandleIncomingMessageJob;
 use App\Models\Agent;
 use App\Models\Channel;
 use App\Models\Message;
-use App\Services\AgentReplyService;
-use App\Services\Channels\ChannelDriverManager;
-use App\Services\Channels\HumanizedReplySender;
 use App\Services\Llm\LlmProviderInterface;
-use App\Services\TelegramNotifyLinker;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request as ClientRequest;
 use Illuminate\Support\Facades\Http;
@@ -39,7 +35,7 @@ class TelegramVoiceMessageTest extends TestCase
         config()->set('agent.openai.base_url', 'https://api.openai.com/v1');
         config()->set('agent.voice.ffmpeg_path', null);
 
-        $this->agent = Agent::factory()->create(['transcribe_voice' => true, 'language' => 'ru']);
+        $this->agent = Agent::factory()->create();
         $this->channel = Channel::factory()->for($this->agent)->create([
             'type' => 'telegram',
             'status' => 'connected',
@@ -93,14 +89,14 @@ class TelegramVoiceMessageTest extends TestCase
         });
     }
 
+    /**
+     * Dependencies come from the container rather than being listed here: the
+     * job's handle() signature is not this test's subject, and spelling it out
+     * meant every new dependency broke thirteen unrelated voice tests.
+     */
     protected function runJob(array $payload): void
     {
-        (new HandleIncomingMessageJob($this->channel, $payload))->handle(
-            app(ChannelDriverManager::class),
-            app(AgentReplyService::class),
-            app(TelegramNotifyLinker::class),
-            app(HumanizedReplySender::class),
-        );
+        app()->call([new HandleIncomingMessageJob($this->channel, $payload), 'handle']);
     }
 
     // ---------------------------------------------------------------
@@ -168,24 +164,27 @@ class TelegramVoiceMessageTest extends TestCase
     }
 
     // ---------------------------------------------------------------
-    // The toggle
+    // Always on
     // ---------------------------------------------------------------
 
-    public function test_voice_is_refused_politely_when_the_agent_has_it_switched_off(): void
+    /**
+     * There is no per-agent off-switch any more: an unanswered voice note reads
+     * as a broken bot, so transcription is unconditional. An account whose old
+     * column still says "off" is transcribed like everyone else.
+     */
+    public function test_voice_is_transcribed_even_for_an_agent_whose_old_column_says_off(): void
     {
-        $this->agent->update(['transcribe_voice' => false]);
-        $this->fakeHttp();
-        $this->mockLlm('Напишите, пожалуйста, текстом.');
+        $this->agent->forceFill(['transcribe_voice' => false])->save();
+        $this->fakeHttp('Сколько стоит доставка?');
+        $this->mockLlm('Доставка 1-2 дня.');
 
         $this->runJob($this->voiceUpdate());
 
-        // Never downloaded, never transcribed.
-        Http::assertNotSent(fn (ClientRequest $r) => str_contains($r->url(), '/audio/transcriptions'));
-        Http::assertNotSent(fn (ClientRequest $r) => str_contains($r->url(), '/getFile'));
+        Http::assertSent(fn (ClientRequest $r) => str_contains($r->url(), '/audio/transcriptions'));
 
         $reply = Message::where('role', 'assistant')->firstOrFail();
-        $this->assertSame('voice_disabled', $reply->meta['voice_problem']);
-        $this->assertSame('Напишите, пожалуйста, текстом.', $reply->content);
+        $this->assertSame('Доставка 1-2 дня.', $reply->content);
+        $this->assertArrayNotHasKey('voice_problem', $reply->meta);
     }
 
     // ---------------------------------------------------------------
@@ -321,25 +320,28 @@ class TelegramVoiceMessageTest extends TestCase
         $response->assertSee('voiceLength(m.voice_duration)', false);
     }
 
-    public function test_the_toggle_is_offered_in_the_agent_form_and_persists(): void
+    /**
+     * The toggle is gone from the form, and a hand-crafted post that still
+     * carries it must not switch anything off — the field is not fillable and
+     * is not in the request's rules, so it is simply ignored.
+     */
+    public function test_the_toggle_is_gone_from_the_agent_form_and_cannot_be_posted_back(): void
     {
         $owner = $this->agent->user;
 
         $form = $this->actingAs($owner)->get(route('agents.create'));
         $form->assertOk();
-        $form->assertSee('name="transcribe_voice"', false);
-        $form->assertSee(__('agents.form.transcribe_voice_label'), false);
+        $form->assertDontSee('name="transcribe_voice"', false);
 
         $this->actingAs($owner)->put(route('agents.update', $this->agent), [
             'name' => $this->agent->name,
-            'language' => 'ru',
             'tone' => 'friendly',
             'on_not_found' => 'apologize',
             'proactivity' => 'subtle',
             'transcribe_voice' => '0',
         ])->assertRedirect();
 
-        $this->assertFalse($this->agent->refresh()->transcribe_voice);
+        $this->assertTrue((bool) $this->agent->refresh()->transcribe_voice);
     }
 
     // ---------------------------------------------------------------

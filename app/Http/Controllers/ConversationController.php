@@ -26,7 +26,7 @@ use Throwable;
 class ConversationController extends Controller
 {
     /** How the inbox can be sliced. `all` is the absence of a filter. */
-    protected const STATUS_FILTERS = ['all', 'unread', 'needs_human', 'has_lead', 'closed'];
+    protected const STATUS_FILTERS = ['all', 'unread', 'needs_human', 'has_lead', 'rated_down', 'closed'];
 
     protected const PER_PAGE = 25;
 
@@ -250,11 +250,23 @@ class ConversationController extends Controller
             ->when($filters['status'] === 'needs_human', fn ($q) => $q->where('conversations.status', 'human_takeover'))
             ->when($filters['status'] === 'closed', fn ($q) => $q->where('conversations.status', 'closed'))
             ->when($filters['status'] === 'has_lead', fn ($q) => $q->whereHas('leads'))
+            // Every conversation holding a reply the customer marked 👎. The
+            // dashboard's quality card links straight here, which is what makes
+            // that card actionable rather than decorative.
+            ->when($filters['status'] === 'rated_down', fn ($q) => $q->whereHas(
+                'messages',
+                fn ($m) => $m->where('messages.rating', Message::RATING_DOWN)
+            ))
             // "All" sits next to its own "Closed" chip in the UI, so it means
             // all ACTIVE conversations — an inbox hides archived mail until
             // asked for it explicitly.
+            //
+            // `rated_down` is the deliberate exception. A wrong answer does not
+            // stop being a wrong answer because the thread was archived, and
+            // hiding those would make this list disagree with the count on the
+            // card that linked here — which reads as a bug, not as a policy.
             ->when(
-                $filters['status'] !== 'closed',
+                ! in_array($filters['status'], ['closed', 'rated_down'], true),
                 fn ($q) => $q->where('conversations.status', '!=', 'closed')
             )
             // Message-content search, Telegram-style: the term is looked for in
@@ -356,6 +368,12 @@ class ConversationController extends Controller
             // the content is the transcript either way.
             'source_type' => $message->source_type ?? 'text',
             'voice_duration' => $message->voice_duration,
+            // The customer's verdict on this specific reply, shown in the
+            // thread rather than only counted on the dashboard. An aggregate
+            // says the agent was wrong 8% of the time; this says which answer
+            // was the wrong one, with the question still above it.
+            'rating' => $message->rating,
+            'rated_at' => $message->rated_at?->toIso8601String(),
         ];
     }
 }

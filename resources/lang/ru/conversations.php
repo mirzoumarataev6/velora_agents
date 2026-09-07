@@ -56,6 +56,7 @@ return [
         'unread' => 'Непрочитанные',
         'needs_human' => 'Нужен человек',
         'has_lead' => 'С заявкой',
+        'rated_down' => 'С 👎',
         'closed' => 'Закрытые',
     ],
 
@@ -88,6 +89,10 @@ return [
         'knowledge_unconfirmed' => 'слабое совпадение',
         'leads_heading' => 'Заявки из диалога',
         'view_in_leads' => 'Открыть в «Заявках»',
+        'rating_up' => '👍',
+        'rating_down' => '👎',
+        'rating_up_hint' => 'Клиент оценил',
+        'rating_down_hint' => 'Клиенту не понравился этот ответ',
         'voice_note' => 'голосовое',
         'no_channel' => 'К этому диалогу не подключён канал, ответить нельзя.',
         'back' => 'К списку',
