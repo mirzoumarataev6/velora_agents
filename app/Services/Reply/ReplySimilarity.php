@@ -36,6 +36,12 @@ class ReplySimilarity
     protected const MIN_WORDS = 8;
 
     /**
+     * The fewest repeated prices that make a repeated listing. Two is a customer
+     * asking "which of these two is better" and being answered about both.
+     */
+    protected const MIN_LISTED_FIGURES = 3;
+
+    /**
      * The share of $candidate's words that also appear in $previous, from 0 to 1.
      */
     public function containment(string $candidate, string $previous): float
@@ -62,6 +68,62 @@ class ReplySimilarity
         }
 
         return $this->containment($candidate, $previous) >= self::DUPLICATE_THRESHOLD;
+    }
+
+    /**
+     * Whether $candidate lists the same products as $previous, however it is
+     * worded around them.
+     *
+     * Word containment alone missed the reported loop: the model rewrote every
+     * framing sentence in Tajik while the three MacBooks and their prices stayed
+     * identical, which scored 0.57-0.74 — "different", by words, and exactly
+     * the same answer to the customer. The prices are the substance of a
+     * listing, so they are compared on their own.
+     *
+     * Figures the customer supplied (their budget, "6000 то 7000") are ignored:
+     * a reply quoting the customer's own numbers back is not the assistant
+     * repeating itself.
+     *
+     * @param  array<int, string>  $ignore  Texts whose figures do not count — the customer's own messages.
+     */
+    public function repeatsListing(string $candidate, string $previous, array $ignore = []): bool
+    {
+        $ignored = array_flip($this->figures(implode(' ', $ignore)));
+        $listed = array_diff_key(array_flip($this->figures($candidate)), $ignored);
+
+        if (count($listed) < self::MIN_LISTED_FIGURES) {
+            return false;
+        }
+
+        $shared = array_intersect_key($listed, array_flip($this->figures($previous)));
+
+        return count($shared) / count($listed) >= self::DUPLICATE_THRESHOLD;
+    }
+
+    /**
+     * Either kind of repeat: the same words, or the same products.
+     *
+     * @param  array<int, string>  $ignore  See repeatsListing().
+     */
+    public function isRepeatOf(string $candidate, string $previous, array $ignore = []): bool
+    {
+        return $this->isNearDuplicate($candidate, $previous)
+            || $this->repeatsListing($candidate, $previous, $ignore);
+    }
+
+    /**
+     * Standalone numbers of three or more digits — prices, in practice. "8GB"
+     * and "256GB" are single tokens and deliberately not figures: every laptop
+     * has them.
+     *
+     * @return string[]
+     */
+    protected function figures(string $text): array
+    {
+        return array_values(array_unique(array_filter(
+            $this->words($text),
+            fn (string $word) => preg_match('/^\d{3,}$/', $word) === 1,
+        )));
     }
 
     /**

@@ -531,6 +531,8 @@ return [
             'callback_meta_label' => 'Callback URL для Meta',
             'verify_token_label' => 'Verify Token',
             'verify_token_help' => 'Придумайте любую строку — этот же токен вставьте в настройках Meta ниже.',
+            'app_secret_label' => 'App Secret приложения Meta',
+            'app_secret_help' => 'Meta App Dashboard → Settings → Basic → App Secret. Нужен, чтобы проверять подпись входящих webhook-запросов — без него канал не сможет принимать сообщения.',
             'disconnect' => 'Отключить',
             'connect' => 'Подключить',
         ],

@@ -120,7 +120,7 @@ class InstagramWebhookTest extends TestCase
         Queue::fake();
         $channel = Channel::factory()->instagram()->create();
 
-        $response = $this->postJson(route('webhooks.instagram', $channel), $this->instagramTextPayload('mid.1001', 'Hello'));
+        $response = $this->postSignedMetaWebhook(route('webhooks.instagram', $channel), $this->instagramTextPayload('mid.1001', 'Hello'));
 
         $response->assertOk();
         Queue::assertPushed(HandleIncomingMessageJob::class, fn ($job) => $job->channel->id === $channel->id);
@@ -136,7 +136,7 @@ class InstagramWebhookTest extends TestCase
         $this->fakeMetaApi();
         $channel = Channel::factory()->instagram()->create();
 
-        $this->postJson(route('webhooks.instagram', $channel), $this->instagramTextPayload('mid.2001', 'Есть размер M?'))->assertOk();
+        $this->postSignedMetaWebhook(route('webhooks.instagram', $channel), $this->instagramTextPayload('mid.2001', 'Есть размер M?'))->assertOk();
 
         $conversation = Conversation::where('channel_id', $channel->id)->where('external_user_id', '778899')->first();
         $this->assertNotNull($conversation);
@@ -160,7 +160,7 @@ class InstagramWebhookTest extends TestCase
     {
         $channel = Channel::factory()->instagram()->create();
 
-        $this->postJson(route('webhooks.instagram', $channel), $this->instagramEchoPayload('mid.ECHO1'))->assertOk();
+        $this->postSignedMetaWebhook(route('webhooks.instagram', $channel), $this->instagramEchoPayload('mid.ECHO1'))->assertOk();
 
         $this->assertDatabaseCount('conversations', 0);
         $this->assertDatabaseCount('messages', 0);
@@ -170,7 +170,7 @@ class InstagramWebhookTest extends TestCase
     {
         $channel = Channel::factory()->instagram()->create();
 
-        $this->postJson(route('webhooks.instagram', $channel), $this->instagramReadReceiptPayload())->assertOk();
+        $this->postSignedMetaWebhook(route('webhooks.instagram', $channel), $this->instagramReadReceiptPayload())->assertOk();
 
         $this->assertDatabaseCount('conversations', 0);
         $this->assertDatabaseCount('messages', 0);
@@ -183,8 +183,8 @@ class InstagramWebhookTest extends TestCase
         $channel = Channel::factory()->instagram()->create();
         $payload = $this->instagramTextPayload('mid.3001', 'Привет');
 
-        $this->postJson(route('webhooks.instagram', $channel), $payload)->assertOk();
-        $this->postJson(route('webhooks.instagram', $channel), $payload)->assertOk();
+        $this->postSignedMetaWebhook(route('webhooks.instagram', $channel), $payload)->assertOk();
+        $this->postSignedMetaWebhook(route('webhooks.instagram', $channel), $payload)->assertOk();
 
         $this->assertDatabaseCount('conversations', 1);
         $this->assertSame(1, Message::where('external_message_id', 'mid.3001')->count());
@@ -228,7 +228,7 @@ class InstagramWebhookTest extends TestCase
     {
         $channel = Channel::factory()->create(); // type: telegram
 
-        $response = $this->postJson(route('webhooks.instagram', $channel), $this->instagramTextPayload('mid.1', 'hi'));
+        $response = $this->postSignedMetaWebhook(route('webhooks.instagram', $channel), $this->instagramTextPayload('mid.1', 'hi'));
 
         $response->assertNotFound();
     }
@@ -243,7 +243,7 @@ class InstagramWebhookTest extends TestCase
             'status' => 'human_takeover',
         ]);
 
-        $this->postJson(route('webhooks.instagram', $channel), $this->instagramTextPayload('mid.5001', 'Кто-нибудь ответит?'))->assertOk();
+        $this->postSignedMetaWebhook(route('webhooks.instagram', $channel), $this->instagramTextPayload('mid.5001', 'Кто-нибудь ответит?'))->assertOk();
 
         $this->assertDatabaseHas('messages', [
             'conversation_id' => $conversation->id,
@@ -260,7 +260,7 @@ class InstagramWebhookTest extends TestCase
         $agent = Agent::factory()->create(['status' => 'paused']);
         $channel = Channel::factory()->instagram()->for($agent)->create();
 
-        $this->postJson(route('webhooks.instagram', $channel), $this->instagramTextPayload('mid.6001', 'Здравствуйте'))->assertOk();
+        $this->postSignedMetaWebhook(route('webhooks.instagram', $channel), $this->instagramTextPayload('mid.6001', 'Здравствуйте'))->assertOk();
 
         $conversation = Conversation::where('channel_id', $channel->id)->first();
         $this->assertNotNull($conversation);

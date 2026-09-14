@@ -36,7 +36,8 @@
         document.documentElement.classList.toggle('dark', stored ? stored === 'dark' : prefersDark);
     })();
 </script>
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="color-scheme" content="light dark" />
 @include('partials.seo-meta', [
     'seoTitle' => __('landing.meta.title'),
     'seoDescription' => __('landing.meta.description'),

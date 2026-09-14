@@ -1,11 +1,13 @@
 <?php
 
 /**
- * The only strings in this app a CUSTOMER sees rather than an owner: the
- * confirmation shown when they rate a reply. Kept short — they land inside a
- * Telegram button and a toast, both of which truncate.
+ * Strings a CUSTOMER sees around rating a reply: why they are being asked,
+ * and the confirmation once they have. Kept short — the confirmations land
+ * inside a Telegram button and a toast, both of which truncate.
  */
 return [
+    'prompt' => 'Оцените, пожалуйста, ответ — это помогает нам отвечать лучше.',
+
     'confirm' => [
         'thanks' => 'Спасибо за оценку!',
         'already' => 'Вы уже оценили этот ответ',

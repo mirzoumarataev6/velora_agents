@@ -6,76 +6,73 @@ use App\Models\Conversation;
 use App\Models\Message;
 
 /**
- * How often a customer is asked to rate a reply.
+ * When a customer is asked to rate a reply.
  *
- * The first version asked after every single turn, which is the mistake this
- * class exists to correct. A rating control under all of them stops reading as
- * a question and starts reading as furniture: it clutters the chat, it trains
- * the customer to ignore it, and the votes that do arrive are reflexes rather
- * than verdicts. Asking rarely is what keeps the answer worth having.
+ * The first version asked after every single turn; the second every fifth
+ * turn. Both asked mid-flow — in the middle of choosing a laptop, between a
+ * question and its follow-up — which is the least useful moment to ask and the
+ * most irritating one. This version asks only where the conversation has
+ * reached a natural end.
  *
  * THE RULE, in one line — where `turnsSince` counts assistant turns since the
- * last turn that either carried a prompt or received a rating (or since the
- * conversation began, if neither has happened yet):
+ * last turn that carried a prompt, received a rating, or opened a session with
+ * /start (or since the conversation began, if none has happened yet):
  *
- *     ask  ⟺  turnsSince >= FLOOR  AND  (this turn captured a lead
- *                                        OR turnsSince >= INTERVAL)
+ *     ask  ⟺  turnsSince >= FLOOR  AND  (this turn closed something
+ *                                        OR the customer is wrapping up)
  *
  *  - FLOOR (3) is the minimum gap between two prompts. Because the count
  *    restarts on a RATING as well as on a prompt, answering one buys the same
- *    quiet as being asked one — a customer who has just voted is not asked
- *    again in the same exchange. It also puts the first possible prompt at
- *    turn 3: nobody can judge an assistant on its opening line.
+ *    quiet as being asked one. It also puts the first possible prompt at turn
+ *    3: nobody can judge an assistant on its opening line.
  *
- *  - INTERVAL (5) is the routine cadence when nothing notable happens.
+ *  - A /start restarts the count too. Telegram keeps one chat per customer for
+ *    ever, so without this a customer returning days later could be asked on
+ *    their second message, because the turns from last week still counted.
  *
- *  - A CAPTURED LEAD is the shortcut. It is the moment the conversation
- *    achieved what it was for, which is both the most informative point to ask
- *    at and a naturally rare one. It can bring a prompt forward, never inside
- *    the floor.
+ *  - CLOSED SOMETHING: a captured lead, or a price sent to the owner for
+ *    approval. The moment the conversation achieved what it was for.
  *
- * Worked through: turns 1-4 pass in silence, 5 asks, 6-7 are inside the floor,
- * 8 asks only if an order lands, 10 asks routinely. A vote on turn 5 restarts
- * the same clock from there.
+ *  - WRAPPING UP: the customer's message is nothing but thanks or an
+ *    acknowledgement ("спасибо", "Фахмо рахмат", "got it") — see
+ *    ClosingMessageDetector.
  *
- * WHAT THIS DELIBERATELY DOES NOT DO is prompt after a lull, which would be the
- * other natural "conversation is wrapping up" signal. Nothing in this pipeline
- * runs except on an inbound message, so a lull is invisible here — detecting
- * one would need a scheduled job whose only purpose is to send rating prompts
- * into quiet chats. A captured lead is the honest proxy for the same moment.
+ * There is deliberately no routine "every N turns" fallback any more: a long
+ * conversation that never reaches an end is not rated, rather than being
+ * interrupted at an arbitrary point in it.
  */
 class FeedbackCadence
 {
-    public function __construct(protected int $floor, protected int $interval) {}
+    public function __construct(
+        protected int $floor,
+        protected ClosingMessageDetector $closings = new ClosingMessageDetector,
+    ) {}
 
     public static function fromConfig(): self
     {
-        return new self(
-            floor: max(1, (int) config('agent.feedback.min_turns_between', 3)),
-            interval: max(1, (int) config('agent.feedback.every_n_turns', 5)),
-        );
+        return new self(floor: max(1, (int) config('agent.feedback.min_turns_between', 3)));
     }
 
     /**
      * Should this reply carry a 👍/👎 control?
      *
      * Called with the assistant Message the turn produced, before it is
-     * delivered. Says nothing about whether the CHANNEL can carry one — that is
+     * delivered, and the customer message it answers (looked up if not
+     * given). Says nothing about whether the CHANNEL can carry one — that is
      * the driver's to answer, and the caller checks it.
      */
-    public function shouldAsk(Conversation $conversation, Message $reply): bool
+    public function shouldAsk(Conversation $conversation, Message $reply, ?Message $customerMessage = null): bool
     {
         if (! $this->isWorthRating($reply)) {
             return false;
         }
 
-        $turnsSince = $this->turnsSinceLastPromptOrRating($conversation, $reply);
-
-        if ($turnsSince < $this->floor) {
+        if ($this->turnsSinceLastPromptOrRating($conversation, $reply) < $this->floor) {
             return false;
         }
 
-        return $this->closedSomething($reply) || $turnsSince >= $this->interval;
+        return $this->closedSomething($reply)
+            || $this->customerIsWrappingUp($conversation, $reply, $customerMessage);
     }
 
     /**
@@ -96,21 +93,19 @@ class FeedbackCadence
      * A failed turn is the fallback message, and asking someone to rate the
      * apology for an outage is asking the wrong question about the wrong thing.
      * An escalated turn is on its way to a human, so the bot's answer is not
-     * the one being judged.
+     * the one being judged. A greeting is the owner's own words, not an answer.
      */
     protected function isWorthRating(Message $reply): bool
     {
         $meta = $reply->meta ?? [];
 
-        return ! ($meta['failed'] ?? false) && ! ($meta['escalated'] ?? false);
+        return ! ($meta['failed'] ?? false)
+            && ! ($meta['escalated'] ?? false)
+            && ! ($meta['greeting'] ?? false);
     }
 
     /**
      * Did this turn finish the job the customer came for?
-     *
-     * A captured lead, or a price sent to the owner for approval — both are
-     * points where the customer has what they wanted and the exchange has a
-     * natural seam in it.
      */
     protected function closedSomething(Message $reply): bool
     {
@@ -119,9 +114,20 @@ class FeedbackCadence
         return ($meta['lead_captured'] ?? false) || ($meta['price_approval_requested'] ?? false);
     }
 
+    protected function customerIsWrappingUp(Conversation $conversation, Message $reply, ?Message $customerMessage): bool
+    {
+        $text = $customerMessage?->content ?? $conversation->messages()
+            ->where('role', 'user')
+            ->where('id', '<', $reply->id)
+            ->orderByDesc('id')
+            ->value('content');
+
+        return $this->closings->matches((string) $text);
+    }
+
     /**
-     * Assistant turns since the last one that was prompted or rated, counting
-     * this one.
+     * Assistant turns since the last one that was prompted, rated or opened a
+     * session, counting this one.
      *
      * Two bounded queries rather than loading the transcript: a long-running
      * conversation can hold hundreds of turns, and this runs on every reply.
@@ -133,7 +139,8 @@ class FeedbackCadence
             ->where('id', '<', $reply->id)
             ->where(fn ($query) => $query
                 ->whereNotNull('rating')
-                ->orWhere('meta->feedback_requested', true))
+                ->orWhere('meta->feedback_requested', true)
+                ->orWhere('meta->session_start', true))
             ->orderByDesc('id')
             ->value('id');
 

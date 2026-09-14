@@ -51,6 +51,18 @@ class ProductSearchService
     /** Longest text query accepted; anything beyond is noise for a LIKE match. */
     protected const MAX_QUERY_LENGTH = 120;
 
+    /** Most rejected brands/families honoured on one search. */
+    protected const MAX_EXCLUSIONS = 10;
+
+    /** For skeleton(): Russian and Tajik Cyrillic to a rough Latin reading. */
+    protected const CYRILLIC_TO_LATIN = [
+        'а' => 'a', 'б' => 'b', 'в' => 'v', 'г' => 'g', 'ғ' => 'g', 'д' => 'd', 'е' => 'e', 'ё' => 'e',
+        'ж' => 'zh', 'з' => 'z', 'и' => 'i', 'ӣ' => 'i', 'й' => 'i', 'к' => 'k', 'қ' => 'k', 'л' => 'l',
+        'м' => 'm', 'н' => 'n', 'о' => 'o', 'п' => 'p', 'р' => 'r', 'с' => 's', 'т' => 't', 'у' => 'u',
+        'ӯ' => 'u', 'ф' => 'f', 'х' => 'h', 'ҳ' => 'h', 'ц' => 'ts', 'ч' => 'ch', 'ҷ' => 'j', 'ш' => 'sh',
+        'щ' => 'sh', 'ъ' => '', 'ы' => 'i', 'ь' => '', 'э' => 'e', 'ю' => 'yu', 'я' => 'ya',
+    ];
+
     public function __construct(protected ProductSourceResolver $sources) {}
 
     /**
@@ -110,7 +122,19 @@ class ProductSearchService
                         'type' => 'string',
                         'description' => 'Restrict to one product category, matched loosely against the catalog\'s own '
                             .'category names — every word you give must appear somewhere in the category name, in any '
-                            .'order and in any grammatical form, so "игровые ноутбуки" finds "Ноутбук (игровой)".',
+                            .'order and in any grammatical form, so "игровые ноутбуки" finds "Ноутбук (игровой)". Set it '
+                            .'whenever the customer names a kind of product ("ноутбук"), budget searches included — '
+                            .'otherwise the nearest alternatives can be a different kind of product.',
+                    ],
+                    'exclude' => [
+                        'type' => 'array',
+                        'items' => ['type' => 'string'],
+                        'description' => 'Brands, product families or words the customer said they do NOT want ("не '
+                            .'хочу MacBook", "МакБук макул не", "not Apple"). Products whose name, category or '
+                            .'description contains any of them are left out — the nearest-alternative list included. '
+                            .'Once the customer has rejected something, pass it on EVERY later search in the '
+                            .'conversation, not just the next one. Write each the way the catalog spells it (usually '
+                            .'the Latin brand name, e.g. "MacBook").',
                     ],
                     'sort' => [
                         'type' => 'string',
@@ -182,6 +206,21 @@ class ProductSearchService
                 .'this customer you could not find something, the next one must be worded differently and must move '
                 .'the conversation on — a new suggestion, a different question, the budget they named. Repeating '
                 .'yourself verbatim is the single clearest sign to a customer that they are talking to a broken bot.',
+            '',
+            'WHAT THE CUSTOMER HAS REJECTED — carry it forward:',
+            '- When the customer says they do not want a product, brand or family ("МакБук макул не", "не хочу Apple", '
+                .'"not a gaming one"), that stays in force for the rest of the conversation until they say otherwise.',
+            '- Pass every rejected item in "exclude" on EVERY later "'.self::TOOL_NAME.'" call, not only the one right '
+                .'after they said it.',
+            '- Never offer, list or mention as a suggestion anything they rejected — not as the nearest option, not as '
+                .'a fallback. "Something else" means something you have not already shown them.',
+            '',
+            'WHEN NOTHING FITS THE BUDGET — answer like a good salesperson:',
+            '- Say plainly that nothing falls in the range they named.',
+            '- Lead with the nearest option and state the real gap in money ("5999 — just 1 under your range", "7999 — '
+                .'999 over"). Every "nearest" product carries a "budget_gap" for exactly this.',
+            '- Then ask whether the budget is firm or could move a little.',
+            '- Never present an over-budget product as if it were a suggestion within budget.',
         ]);
     }
 
@@ -205,7 +244,7 @@ class ProductSearchService
                 throw new \RuntimeException('No product source is configured for this agent.');
             }
 
-            $products = $source->fetch($filters, $limit);
+            $products = $this->fetch($source, $filters, $limit);
         } catch (\Throwable $e) {
             // A failed lookup must read to the customer as "I could not find
             // that", never as an error. This is also the path a customer's own
@@ -305,7 +344,100 @@ class ProductSearchService
             $filters['sort'] = $args['sort'];
         }
 
+        $exclude = $this->exclusions($args['exclude'] ?? null);
+        if ($exclude !== []) {
+            $filters['exclude'] = $exclude;
+        }
+
         return $filters;
+    }
+
+    /**
+     * The model's exclusions as a clean list. Accepts a comma-separated string
+     * too: models do not always honour an array type.
+     *
+     * @return string[]
+     */
+    protected function exclusions(mixed $value): array
+    {
+        $items = is_string($value) ? explode(',', $value) : (is_array($value) ? $value : []);
+        $clean = [];
+
+        foreach ($items as $item) {
+            $item = $this->string($item, 60);
+
+            if ($item !== null && $this->skeleton($item) !== '') {
+                $clean[] = $item;
+            }
+        }
+
+        return array_slice(array_values(array_unique($clean)), 0, self::MAX_EXCLUSIONS);
+    }
+
+    /**
+     * One source fetch, with the customer's exclusions applied.
+     *
+     * Applied here rather than inside each source: the live-database query
+     * builder has no negative condition, and a rejection has to hold the same
+     * whichever source the agent uses. With exclusions it over-fetches to the
+     * row cap first, so excluded rows are replaced by the next ones rather than
+     * just shrinking the answer. The cost is that in a catalog much larger than
+     * MAX_LIMIT a heavily-excluded search can come back short — which still
+     * never re-offers what the customer rejected.
+     *
+     * @param  array<string, mixed>  $filters
+     * @return array<int, array<string, mixed>>
+     */
+    protected function fetch(ProductSource $source, array $filters, int $limit): array
+    {
+        $exclude = $filters['exclude'] ?? [];
+
+        if ($exclude === []) {
+            return $source->fetch($filters, $limit);
+        }
+
+        $rows = array_filter(
+            $source->fetch($filters, self::MAX_LIMIT),
+            fn (array $row) => ! $this->isExcluded($row, $exclude),
+        );
+
+        return array_slice(array_values($rows), 0, $limit);
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     * @param  string[]  $exclude
+     */
+    protected function isExcluded(array $row, array $exclude): bool
+    {
+        $haystack = $this->skeleton(implode(' ', array_map(
+            fn ($field) => is_scalar($row[$field] ?? null) ? (string) $row[$field] : '',
+            ['name', 'category', 'description', 'sku'],
+        )));
+
+        foreach ($exclude as $term) {
+            $needle = $this->skeleton($term);
+
+            if ($needle !== '' && str_contains($haystack, $needle)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * A spelling-insensitive form for matching a rejected brand: Cyrillic
+     * transliterated, spaces dropped, and the Latin spellings that sound alike
+     * folded together — so "МакБук", "мак бук" and "MacBook" are one word.
+     */
+    protected function skeleton(string $text): string
+    {
+        $text = strtr(mb_strtolower($text), self::CYRILLIC_TO_LATIN);
+        $text = (string) preg_replace('/[^a-z0-9]+/', '', $text);
+        $text = strtr($text, ['ck' => 'k', 'c' => 'k', 'q' => 'k', 'oo' => 'u', 'ph' => 'f', 'w' => 'v', 'y' => 'i', 'x' => 'ks']);
+
+        return (string) preg_replace('/(.)\1+/', '$1', $text);
     }
 
     /**
@@ -420,7 +552,9 @@ class ProductSearchService
 
         foreach ($relaxations as $relaxed => $wider) {
             try {
-                $products = $source->fetch($wider, self::NEAREST_LIMIT);
+                $products = $relaxed === 'price'
+                    ? $this->nearestByPrice($source, $wider, $filters)
+                    : $this->fetch($source, $wider, self::NEAREST_LIMIT);
             } catch (\Throwable $e) {
                 // The first query already failed loudly enough; a failed
                 // consolation query is not worth a second log line or a turn.
@@ -432,9 +566,12 @@ class ProductSearchService
                     'products' => $products,
                     'relaxed' => $relaxed,
                     'note' => match ($relaxed) {
-                        'price' => 'These matched everything the customer asked for EXCEPT the price. Say plainly that '
-                            .'nothing fits the budget they named, then mention what the nearest one actually costs — '
-                            .'do not present these as being within budget.',
+                        'price' => 'These matched everything the customer asked for EXCEPT the price. They are sorted '
+                            .'NEAREST FIRST, and each one\'s "budget_gap" says which side of the range it falls on '
+                            .'(below_min / above_max) and by how much. Say plainly that nothing fits the budget they '
+                            .'named, lead with the nearest one and state the real gap in money ("5999 — just 1 '
+                            .'under your range", "7999 — 999 over"), then ask whether the budget is firm. Do not '
+                            .'present these as being within budget.',
                         'stock' => 'These are what the customer asked for, but they are NOT currently in stock. Say '
                             .'that plainly and offer to let them know when it arrives — never imply availability.',
                         default => 'These are from the catalog more widely rather than the category asked about. Offer '
@@ -445,6 +582,80 @@ class ProductSearchService
         }
 
         return $none;
+    }
+
+    /**
+     * The products closest to the budget the customer named, nearest first,
+     * each carrying how far outside it lies.
+     *
+     * THE BUG THIS REPLACES. The price filter used to be dropped and the next
+     * three rows taken in catalog order — in the reported catalog, three
+     * MacBooks at 8199-11999 — while a laptop at 5999, one somoni under the
+     * customer's 6000 floor, sat further down the file. Two sorted queries, one
+     * each side of the range, find the true nearest in any source.
+     *
+     * @param  array<string, mixed>  $wider  The filters without the price bounds.
+     * @param  array<string, mixed>  $filters  The original filters, bounds included.
+     * @return array<int, array<string, mixed>>
+     */
+    protected function nearestByPrice(ProductSource $source, array $wider, array $filters): array
+    {
+        $min = $filters['min_price'] ?? null;
+        $max = $filters['max_price'] ?? null;
+        $candidates = [];
+
+        if ($min !== null) {
+            $below = [...$wider, 'max_price' => $min, 'sort' => 'price_desc'];
+
+            foreach ($this->fetch($source, $below, self::NEAREST_LIMIT) as $row) {
+                $candidates[] = $this->withBudgetGap($row, $min, $max);
+            }
+        }
+
+        if ($max !== null) {
+            $above = [...$wider, 'min_price' => $max, 'sort' => 'price_asc'];
+
+            foreach ($this->fetch($source, $above, self::NEAREST_LIMIT) as $row) {
+                $candidates[] = $this->withBudgetGap($row, $min, $max);
+            }
+        }
+
+        // A row with no readable price cannot be placed relative to a budget.
+        $candidates = array_values(array_filter($candidates, fn (array $row) => isset($row['budget_gap'])));
+
+        usort($candidates, fn (array $a, array $b) => $a['budget_gap']['amount'] <=> $b['budget_gap']['amount']);
+
+        return array_slice($candidates, 0, self::NEAREST_LIMIT);
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     * @return array<string, mixed>
+     */
+    protected function withBudgetGap(array $row, ?float $min, ?float $max): array
+    {
+        $price = is_numeric($row['price'] ?? null)
+            ? (float) $row['price']
+            : $this->money(preg_replace('/[^\d.]/', '', (string) ($row['price'] ?? '')));
+
+        if ($price === null) {
+            return $row;
+        }
+
+        if ($min !== null && $price < $min) {
+            $row['budget_gap'] = ['side' => 'below_min', 'amount' => $this->gap($min - $price)];
+        } elseif ($max !== null && $price > $max) {
+            $row['budget_gap'] = ['side' => 'above_max', 'amount' => $this->gap($price - $max)];
+        }
+
+        return $row;
+    }
+
+    protected function gap(float $amount): int|float
+    {
+        $amount = round($amount, 2);
+
+        return $amount == floor($amount) ? (int) $amount : $amount;
     }
 
     /**
@@ -509,6 +720,10 @@ class ProductSearchService
 
         if (! empty($filters['in_stock_only'])) {
             $parts[] = 'in stock now';
+        }
+
+        if (! empty($filters['exclude'])) {
+            $parts[] = 'excluding '.implode(', ', $filters['exclude']);
         }
 
         return $parts === [] ? 'these filters' : implode(', ', $parts);

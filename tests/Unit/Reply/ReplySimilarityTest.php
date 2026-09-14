@@ -57,6 +57,43 @@ class ReplySimilarityTest extends TestCase
         $this->assertFalse($this->similarity->isNearDuplicate('Да, конечно.', 'Да, конечно.'));
     }
 
+    /**
+     * The reported loop: the framing reworded in Tajik, the three MacBooks
+     * identical. Word containment scored it 0.57 — a miss.
+     */
+    public function test_the_same_listing_reworded_is_a_repeat_even_when_the_words_differ(): void
+    {
+        $first = "Маъзед, ман ноутбукҳое бо нархи 6000 то 7000 сомони наёфтам. Бо вуҷуди ин, ман баъзе модели хуби MacBook-ро мебинам:\n"
+            ."1. **Macbook Neo 13** — 8199 сомонӣ (8GB RAM, 256GB).\n2. **Macbook Neo 13** — 8900 сомонӣ (8GB RAM, 512GB).\n"
+            .'3. **Macbook Air 15** — 11999 сомонӣ (16GB RAM, 256GB).';
+        $second = "Маъзед, дар нарх range васият (6000 то 7000 сомонӣ) барои ноутбукҳо ман моделе наёфтам. Ба сифати варианти наздик:\n"
+            ."1. **Macbook Neo 13** — 8199 сомонӣ (8GB RAM, 256GB).\n2. **Macbook Neo 13** — 8900 сомонӣ (8GB RAM, 512GB).\n"
+            .'3. **Macbook Air 15** — 11999 сомонӣ (16GB RAM, 256GB).';
+        $customer = ['Ман хамин а 6000 то 7000 ноутбуки нагз мехарилакги'];
+
+        $this->assertFalse($this->similarity->isNearDuplicate($second, $first));
+        $this->assertTrue($this->similarity->repeatsListing($second, $first, $customer));
+        $this->assertTrue($this->similarity->isRepeatOf($second, $first, $customer));
+    }
+
+    /** Quoting the customer's own budget back is not the assistant repeating itself. */
+    public function test_the_customers_own_figures_do_not_make_a_repeat(): void
+    {
+        $first = 'В диапазоне 6000–7000 ничего нет, ближе всего 8199, 8900 и 11999 сомони.';
+        $second = 'Между 6000 и 7000 сомони, к сожалению, ничего нет. Бюджет строгий или можно чуть больше, скажем 7500?';
+
+        $this->assertFalse($this->similarity->repeatsListing($second, $first, ['от 6000 до 7000']));
+    }
+
+    /** "Which of these two is better?" answered about both is not a loop. */
+    public function test_two_repeated_prices_are_a_comparison_not_a_listing(): void
+    {
+        $first = 'Есть Neo за 8199, Neo за 8900 и Air за 11999 сомони.';
+        $second = 'Neo за 8900 лучше, чем за 8199: вдвое больше памяти.';
+
+        $this->assertFalse($this->similarity->repeatsListing($second, $first));
+    }
+
     public function test_containment_is_zero_when_nothing_is_shared(): void
     {
         $this->assertSame(0.0, $this->similarity->containment('совершенно другой ответ', 'ноутбуки мыши клавиатуры'));

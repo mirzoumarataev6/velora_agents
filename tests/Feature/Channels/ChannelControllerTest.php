@@ -204,6 +204,7 @@ class ChannelControllerTest extends TestCase
             'phone_number_id' => '1234567890',
             'access_token' => 'EAAG-fake-token',
             'verify_token' => 'my-verify-token-123',
+            'app_secret' => 'test-meta-app-secret-0123456789',
         ]);
 
         $response->assertOk()->assertJsonPath('channel.status', 'connected');
@@ -235,6 +236,7 @@ class ChannelControllerTest extends TestCase
             'phone_number_id' => '1234567890',
             'access_token' => 'bad-token',
             'verify_token' => 'my-verify-token-123',
+            'app_secret' => 'test-meta-app-secret-0123456789',
         ]);
 
         $response->assertStatus(422);
@@ -267,6 +269,7 @@ class ChannelControllerTest extends TestCase
                 'phone_number_id' => '1234567890',
                 'access_token' => 'token',
                 'verify_token' => 'verify-token-123',
+                'app_secret' => 'test-meta-app-secret-0123456789',
             ])
             ->assertForbidden();
 
@@ -288,6 +291,7 @@ class ChannelControllerTest extends TestCase
             'ig_business_account_id' => '9876543210',
             'page_access_token' => 'EAAG-fake-page-token',
             'verify_token' => 'my-verify-token-456',
+            'app_secret' => 'test-meta-app-secret-0123456789',
         ]);
 
         $response->assertOk()->assertJsonPath('channel.status', 'connected');

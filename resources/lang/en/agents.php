@@ -528,6 +528,8 @@ return [
             'callback_meta_label' => 'Callback URL for Meta',
             'verify_token_label' => 'Verify Token',
             'verify_token_help' => "Make up any string — paste this same token into Meta's settings below.",
+            'app_secret_label' => 'Meta App Secret',
+            'app_secret_help' => 'Meta App Dashboard → Settings → Basic → App Secret. Used to verify the signature on incoming webhooks — without it the channel cannot accept messages.',
             'disconnect' => 'Disconnect',
             'connect' => 'Connect',
         ],

@@ -28,6 +28,26 @@ interface ChannelDriverInterface
     public function authenticateIncomingRequest(Request $request, Channel $channel): bool;
 
     /**
+     * Split ONE webhook delivery into one payload per customer message it
+     * carries.
+     *
+     * Exists because Meta batches. `entry`, `changes` and `messages` are all
+     * arrays in the Cloud API envelope, and Meta will put several customers'
+     * messages — or several from one customer — into a single POST when they
+     * arrive close together. parseIncomingMessage() returns at most one
+     * message, so reading only index [0] silently dropped the rest: the
+     * customer's second question was never answered and nothing anywhere
+     * recorded that it had arrived.
+     *
+     * Telegram sends exactly one update per delivery and returns the payload
+     * unchanged.
+     *
+     * @param  array<string, mixed>  $payload
+     * @return array<int, array<string, mixed>> One payload per message; empty if none.
+     */
+    public function splitDeliveries(array $payload): array;
+
+    /**
      * Parse a webhook POST body into a normalized message, or null if the
      * payload isn't a message this driver handles (e.g. a delivery receipt).
      * Takes the decoded JSON body (not a Request) so this can run inside a

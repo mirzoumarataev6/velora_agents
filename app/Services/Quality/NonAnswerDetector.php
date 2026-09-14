@@ -2,7 +2,7 @@
 
 namespace App\Services\Quality;
 
-use Illuminate\Support\Str;
+use App\Services\Quality\Concerns\MatchesPatterns;
 
 /**
  * Did the agent tell the customer, in whatever words it chose, that it does not
@@ -27,6 +27,8 @@ use Illuminate\Support\Str;
  */
 class NonAnswerDetector
 {
+    use MatchesPatterns;
+
     /**
      * @var array<int, string>
      */
@@ -59,21 +61,4 @@ class NonAnswerDetector
         '/\bi(\'m| am) (not sure|unable to (answer|say))/u',
         '/\b(can\'t|cannot|can not) (answer|help with) that/u',
     ];
-
-    public function matches(string $reply): bool
-    {
-        $reply = Str::of($reply)->lower()->squish()->toString();
-
-        if ($reply === '') {
-            return false;
-        }
-
-        foreach (self::PATTERNS as $pattern) {
-            if (preg_match($pattern, $reply) === 1) {
-                return true;
-            }
-        }
-
-        return false;
-    }
 }

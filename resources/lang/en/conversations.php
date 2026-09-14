@@ -118,6 +118,7 @@ return [
     'errors' => [
         'no_channel' => 'This conversation has no connected channel to reply through.',
         'delivery_failed' => 'The message could not be delivered to the customer. Nothing was recorded — please try again.',
+        'outside_window' => 'More than 24 hours have passed since the customer last wrote — WhatsApp and Instagram do not allow a free-form message after that. Nothing was sent or saved. Wait until they write again.',
     ],
 
 ];

@@ -14,6 +14,7 @@ use App\Services\Channels\HumanizedReplySender;
 use App\Services\Channels\IncomingMessage;
 use App\Services\Quality\FeedbackCadence;
 use App\Services\Quality\MessageFeedbackRecorder;
+use App\Services\Reply\CustomerLocale;
 use App\Services\TelegramNotifyLinker;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -83,6 +84,7 @@ class HandleIncomingMessageJob implements ShouldQueue
         HumanizedReplySender $sender,
         MessageFeedbackRecorder $ratings,
         FeedbackCadence $cadence,
+        CustomerLocale $locales,
     ): void {
         // Telegram redelivers an update it believes was not acknowledged, and
         // it does so with the same update_id. Claimed atomically, before any
@@ -179,15 +181,28 @@ class HandleIncomingMessageJob implements ShouldQueue
         // A successfully transcribed voice note is deliberately absent from this
         // match: it goes down the ordinary path, because by then it IS ordinary
         // text and must get the full pipeline — RAG, rules, tools and all.
-        $assistantMessage = match ($incoming->type) {
-            'photo_unclear' => $replyService->askForProductName($conversation, $userMessage),
-            'voice_failed', 'voice_too_long' => $replyService->explainVoiceProblem(
-                $conversation,
-                $userMessage,
-                $incoming->type,
-            ),
-            default => $replyService->generateReplyFor($conversation, $userMessage),
-        };
+        //
+        // /start is answered before any of that: with the owner's greeting,
+        // verbatim, and no model call at all.
+        $assistantMessage = $incoming->type === 'text' && AgentReplyService::isStartCommand($incoming->text)
+            ? $replyService->greetOnStart($conversation)
+            : match ($incoming->type) {
+                'photo_unclear' => $replyService->askForProductName($conversation, $userMessage),
+                'voice_failed', 'voice_too_long' => $replyService->explainVoiceProblem(
+                    $conversation,
+                    $userMessage,
+                    $incoming->type,
+                ),
+                // A document, video, sticker or location. The Meta drivers used to
+                // return null for these, so the job stopped and the customer got
+                // silence — indistinguishable, from their side, from a broken bot.
+                'unsupported' => $replyService->explainVoiceProblem(
+                    $conversation,
+                    $userMessage,
+                    'unsupported_attachment',
+                ),
+                default => $replyService->generateReplyFor($conversation, $userMessage),
+            };
 
         // Whether to ask for a rating at all. Two independent gates, and both
         // have to open: the CHANNEL has to be able to carry a control, and the
@@ -195,7 +210,7 @@ class HandleIncomingMessageJob implements ShouldQueue
         // — see FeedbackCadence, which exists because asking after every reply
         // turned the control into furniture.
         $askForRating = $driver->supportsMessageFeedback()
-            && $cadence->shouldAsk($conversation, $assistantMessage);
+            && $cadence->shouldAsk($conversation, $assistantMessage, $userMessage);
 
         // One assistant turn, possibly delivered as 2-3 human-paced messages —
         // the Message row above is still the single record of this reply, and
@@ -207,6 +222,8 @@ class HandleIncomingMessageJob implements ShouldQueue
                 $incoming->externalUserId,
                 $assistantMessage->content,
                 $askForRating ? $assistantMessage : null,
+                // Why they are being asked, in the language they are writing in.
+                $askForRating ? __('feedback.prompt', [], $locales->forCustomer($conversation)) : null,
             );
 
             // Marked only after the reply actually went out, so a delivery that
@@ -333,11 +350,16 @@ class HandleIncomingMessageJob implements ShouldQueue
      */
     protected function claimUpdate(): bool
     {
-        $updateId = $this->payload['update_id'] ?? null;
-
-        if ($updateId === null) {
-            return true; // Not a Telegram-shaped delivery; nothing to key on.
-        }
+        // Telegram names its deliveries; Meta does not, so its payload is
+        // keyed by content hash. A Meta retry is a byte-identical repost of the
+        // same event, and since the controller has already split a batch into
+        // one message per payload, that hash identifies one message.
+        //
+        // This used to bail out for anything without an update_id — which meant
+        // WhatsApp and Instagram had no atomic claim at all, and two concurrent
+        // deliveries of the same message raced each other to answer it.
+        $updateId = $this->payload['update_id']
+            ?? 'sha:'.hash('sha256', json_encode($this->payload));
 
         if (Cache::add("webhook-update:{$this->channel->id}:{$updateId}", true, self::UPDATE_DEDUP_TTL)) {
             return true;

@@ -6,7 +6,7 @@ use App\Models\Channel;
 use App\Models\Message;
 use App\Services\Channels\ChannelDriverInterface;
 use App\Services\Channels\MessageFeedback;
-use App\Services\Reply\LanguageDetector;
+use App\Services\Reply\CustomerLocale;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -29,7 +29,7 @@ use Illuminate\Support\Facades\Log;
  */
 class MessageFeedbackRecorder
 {
-    public function __construct(protected LanguageDetector $languages) {}
+    public function __construct(protected CustomerLocale $locales) {}
 
     /**
      * @return bool Whether the vote was recorded by THIS call. False covers
@@ -92,23 +92,9 @@ class MessageFeedbackRecorder
             ->where('external_user_id', $feedback->externalUserId)
             ->first();
 
-        // Newest first, as message TEXT — the shape the detector takes, and the
-        // same slice the reply pipeline hands it.
-        $detected = $conversation === null ? null : $this->languages->forConversation(
-            $conversation->messages()
-                ->where('role', 'user')
-                ->orderByDesc('created_at')
-                ->orderByDesc('id')
-                ->take(5)
-                ->pluck('content')
-        );
-
-        $locale = match ($detected) {
-            LanguageDetector::TAJIK => 'tg',
-            LanguageDetector::ENGLISH => 'en',
-            LanguageDetector::RUSSIAN => 'ru',
-            default => config('app.locale'),
-        };
+        $locale = $conversation === null
+            ? config('app.locale')
+            : $this->locales->forCustomer($conversation);
 
         return __("feedback.confirm.{$key}", [], $locale);
     }

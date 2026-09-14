@@ -36,7 +36,9 @@
         }
     })();
 </script>
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+{{-- See layouts/auth: stops mobile browsers force-darkening the palette. --}}
+<meta name="color-scheme" content="light dark" />
 <title>@yield('title', __('common.brand'))</title>
 @include('partials.favicons')
 {{-- Self-hosted Inter. Previously the dashboard linked no webfont at all, so it

@@ -172,18 +172,14 @@ return [
     |
     */
     // How often a customer is asked to rate a reply with 👍/👎. See
-    // App\Services\Quality\FeedbackCadence for the rule these two feed, and for
-    // why asking rarely is the point rather than a limitation.
+    // App\Services\Quality\FeedbackCadence for the rule this feeds: a prompt
+    // is only ever shown at a natural end of conversation (a captured lead, or
+    // the customer saying thanks), and never inside this floor.
     'feedback' => [
         // Minimum assistant turns between one prompt and the next. Counts from
-        // a RATING as well as from a prompt, so answering one buys the same
-        // quiet as being asked one.
+        // a RATING, a prompt or a /start, so answering one buys the same quiet
+        // as being asked one, and a fresh session starts from zero.
         'min_turns_between' => env('AGENT_FEEDBACK_MIN_TURNS_BETWEEN', 3),
-
-        // The routine cadence when nothing notable happens in the conversation.
-        // A captured lead can bring a prompt forward, but never inside the
-        // floor above.
-        'every_n_turns' => env('AGENT_FEEDBACK_EVERY_N_TURNS', 5),
     ],
 
     'humanize' => [

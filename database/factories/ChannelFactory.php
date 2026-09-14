@@ -26,6 +26,12 @@ class ChannelFactory extends Factory
         ];
     }
 
+    /**
+     * Fixed rather than random so a test can sign a payload with it without
+     * having to read the channel back first.
+     */
+    public const APP_SECRET = 'test-meta-app-secret-0123456789';
+
     public function whatsapp(): static
     {
         return $this->state(fn () => [
@@ -34,6 +40,9 @@ class ChannelFactory extends Factory
                 'phone_number_id' => '1234567890',
                 'access_token' => 'FAKE-WHATSAPP-ACCESS-TOKEN',
                 'verify_token' => Str::random(32),
+                // Meta signs every webhook delivery with this; without it the
+                // channel cannot verify a delivery and refuses them all.
+                'app_secret' => self::APP_SECRET,
             ],
             'settings' => [
                 'display_phone_number' => '+1 555-0100',
@@ -51,6 +60,7 @@ class ChannelFactory extends Factory
                 'ig_business_account_id' => '9876543210',
                 'page_access_token' => 'FAKE-INSTAGRAM-PAGE-TOKEN',
                 'verify_token' => Str::random(32),
+                'app_secret' => self::APP_SECRET,
             ],
             'settings' => [
                 'ig_username' => 'test_ig_business',

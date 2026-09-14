@@ -154,6 +154,8 @@ class InstagramDriverTest extends TestCase
         Http::fake(['graph.facebook.com/*/messages' => Http::response(['message_id' => 'mid.OUT'], 200)]);
         $channel = Channel::factory()->instagram()->create();
 
+        $this->openMessagingWindow($channel, '778899');
+
         $this->driver()->sendMessage($channel, '778899', 'Добрый день!');
 
         Http::assertSent(fn ($request) => str_contains($request->url(), '9876543210/messages')
@@ -234,11 +236,32 @@ class InstagramDriverTest extends TestCase
             ],
         ]);
 
+        $this->openMessagingWindow($channel, '778899');
+
         $this->driver()->sendMessage($channel, '778899', 'Добрый день!');
 
         Http::assertSent(fn ($request) => str_contains($request->url(), 'graph.instagram.com')
             && str_contains($request->url(), '9876543210/messages')
             && $request['recipient']['id'] === '778899'
             && $request['message']['text'] === 'Добрый день!');
+    }
+
+    /**
+     * An inbound message from this customer, minutes ago — which is what opens
+     * the 24-hour window both Meta platforms require before a free-form reply.
+     */
+    protected function openMessagingWindow(Channel $channel, string $externalUserId): void
+    {
+        $conversation = $channel->agent->conversations()->create([
+            'channel_id' => $channel->id,
+            'external_user_id' => $externalUserId,
+            'status' => 'ai',
+        ]);
+
+        $conversation->messages()->create([
+            'role' => 'user',
+            'content' => 'Здравствуйте',
+            'external_message_id' => 'in.'.uniqid(),
+        ]);
     }
 }

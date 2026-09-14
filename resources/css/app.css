@@ -138,9 +138,14 @@ i {
 /* Native form controls (the <select> option popup, the text caret, scrollbars)
    follow the document color-scheme. Without this, a dark-themed <select> opens
    a white option list. The public pages and the dashboard both toggle `.dark`
-   on <html>, so key off that. */
+   on <html>, so key off that.
+
+   `light only`, not `light`: plain `light` still lets Samsung Internet's and
+   Chrome's forced dark mode repaint the page, which turned the terracotta
+   accent dark red on those phones. `only` tells the browser this light theme
+   is deliberate — the real dark theme is `.dark`, below. */
 :root {
-    color-scheme: light;
+    color-scheme: light only;
 }
 :root.dark {
     color-scheme: dark;

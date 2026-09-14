@@ -37,6 +37,16 @@ class TelegramDriver implements ChannelDriverInterface
      */
     protected const FEEDBACK_PREFIX = 'fb';
 
+    /**
+     * The update types the webhook subscribes to. callback_query is not
+     * optional: Telegram sends ONLY the types named here, so without it a
+     * customer's 👍 reaches nothing and the button spins forever.
+     *
+     * Changing this list does nothing for bots already connected — see
+     * syncWebhook() and `php artisan telegram:sync-webhooks`.
+     */
+    public const ALLOWED_UPDATES = ['message', 'callback_query'];
+
     public function __construct(
         protected LlmProviderInterface $llm,
         protected VoiceTranscriber $transcriber,
@@ -58,6 +68,15 @@ class TelegramDriver implements ChannelDriverInterface
         }
 
         return hash_equals($expected, (string) $request->header('X-Telegram-Bot-Api-Secret-Token'));
+    }
+
+    /**
+     * Telegram delivers exactly one update per POST, so there is nothing to
+     * split. Meta is the reason this method exists at all — see the interface.
+     */
+    public function splitDeliveries(array $payload): array
+    {
+        return [$payload];
     }
 
     public function parseIncomingMessage(array $payload, Channel $channel): ?IncomingMessage
@@ -553,19 +572,7 @@ class TelegramDriver implements ChannelDriverInterface
         $webhookSecret = Str::random(48);
         $webhookUrl = route('webhooks.telegram', $channel);
 
-        $setWebhook = $this->call($token, 'setWebhook', [
-            'url' => $webhookUrl,
-            'secret_token' => $webhookSecret,
-            // callback_query is not optional here. Telegram sends ONLY the
-            // update types named in this list, so without it a customer's 👍
-            // reaches nothing and the button spins forever.
-            'allowed_updates' => ['message', 'callback_query'],
-        ]);
-
-        if (empty($setWebhook['ok'])) {
-            $description = $setWebhook['description'] ?? 'Unknown error';
-            throw new RuntimeException("Telegram rejected the webhook: {$description}");
-        }
+        $this->registerWebhook($token, $webhookUrl, $webhookSecret);
 
         return [
             'bot_username' => $me['result']['username'],
@@ -573,6 +580,51 @@ class TelegramDriver implements ChannelDriverInterface
             'webhook_secret' => $webhookSecret,
             'webhook_url' => $webhookUrl,
         ];
+    }
+
+    /**
+     * Re-register an already-connected bot's webhook with the CURRENT
+     * subscription list, keeping its URL and secret.
+     *
+     * The subscription is stored on Telegram's side, fixed at the moment
+     * setWebhook was last called. A bot connected before callback_query was
+     * added to ALLOWED_UPDATES keeps receiving only messages — every 👍 tap
+     * is dropped by Telegram before it reaches us — until this runs.
+     */
+    public function syncWebhook(Channel $channel): void
+    {
+        $url = $channel->settings['webhook_url'] ?? null;
+        $secret = $channel->settings['webhook_secret'] ?? null;
+
+        if (empty($url) || empty($secret)) {
+            throw new RuntimeException('Telegram channel has no stored webhook URL/secret — reconnect it instead.');
+        }
+
+        $this->registerWebhook($this->token($channel), $url, $secret);
+    }
+
+    /**
+     * What Telegram actually has registered for this bot.
+     *
+     * @return array<string, mixed>
+     */
+    public function webhookInfo(Channel $channel): array
+    {
+        return $this->call($this->token($channel), 'getWebhookInfo')['result'] ?? [];
+    }
+
+    protected function registerWebhook(string $token, string $url, string $secret): void
+    {
+        $setWebhook = $this->call($token, 'setWebhook', [
+            'url' => $url,
+            'secret_token' => $secret,
+            'allowed_updates' => self::ALLOWED_UPDATES,
+        ]);
+
+        if (empty($setWebhook['ok'])) {
+            $description = $setWebhook['description'] ?? 'Unknown error';
+            throw new RuntimeException("Telegram rejected the webhook: {$description}");
+        }
     }
 
     public function disconnect(Channel $channel): void

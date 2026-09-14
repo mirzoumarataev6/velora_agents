@@ -90,10 +90,15 @@ class ChannelController extends Controller
             'phone_number_id' => ['required', 'string'],
             'access_token' => ['required', 'string'],
             'verify_token' => ['required', 'string', 'min:8'],
+            // Required, not optional: without it Meta's X-Hub-Signature-256
+            // cannot be checked, and an unverifiable webhook is one anyone can
+            // POST to. See VerifiesMetaWebhook.
+            'app_secret' => ['required', 'string', 'min:16'],
         ], [], [
             'phone_number_id' => 'Phone Number ID',
             'access_token' => 'токен доступа',
             'verify_token' => 'токен верификации',
+            'app_secret' => 'App Secret',
         ]);
 
         $channel = $agent->channels()->firstOrNew(['type' => 'whatsapp']);
@@ -163,10 +168,14 @@ class ChannelController extends Controller
             'ig_business_account_id' => ['required', 'string'],
             'page_access_token' => ['required', 'string'],
             'verify_token' => ['required', 'string', 'min:8'],
+            // Instagram's webhook needs exactly the same protection as
+            // WhatsApp's — same Graph signature, same public endpoint.
+            'app_secret' => ['required', 'string', 'min:16'],
         ], [], [
             'ig_business_account_id' => 'ID бизнес-аккаунта Instagram',
             'page_access_token' => 'токен доступа страницы',
             'verify_token' => 'токен верификации',
+            'app_secret' => 'App Secret',
         ]);
 
         $channel = $agent->channels()->firstOrNew(['type' => 'instagram']);

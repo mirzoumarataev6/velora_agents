@@ -16,9 +16,14 @@
      * script the current locale is written in.
      *
      * Dev/hot mode has no build manifest, so it falls back to Vite::fonts().
+     *
+     * Asks Vite rather than checking public/hot itself: a request from a phone
+     * through the tunnel is switched to the built assets even while the dev
+     * server runs (see ServeBuiltAssetsToRemoteClients), and the fonts have to
+     * follow the same decision as @vite() or they point at 127.0.0.1:5173.
      */
     $__manifestPath = public_path('build/fonts-manifest.json');
-    $__hot = file_exists(public_path('hot'));
+    $__hot = \Illuminate\Support\Facades\Vite::isRunningHot();
     $__manifest = (! $__hot && file_exists($__manifestPath))
         ? json_decode(file_get_contents($__manifestPath), true)
         : null;

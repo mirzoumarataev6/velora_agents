@@ -531,6 +531,8 @@ return [
             'callback_meta_label' => 'Callback URL барои Meta',
             'verify_token_label' => 'Verify Token',
             'verify_token_help' => 'Ҳар сатрро фикр карда бароред — ҳамин токенро дар танзимоти Meta дар поён гузоред.',
+            'app_secret_label' => 'App Secret-и барномаи Meta',
+            'app_secret_help' => 'Meta App Dashboard → Settings → Basic → App Secret. Барои тафтиши имзои дархостҳои воридотӣ лозим аст — бе он канал паёмҳоро қабул карда наметавонад.',
             'disconnect' => 'Қатъ кардан',
             'connect' => 'Пайваст кардан',
         ],

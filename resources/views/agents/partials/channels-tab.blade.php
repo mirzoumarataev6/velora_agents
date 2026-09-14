@@ -92,7 +92,7 @@
         x-data="metaChannel({
             connectUrl: '{{ route('agents.channels.whatsapp.connect', $agent) }}',
             disconnectUrlBase: '{{ route('agents.channels.whatsapp.disconnect', ['agent' => $agent, 'channel' => '__ID__']) }}',
-            fields: ['phone_number_id', 'access_token', 'verify_token'],
+            fields: ['phone_number_id', 'access_token', 'verify_token', 'app_secret'],
             fallbackWebhookUrl: '{{ route('webhooks.whatsapp', ['channel' => $whatsapp?->uuid ?? '__UUID__']) }}',
             initial: {{ Js::from($whatsapp ? [
                 'id' => $whatsapp->id,
@@ -177,6 +177,13 @@
                     <p class="mt-1 text-xs text-muted dark:text-night-muted">{{ __('agents.channels.shared.verify_token_help') }}</p>
                     <p x-show="errors.verify_token" x-text="errors.verify_token?.[0]" class="mt-1 text-xs text-danger"></p>
                 </div>
+                <div>
+                    <label for="wa_app_secret" class="text-sm font-medium">{{ __('agents.channels.shared.app_secret_label') }}</label>
+                    <input id="wa_app_secret" x-model="form.app_secret" type="password" required autocomplete="off"
+ class="field mt-1 w-full rounded-xl px-4 py-2.5 font-mono text-sm" />
+                    <p class="mt-1 text-xs text-muted dark:text-night-muted">{{ __('agents.channels.shared.app_secret_help') }}</p>
+                    <p x-show="errors.app_secret" x-text="errors.app_secret?.[0]" class="mt-1 text-xs text-danger"></p>
+                </div>
                 <button type="submit" :disabled="connecting" class="rounded-xl bg-brand px-5 py-2.5 text-sm font-semibold text-on-accent transition-all hover:-translate-y-0.5 hover:bg-brand-hover disabled:opacity-60">
                     <span x-show="!connecting">{{ __('agents.channels.shared.connect') }}</span>
                     <span x-show="connecting" class="spinner"></span>
@@ -211,7 +218,7 @@
         x-data="metaChannel({
             connectUrl: '{{ route('agents.channels.instagram.connect', $agent) }}',
             disconnectUrlBase: '{{ route('agents.channels.instagram.disconnect', ['agent' => $agent, 'channel' => '__ID__']) }}',
-            fields: ['ig_business_account_id', 'page_access_token', 'verify_token'],
+            fields: ['ig_business_account_id', 'page_access_token', 'verify_token', 'app_secret'],
             fallbackWebhookUrl: '{{ route('webhooks.instagram', ['channel' => $instagram?->uuid ?? '__UUID__']) }}',
             initial: {{ Js::from($instagram ? [
                 'id' => $instagram->id,
@@ -295,6 +302,13 @@
  class="field mt-1 w-full rounded-xl px-4 py-2.5 font-mono text-sm" />
                     <p class="mt-1 text-xs text-muted dark:text-night-muted">{{ __('agents.channels.shared.verify_token_help') }}</p>
                     <p x-show="errors.verify_token" x-text="errors.verify_token?.[0]" class="mt-1 text-xs text-danger"></p>
+                </div>
+                <div>
+                    <label for="ig_app_secret" class="text-sm font-medium">{{ __('agents.channels.shared.app_secret_label') }}</label>
+                    <input id="ig_app_secret" x-model="form.app_secret" type="password" required autocomplete="off"
+ class="field mt-1 w-full rounded-xl px-4 py-2.5 font-mono text-sm" />
+                    <p class="mt-1 text-xs text-muted dark:text-night-muted">{{ __('agents.channels.shared.app_secret_help') }}</p>
+                    <p x-show="errors.app_secret" x-text="errors.app_secret?.[0]" class="mt-1 text-xs text-danger"></p>
                 </div>
                 <button type="submit" :disabled="connecting" class="rounded-xl bg-brand px-5 py-2.5 text-sm font-semibold text-on-accent transition-all hover:-translate-y-0.5 hover:bg-brand-hover disabled:opacity-60">
                     <span x-show="!connecting">{{ __('agents.channels.shared.connect') }}</span>

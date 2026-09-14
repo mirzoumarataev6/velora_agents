@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\CompressResponse;
+use App\Http\Middleware\ServeBuiltAssetsToRemoteClients;
 use App\Http\Middleware\SetLocale;
 use Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests;
 use Illuminate\Foundation\Application;
@@ -26,6 +27,11 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->trustProxies(at: '*');
 
         $middleware->web(append: [SetLocale::class]);
+
+        // While `npm run dev` runs, @vite() points at 127.0.0.1:5173 — reachable
+        // from this machine, not from a phone through the tunnel, which then got
+        // pages with no stylesheet at all. Remote clients get the built bundle.
+        $middleware->web(append: [ServeBuiltAssetsToRemoteClients::class]);
 
         // `php artisan serve` does no content encoding, and .htaccess's
         // mod_deflate rules only apply under Apache — so HTML went over the

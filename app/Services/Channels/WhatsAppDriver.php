@@ -3,10 +3,8 @@
 namespace App\Services\Channels;
 
 use App\Models\Channel;
-use App\Models\Conversation;
 use App\Services\Llm\LlmProviderInterface;
 use Illuminate\Http\Client\ConnectionException;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
@@ -24,32 +22,46 @@ use Throwable;
  */
 class WhatsAppDriver implements ChannelDriverInterface
 {
-    use DescribesImagesWithConfidence, HasNoMessageFeedback, SplitsLongMessages, VerifiesMetaWebhook;
+    use ChecksMessagingWindow, DescribesImagesWithConfidence, HasNoMessageFeedback, SplitsLongMessages, VerifiesMetaWebhook;
 
     protected const API_VERSION = 'v21.0';
 
     // Meta's documented limit for a WhatsApp text message body.
     protected const MAX_MESSAGE_LENGTH = 4096;
 
-    // WhatsApp only allows free-form (non-template) replies within 24h of the
-    // customer's last inbound message.
-    protected const CUSTOMER_SERVICE_WINDOW_HOURS = 24;
-
     public function __construct(
         protected LlmProviderInterface $llm,
         protected OutboundMarkdown $markdown = new OutboundMarkdown,
     ) {}
 
-    public function authenticateIncomingRequest(Request $request, Channel $channel): bool
+    /**
+     * One payload per message in the batch, each carrying the `contacts` block
+     * from its own change so the customer's display name survives the split.
+     */
+    public function splitDeliveries(array $payload): array
     {
-        // Meta signs webhook POST bodies with X-Hub-Signature-256, verifiable with
-        // the Meta App's App Secret — a field we don't currently collect (only
-        // phone_number_id/access_token/verify_token, per the connect form). The
-        // unguessable channel UUID in the URL is the primary boundary here, same
-        // as it is for Telegram before that driver's additional secret_token
-        // layer. Collecting an app_secret field and checking the signature here
-        // would be the natural hardening step if/when that's added.
-        return true;
+        $deliveries = [];
+
+        foreach ($payload['entry'] ?? [] as $entry) {
+            foreach ($entry['changes'] ?? [] as $change) {
+                $value = $change['value'] ?? null;
+
+                if (! is_array($value) || empty($value['messages'])) {
+                    continue; // A "statuses" (delivery/read receipt) change, or something else.
+                }
+
+                foreach ($value['messages'] as $message) {
+                    $deliveries[] = ['entry' => [['changes' => [['value' => [
+                        'messaging_product' => $value['messaging_product'] ?? 'whatsapp',
+                        'metadata' => $value['metadata'] ?? [],
+                        'contacts' => $value['contacts'] ?? [],
+                        'messages' => [$message],
+                    ]]]]]];
+                }
+            }
+        }
+
+        return $deliveries;
     }
 
     public function parseIncomingMessage(array $payload, Channel $channel): ?IncomingMessage
@@ -91,8 +103,23 @@ class WhatsAppDriver implements ChannelDriverInterface
             );
         }
 
-        // Unsupported type for v1 (audio, video, document, location, sticker, contacts, etc.).
-        return null;
+        // A reaction or a system notice is not the customer asking us anything,
+        // so it stays silent. Anything else they deliberately SENT — a voice
+        // note, a video, a PDF, a pinned location — gets an answer saying we
+        // can only read text and photos. Returning null here meant the customer
+        // sent a document and got nothing back at all, which from their side is
+        // indistinguishable from a dead bot.
+        if (in_array($type, ['reaction', 'system', 'unknown'], true)) {
+            return null;
+        }
+
+        return new IncomingMessage(
+            (string) $externalMessageId,
+            (string) $externalUserId,
+            $externalUserName,
+            "[Customer sent a {$type} message, which this assistant cannot read.]",
+            'unsupported'
+        );
     }
 
     protected function buildPhotoMessage(
@@ -166,17 +193,12 @@ class WhatsAppDriver implements ChannelDriverInterface
 
     public function sendMessage(Channel $channel, string $externalUserId, string $text): void
     {
-        if (! $this->isWithinCustomerServiceWindow($channel, $externalUserId)) {
-            Log::warning('WhatsApp 24h customer service window has closed; free-form message not sent.', [
-                'channel_id' => $channel->id,
-                'external_user_id' => $externalUserId,
-            ]);
-
-            // Extension point for v2: dispatch a pre-approved template message here
-            // instead (the only message type Meta allows outside the window).
-            // Not implemented — see class docblock and Stage 7 acceptance notes.
-            return;
-        }
+        // Throws rather than returning quietly. Returning was the bug: the
+        // caller recorded a Message row and reported success, so the transcript
+        // showed the operator a reply the customer had never received, and the
+        // owner had no way to find out. The exception reaches the inbox as a
+        // real error and the reply pipeline as a logged failure.
+        $this->assertWithinMessagingWindow($channel, $externalUserId);
 
         $phoneNumberId = $this->phoneNumberId($channel);
         $token = $this->accessToken($channel);
@@ -206,25 +228,6 @@ class WhatsAppDriver implements ChannelDriverInterface
                 'text' => ['body' => $chunk],
             ]);
         }
-    }
-
-    /**
-     * Whether the customer has messaged within the last 24 hours, per Meta's
-     * customer service window policy. Free-form (non-template) messages are
-     * only allowed inside this window.
-     */
-    protected function isWithinCustomerServiceWindow(Channel $channel, string $externalUserId): bool
-    {
-        $lastInbound = Conversation::where('channel_id', $channel->id)
-            ->where('external_user_id', $externalUserId)
-            ->first()
-            ?->messages()
-            ->where('role', 'user')
-            ->latest()
-            ->first();
-
-        return $lastInbound !== null
-            && $lastInbound->created_at->gt(now()->subHours(self::CUSTOMER_SERVICE_WINDOW_HOURS));
     }
 
     public function sendTypingIndicator(Channel $channel, string $externalUserId): void
@@ -304,8 +307,19 @@ class WhatsAppDriver implements ChannelDriverInterface
             throw new RuntimeException("WhatsApp API connection failed: {$e->getMessage()}");
         }
 
-        if ($response->serverError()) {
-            throw new RuntimeException("WhatsApp API failed with status {$response->status()}: {$response->body()}");
+        // 4xx as well as 5xx. Only server errors were checked before, so every
+        // business-level rejection Meta returns with a 400 — an expired token,
+        // a number that is not on WhatsApp, a closed window, a template
+        // violation — was read as success and the message silently vanished.
+        if ($response->failed()) {
+            $error = $response->json('error.message') ?? $response->body();
+            $code = $response->json('error.code');
+
+            throw new RuntimeException(
+                "WhatsApp API rejected the message (HTTP {$response->status()}".
+                ($code === null ? '' : ", code {$code}").
+                "): {$error}"
+            );
         }
 
         return $response->json() ?? [];

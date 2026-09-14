@@ -189,7 +189,7 @@ class HumanizedReplyTest extends TestCase
         Http::fake(['graph.facebook.com/*' => Http::response(['message_id' => 'mid.OUT1'], 200)]);
         $channel = Channel::factory()->instagram()->create();
 
-        $this->postJson(route('webhooks.instagram', $channel), [
+        $this->postSignedMetaWebhook(route('webhooks.instagram', $channel), [
             'object' => 'instagram',
             'entry' => [[
                 'id' => 'IG_PAGE_ID',
@@ -220,7 +220,7 @@ class HumanizedReplyTest extends TestCase
         Http::fake(['graph.facebook.com/*' => Http::response(['messages' => [['id' => 'wamid.OUT1']]], 200)]);
         $channel = Channel::factory()->whatsapp()->create();
 
-        $this->postJson(route('webhooks.whatsapp', $channel), [
+        $this->postSignedMetaWebhook(route('webhooks.whatsapp', $channel), [
             'object' => 'whatsapp_business_account',
             'entry' => [[
                 'id' => 'WABA_ID',

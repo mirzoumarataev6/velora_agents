@@ -28,6 +28,11 @@ class HumanizedReplySender
      *                                  a reply still being typed is asking them
      *                                  to rate half of it. Channels that cannot
      *                                  carry a control simply send the text.
+     * @param  string|null  $feedbackPrompt  One line telling the customer why
+     *                                       they are being asked, appended to
+     *                                       the message that carries the
+     *                                       control. Delivery only — it is not
+     *                                       part of the stored reply.
      * @return int How many messages the reply was delivered as.
      */
     public function send(
@@ -36,6 +41,7 @@ class HumanizedReplySender
         string $externalUserId,
         string $text,
         ?Message $rateable = null,
+        ?string $feedbackPrompt = null,
     ): int {
         $messages = $this->messagesFor($text);
         $last = count($messages) - 1;
@@ -49,6 +55,10 @@ class HumanizedReplySender
             }
 
             if ($index === $last && $rateable !== null) {
+                if ($feedbackPrompt !== null && $driver->supportsMessageFeedback()) {
+                    $message .= "\n\n".$feedbackPrompt;
+                }
+
                 $driver->sendMessageWithFeedback($channel, $externalUserId, $message, $rateable->id);
 
                 continue;

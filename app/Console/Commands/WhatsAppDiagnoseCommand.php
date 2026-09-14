@@ -2,13 +2,11 @@
 
 namespace App\Console\Commands;
 
-use App\Models\Agent;
 use App\Models\Channel;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Command;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
-use Throwable;
 
 /**
  * Reports the REAL state of a WhatsApp Cloud API setup, straight from the Graph
@@ -27,6 +25,8 @@ use Throwable;
 #[Description('Check (and optionally repair) the WhatsApp Cloud API setup against the Graph API')]
 class WhatsAppDiagnoseCommand extends Command
 {
+    use Concerns\TalksToGraphApi;
+
     protected $signature = 'whatsapp:diagnose
         {--agent= : Agent id or slug whose stored WhatsApp channel to inspect}
         {--token= : Access token to use instead of the stored one}
@@ -43,13 +43,11 @@ class WhatsAppDiagnoseCommand extends Command
      */
     protected const API_VERSION = 'v21.0';
 
-    protected ?string $token = null;
-
     public function handle(): int
     {
         $this->components->info('WhatsApp Cloud API diagnosis — '.self::API_VERSION);
 
-        $channel = $this->resolveChannel();
+        $channel = $this->resolveChannelOfType('whatsapp');
 
         $this->section('1. Local state');
         $local = $this->reportLocalState($channel);
@@ -67,22 +65,10 @@ class WhatsAppDiagnoseCommand extends Command
         }
 
         $this->section('2. Is the token valid? (GET /debug_token)');
-        $debug = $this->get('debug_token', [
-            'input_token' => $this->token,
-            'access_token' => $this->appToken() ?: $this->token,
-        ]);
-        $this->dump($debug);
+        $data = $this->reportTokenValidity();
 
-        $scopes = $debug->json('data.granular_scopes') ?? [];
-        $tokenAppId = $debug->json('data.app_id');
-        $expiresAt = $debug->json('data.expires_at');
-
-        if ($expiresAt !== null) {
-            $this->line($expiresAt === 0
-                ? '  <fg=green>Token does not expire.</>'
-                : '  Expires at: '.date('Y-m-d H:i:s T', (int) $expiresAt)
-                    .($expiresAt < time() ? ' <fg=red>(EXPIRED)</>' : ' <fg=green>(still valid)</>'));
-        }
+        $scopes = $data['granular_scopes'] ?? [];
+        $tokenAppId = $data['app_id'] ?? null;
 
         $this->section('3. The phone number (GET /{phone-number-id})');
 
@@ -145,15 +131,7 @@ class WhatsAppDiagnoseCommand extends Command
      */
     protected function reportLocalState(?Channel $channel): array
     {
-        $appUrl = rtrim((string) config('app.url'), '/');
-        $this->line('  APP_URL              '.($appUrl ?: '<fg=red>not set</>'));
-        $this->line('  Live tunnel          '.($this->tunnelUrl() ?? '<fg=yellow>no local ngrok agent answering on :4040</>'));
-
-        $tunnel = $this->tunnelUrl();
-
-        if ($tunnel !== null && $appUrl !== '' && rtrim($tunnel, '/') !== $appUrl) {
-            $this->components->warn('APP_URL and the live tunnel disagree — every webhook URL built from APP_URL is stale.');
-        }
+        $this->reportEnvironment();
 
         if ($channel === null) {
             $this->components->warn('No WhatsApp channel row exists for this account.');
@@ -175,6 +153,7 @@ class WhatsAppDiagnoseCommand extends Command
         $this->line('  verify_token         '.(empty($creds['verify_token'])
             ? '<fg=red>missing</>'
             : Channel::maskCredential($creds['verify_token'])));
+        $this->reportSignatureReadiness($channel);
         $this->line('  Callback URL (now)   '.$expected);
         $this->line('  Callback URL (saved) '.($stored ?? '—'));
 
@@ -301,108 +280,5 @@ class WhatsAppDiagnoseCommand extends Command
             $channel->save();
             $this->components->info('Stored callback URL refreshed locally.');
         }
-    }
-
-    protected function resolveChannel(): ?Channel
-    {
-        $query = Channel::query()->where('type', 'whatsapp')->with('agent');
-
-        if ($agentRef = $this->option('agent')) {
-            $agent = Agent::query()
-                ->when(is_numeric($agentRef), fn ($q) => $q->where('id', $agentRef), fn ($q) => $q->where('slug', $agentRef))
-                ->first();
-
-            if ($agent === null) {
-                $this->components->warn("No agent matched \"{$agentRef}\".");
-
-                return null;
-            }
-
-            $query->where('agent_id', $agent->id);
-        }
-
-        return $query->latest('id')->first();
-    }
-
-    /** Meta accepts only `{app-id}|{app-secret}` on app-level subscription calls. */
-    protected function appToken(): ?string
-    {
-        $id = $this->option('app-id');
-        $secret = $this->option('app-secret');
-
-        return $id && $secret ? "{$id}|{$secret}" : null;
-    }
-
-    /** @param array<string, mixed> $query */
-    protected function get(string $path, array $query = [], bool $useToken = true): Response
-    {
-        $request = Http::timeout(20)->acceptJson();
-
-        if ($useToken) {
-            $request = $request->withToken($this->token);
-        }
-
-        try {
-            return $request->get($this->url($path), $query);
-        } catch (Throwable $e) {
-            $this->components->error("Request to /{$path} failed: ".$e->getMessage());
-
-            return new Response(new \GuzzleHttp\Psr7\Response(0, [], '{}'));
-        }
-    }
-
-    protected function url(string $path): string
-    {
-        return 'https://graph.facebook.com/'.self::API_VERSION.'/'.ltrim($path, '/');
-    }
-
-    /**
-     * Raw, always. A diagnosis that paraphrases Meta's error is a diagnosis you
-     * have to re-run by hand to trust.
-     */
-    protected function dump(Response $response): void
-    {
-        $status = $response->status();
-        $colour = $response->successful() ? 'green' : 'red';
-
-        $this->line("  <fg={$colour}>HTTP {$status}</>");
-
-        $body = json_decode($response->body(), true);
-
-        $this->line(collect(explode("\n", $body === null
-            ? trim($response->body())
-            : json_encode($body, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)))
-            ->map(fn ($line) => '    '.$line)
-            ->implode("\n"));
-
-        $this->newLine();
-    }
-
-    protected function section(string $title): void
-    {
-        $this->newLine();
-        $this->line("<options=bold>── {$title}</>");
-    }
-
-    /** The URL ngrok is actually serving right now, straight from its local agent API. */
-    protected function tunnelUrl(): ?string
-    {
-        static $cached = false;
-        static $value = null;
-
-        if ($cached) {
-            return $value;
-        }
-
-        $cached = true;
-
-        try {
-            $response = Http::timeout(3)->get('http://127.0.0.1:4040/api/tunnels');
-            $value = $response->successful() ? ($response->json('tunnels.0.public_url') ?: null) : null;
-        } catch (Throwable) {
-            $value = null;
-        }
-
-        return $value;
     }
 }

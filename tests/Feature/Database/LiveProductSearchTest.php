@@ -83,7 +83,7 @@ class LiveProductSearchTest extends TestCase
 
         $this->assertSame('search_products', $definition['name']);
         $this->assertSame(
-            ['query', 'min_price', 'max_price', 'in_stock_only', 'category', 'sort', 'limit'],
+            ['query', 'min_price', 'max_price', 'in_stock_only', 'category', 'exclude', 'sort', 'limit'],
             array_keys($definition['parameters']['properties']),
         );
     }

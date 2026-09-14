@@ -3,6 +3,7 @@
 namespace Tests\Feature\Channels;
 
 use App\Models\Channel;
+use App\Services\Channels\OutsideMessagingWindowException;
 use App\Services\Channels\WhatsAppDriver;
 use App\Services\Llm\LlmProviderInterface;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -111,7 +112,14 @@ class WhatsAppDriverTest extends TestCase
 
     // --- 24-hour customer service window ---
 
-    public function test_send_message_is_skipped_outside_the_24_hour_customer_service_window(): void
+    /**
+     * Outside the window the driver REFUSES rather than returning quietly. It
+     * used to return, so the caller recorded a Message row and reported
+     * success — a transcript showing the operator a reply the customer never
+     * got. Nothing is sent either way; the difference is whether anyone finds
+     * out.
+     */
+    public function test_send_message_is_refused_outside_the_24_hour_customer_service_window(): void
     {
         Http::fake();
         $channel = Channel::factory()->whatsapp()->create();
@@ -129,9 +137,13 @@ class WhatsAppDriverTest extends TestCase
         // create()); force it back 25h to simulate a stale conversation.
         $message->forceFill(['created_at' => now()->subHours(25)])->save();
 
-        $this->driver()->sendMessage($channel, '15550001234', 'Это сообщение не должно уйти.');
+        $this->expectException(OutsideMessagingWindowException::class);
 
-        Http::assertNothingSent();
+        try {
+            $this->driver()->sendMessage($channel, '15550001234', 'Это сообщение не должно уйти.');
+        } finally {
+            Http::assertNothingSent();
+        }
     }
 
     public function test_send_message_succeeds_within_the_24_hour_customer_service_window(): void

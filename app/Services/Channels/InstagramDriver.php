@@ -5,7 +5,6 @@ namespace App\Services\Channels;
 use App\Models\Channel;
 use App\Services\Llm\LlmProviderInterface;
 use Illuminate\Http\Client\ConnectionException;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
@@ -21,7 +20,7 @@ use Throwable;
  */
 class InstagramDriver implements ChannelDriverInterface
 {
-    use DescribesImagesWithConfidence, HasNoMessageFeedback, SplitsLongMessages, VerifiesMetaWebhook;
+    use ChecksMessagingWindow, DescribesImagesWithConfidence, HasNoMessageFeedback, SplitsLongMessages, VerifiesMetaWebhook;
 
     protected const API_VERSION = 'v21.0';
 
@@ -33,14 +32,26 @@ class InstagramDriver implements ChannelDriverInterface
         protected OutboundMarkdown $markdown = new OutboundMarkdown,
     ) {}
 
-    public function authenticateIncomingRequest(Request $request, Channel $channel): bool
+    /**
+     * One payload per messaging event in the batch. Non-message events (reads,
+     * delivery receipts, reactions) are kept rather than filtered here —
+     * parseIncomingMessage() already returns null for them, and dropping them
+     * in two places would mean two definitions of "a message".
+     */
+    public function splitDeliveries(array $payload): array
     {
-        // Same reasoning as WhatsAppDriver: no app_secret field is collected
-        // (only ig_business_account_id/page_access_token/verify_token), so
-        // X-Hub-Signature-256 can't be verified here. The unguessable channel
-        // UUID in the URL is the boundary; add an app_secret field + signature
-        // check here if that's tightened later.
-        return true;
+        $deliveries = [];
+
+        foreach ($payload['entry'] ?? [] as $entry) {
+            foreach ($entry['messaging'] ?? [] as $messaging) {
+                $deliveries[] = ['entry' => [[
+                    'id' => $entry['id'] ?? null,
+                    'messaging' => [$messaging],
+                ]]];
+            }
+        }
+
+        return $deliveries;
     }
 
     public function parseIncomingMessage(array $payload, Channel $channel): ?IncomingMessage
@@ -72,11 +83,27 @@ class InstagramDriver implements ChannelDriverInterface
         $imageUrl = $this->firstImageAttachmentUrl($message['attachments'] ?? []);
 
         if ($imageUrl === null) {
-            if ($text === '') {
-                return null;
+            if ($text !== '') {
+                return new IncomingMessage((string) $externalMessageId, (string) $externalUserId, null, $text, 'text');
             }
 
-            return new IncomingMessage((string) $externalMessageId, (string) $externalUserId, null, $text, 'text');
+            // An attachment we cannot read — a video, a voice clip, a shared
+            // reel or a story mention — with nothing written alongside it. The
+            // customer gets told we can only handle text and photos rather than
+            // getting silence, which is what returning null gave them.
+            if (! empty($message['attachments'])) {
+                return new IncomingMessage(
+                    (string) $externalMessageId,
+                    (string) $externalUserId,
+                    null,
+                    '[Customer sent an attachment this assistant cannot read.]',
+                    'unsupported'
+                );
+            }
+
+            // No text and no attachment: a reaction, an unsend, or an event
+            // shape we do not handle. Nothing was asked, so nothing is said.
+            return null;
         }
 
         return $this->buildPhotoMessage((string) $externalMessageId, (string) $externalUserId, $imageUrl, $text);
@@ -144,6 +171,13 @@ class InstagramDriver implements ChannelDriverInterface
 
     public function sendMessage(Channel $channel, string $externalUserId, string $text): void
     {
+        // Instagram enforces the same 24-hour rule as WhatsApp — outside it a
+        // free-form DM is rejected, and only a HUMAN_AGENT-tagged message (a
+        // permission the app has to be granted) would go through. Checked here
+        // for the same reason: a refusal the operator can see beats a silent
+        // 400 they cannot.
+        $this->assertWithinMessagingWindow($channel, $externalUserId);
+
         $accountId = $this->accountId($channel);
         $token = $this->accessToken($channel);
 
@@ -259,8 +293,17 @@ class InstagramDriver implements ChannelDriverInterface
             throw new RuntimeException("Instagram API connection failed: {$e->getMessage()}");
         }
 
-        if ($response->serverError()) {
-            throw new RuntimeException("Instagram API failed with status {$response->status()}: {$response->body()}");
+        // 4xx as well as 5xx — see the same fix in WhatsAppDriver. A rejected
+        // DM used to be indistinguishable from a delivered one.
+        if ($response->failed()) {
+            $error = $response->json('error.message') ?? $response->body();
+            $code = $response->json('error.code');
+
+            throw new RuntimeException(
+                "Instagram API rejected the message (HTTP {$response->status()}".
+                ($code === null ? '' : ", code {$code}").
+                "): {$error}"
+            );
         }
 
         return $response->json() ?? [];

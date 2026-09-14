@@ -2,9 +2,11 @@
 
 namespace Tests;
 
+use Database\Factories\ChannelFactory;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Sleep;
+use Illuminate\Testing\TestResponse;
 
 abstract class TestCase extends BaseTestCase
 {
@@ -69,5 +71,35 @@ abstract class TestCase extends BaseTestCase
         if ($actual !== 'sqlite') {
             $this->fail("Refusing to run tests: the live connection reports driver [{$actual}], not sqlite.");
         }
+    }
+
+    /**
+     * POST a Meta webhook the way Meta actually does — signed.
+     *
+     * Every WhatsApp/Instagram delivery carries an X-Hub-Signature-256 HMAC of
+     * the RAW body under the app secret, and the drivers now refuse anything
+     * without a valid one. Tests have to sign too, or they are testing a
+     * request Meta would never send.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    protected function postSignedMetaWebhook(string $url, array $payload, ?string $appSecret = null): TestResponse
+    {
+        $body = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        $secret = $appSecret ?? ChannelFactory::APP_SECRET;
+
+        return $this->call(
+            'POST',
+            $url,
+            [],
+            [],
+            [],
+            [
+                'CONTENT_TYPE' => 'application/json',
+                'HTTP_ACCEPT' => 'application/json',
+                'HTTP_X_HUB_SIGNATURE_256' => 'sha256='.hash_hmac('sha256', $body, $secret),
+            ],
+            $body,
+        );
     }
 }

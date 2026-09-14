@@ -10,7 +10,11 @@
         document.documentElement.classList.toggle('dark', isDark);
     })();
 </script>
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+{{-- Declares that this page has its own dark theme. Without it Samsung
+     Internet's (and Chrome's auto) dark mode force-darkens the light theme,
+     turning the #E27551 terracotta into a dark red on those phones only. --}}
+<meta name="color-scheme" content="light dark" />
 @include('partials.seo-meta', [
     'seoTitle' => ($seoTitle ?? __('common.brand')).' — '.__('common.brand'),
     'seoDescription' => $seoDescription ?? '',

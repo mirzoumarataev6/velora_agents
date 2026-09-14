@@ -18,6 +18,7 @@ use App\Services\Quality\NonAnswerDetector;
 use App\Services\Rag\ProductQuestionDetector;
 use App\Services\Rag\RetrievedChunk;
 use App\Services\Rag\VectorStoreInterface;
+use App\Services\Reply\CustomerLocale;
 use App\Services\Reply\FollowUpDetector;
 use App\Services\Reply\LanguageDetector;
 use App\Services\Reply\ReplySimilarity;
@@ -104,6 +105,12 @@ class AgentReplyService
      */
     protected const ORDER_CLAIM_WINDOW_MINUTES = 10;
 
+    /** How many of the assistant's own recent replies a new one must not repeat. */
+    protected const REPEAT_LOOKBACK = 3;
+
+    /** "/start", "/start@SomeBot", "/start <deep-link payload>". */
+    protected const START_COMMAND_PATTERN = '/^\/start(?:@\S+)?(?:\s.*)?$/su';
+
     public function __construct(
         protected LlmProviderInterface $llm,
         protected VectorStoreInterface $vectorStore,
@@ -122,6 +129,7 @@ class AgentReplyService
         // nothing ever needs to swap it, and the backfill command constructs
         // its own copy of the same class.
         protected NonAnswerDetector $nonAnswers = new NonAnswerDetector,
+        protected CustomerLocale $locales = new CustomerLocale,
     ) {}
 
     /**
@@ -434,14 +442,20 @@ class AgentReplyService
                 // customer ending mid-word.
                 $replyText = $this->repairTruncatedReply($replyText, $result['finish_reason'] ?? null);
 
-                if ($isFollowUp && $previousReply !== null) {
+                // Every turn, against the last few replies — not only short
+                // follow-ups against the last one. The loop this closes was
+                // three full-sentence "something else, not MacBook" messages,
+                // none of them short, each answered with the same list.
+                $recentReplies = $this->recentAssistantReplies($conversation, $userMsg);
+
+                if ($recentReplies !== []) {
                     $retry = $this->rewriteIfRepeated(
                         $agent,
                         $conversation,
                         $systemPrompt,
                         $contents,
                         $replyText,
-                        $previousReply->content,
+                        $recentReplies,
                         $options,
                     );
 
@@ -485,7 +499,7 @@ class AgentReplyService
                 // person, and the flag below is about to summon one.
                 $handover !== null => $this->escalationAcknowledgement($agent),
                 // A bare greeting doesn't need the LLM to answer well.
-                $this->isSimpleGreeting($userMsg->content) => $this->greetingMessage($agent),
+                $this->isSimpleGreeting($userMsg->content) => $this->greetingMessage($agent, $conversation),
                 default => $this->fallbackMessage($agent),
             };
 
@@ -1325,15 +1339,24 @@ class AgentReplyService
         $this->usage->for($agent);
         $startedAt = microtime(true);
 
+        // 'unsupported_attachment' shares this path deliberately. The customer's
+        // situation is identical — they sent something the assistant cannot
+        // read and need to be asked for text — and a second near-identical
+        // method would drift from this one.
+        $medium = $reason === 'unsupported_attachment'
+            ? 'an attachment this assistant cannot open (a document, video, location or similar)'
+            : 'a voice message';
+
         $situation = match ($reason) {
             'voice_too_long' => 'The voice message was too long for this assistant to process.',
+            'unsupported_attachment' => 'This assistant can only read text and photos.',
             default => 'The voice message could not be understood — it may have been unclear or the audio failed to process.',
         };
 
         $systemPrompt = implode("\n\n", array_filter([
             "You are {$agent->name}, a customer support assistant for this business.",
             $this->languageInstruction($agent, $conversation),
-            'The customer sent a voice message. '.$situation.' '
+            "The customer sent {$medium}. ".$situation.' '
                 .'Reply with ONE or TWO short, warm sentences: acknowledge briefly, and ask them to send their '
                 .'question as text instead. Do not blame the customer. Do not mention transcription, audio '
                 .'formats, file sizes, errors, settings, or any internal system. Do not apologize at length. '
@@ -1391,6 +1414,26 @@ class AgentReplyService
     {
         return $agent->response_format['voice_fallback_message']
             ?? 'Извините, я не смог разобрать голосовое сообщение. Напишите, пожалуйста, текстом.';
+    }
+
+    /**
+     * The assistant's own recent replies, newest first — what a new reply is
+     * checked against for repetition. More than one, because the reported loop
+     * alternated wording between turns and a reply can repeat the one before
+     * last as easily as the last.
+     *
+     * @return array<int, string>
+     */
+    protected function recentAssistantReplies(Conversation $conversation, Message $userMsg): array
+    {
+        return $conversation->messages()
+            ->where('role', 'assistant')
+            ->where('id', '<', $userMsg->id)
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->take(self::REPEAT_LOOKBACK)
+            ->pluck('content')
+            ->all();
     }
 
     /**
@@ -1580,6 +1623,7 @@ class AgentReplyService
      * happened.
      *
      * @param  array<int, array<string, mixed>>  $contents
+     * @param  array<int, string>  $recentReplies  The assistant's own recent replies, newest first.
      * @param  array<string, mixed>  $options
      * @return array{text: string, rewritten: bool, usage: array{input_tokens: int, output_tokens: int}}
      */
@@ -1589,27 +1633,41 @@ class AgentReplyService
         string $systemPrompt,
         array $contents,
         string $replyText,
-        string $previousReply,
+        array $recentReplies,
         array $options,
     ): array {
         $unchanged = ['text' => $replyText, 'rewritten' => false, 'usage' => ['input_tokens' => 0, 'output_tokens' => 0]];
 
-        if (! $this->similarity->isNearDuplicate($replyText, $previousReply)) {
+        // The customer's own figures — their budget — are not the assistant
+        // repeating itself when it quotes them back.
+        $customerTexts = $this->recentCustomerMessages($conversation)->all();
+
+        $repeated = collect($recentReplies)->first(
+            fn (string $earlier) => $this->similarity->isRepeatOf($replyText, $earlier, $customerTexts),
+        );
+
+        if ($repeated === null) {
             return $unchanged;
         }
 
         Log::warning('Reply repeated the previous one, regenerating', [
             'agent_id' => $agent->id,
             'conversation_id' => $conversation->id,
-            'containment' => round($this->similarity->containment($replyText, $previousReply), 2),
+            'containment' => round($this->similarity->containment($replyText, $repeated), 2),
+            'same_listing' => $this->similarity->repeatsListing($replyText, $repeated, $customerTexts),
         ]);
 
         $correction = $systemPrompt."\n\n".implode("\n", [
-            'YOU HAVE JUST WRITTEN THE SAME REPLY AGAIN. It is nearly word for word what you already sent, and the',
-            'customer has read it. Write a different one:',
-            '- Answer only the short question they actually asked, in one or two sentences.',
-            '- Do not list the products again, do not restate their prices, and do not rephrase your previous reply.',
-            '- If the honest answer is "yes, that is everything", say exactly that and offer one next step.',
+            'YOU HAVE JUST WRITTEN THE SAME REPLY AGAIN. It repeats this reply, which you already sent in this',
+            'conversation and the customer has already read:',
+            '"""'.trim(mb_substr($repeated, 0, 1200)).'"""',
+            'Write a different reply that says something genuinely new:',
+            '- Do not list the products in that reply again, do not restate their prices, and do not rephrase it.',
+            '- Never offer anything the customer has said they do not want.',
+            '- If their message is a short question, answer just that, in one or two sentences.',
+            '- If there is genuinely nothing new to offer, say so plainly in one sentence — that this is everything',
+            '  that fits — and ask ONE question that narrows the search: a different budget, a brand, or what they',
+            '  will use it for. Do not re-list anything.',
         ]);
 
         try {
@@ -1693,10 +1751,62 @@ class AgentReplyService
             ?? 'Извините, сейчас не получается ответить. Мы уточним этот вопрос и вернёмся с ответом.';
     }
 
-    protected function greetingMessage(Agent $agent): string
+    /**
+     * The owner's configured greeting, verbatim. Only when they left it blank
+     * is a default used, and then in the agent's own language — never a string
+     * that assumes Russian, and never something the model makes up.
+     */
+    protected function greetingMessage(Agent $agent, Conversation $conversation): string
     {
-        return $agent->response_format['greeting_message']
-            ?? 'Здравствуйте! Чем можем помочь?';
+        $configured = $agent->response_format['greeting_message'] ?? null;
+
+        if (is_string($configured) && trim($configured) !== '') {
+            return $configured;
+        }
+
+        return __('replies.greeting', [], $this->locales->forAgent($conversation));
+    }
+
+    /**
+     * Telegram's /start — optionally with a deep-link payload, or addressed as
+     * "/start@SomeBot" in a group. The owner's "/start notify_<code>" is
+     * consumed before this is ever asked.
+     */
+    public static function isStartCommand(string $text): bool
+    {
+        return preg_match(self::START_COMMAND_PATTERN, trim($text)) === 1;
+    }
+
+    /**
+     * The reply to /start: the configured greeting, sent as-is.
+     *
+     * No retrieval and no model call. /start carries no question, and handing
+     * the literal text "/start" to the model is what produced "It seems like
+     * you're trying to restart something" — in English, to a Russian-speaking
+     * shop's customer — in place of the greeting the owner wrote.
+     *
+     * Marked as a session start: a customer pressing /start is beginning a
+     * new conversation even though Telegram gives them the same chat, and
+     * FeedbackCadence counts turns from here rather than from days ago.
+     */
+    public function greetOnStart(Conversation $conversation): Message
+    {
+        $assistantMsg = $conversation->messages()->create([
+            'role' => 'assistant',
+            'content' => $this->greetingMessage($conversation->agent, $conversation),
+            'meta' => [
+                'retrieved_chunks' => [],
+                'input_tokens' => 0,
+                'output_tokens' => 0,
+                'failed' => false,
+                'greeting' => true,
+                'session_start' => true,
+            ],
+        ]);
+
+        $conversation->update(['last_message_at' => now()]);
+
+        return $assistantMsg;
     }
 
     protected function isSimpleGreeting(string $text): bool
@@ -2137,7 +2247,17 @@ class AgentReplyService
                     // enough, and a customer writing Tajik keeps getting Russian.
                     ? 'Tajik and Russian share the Cyrillic alphabet, and this customer is writing TAJIK, not Russian. '
                         .'Answer in Tajik. Russian loanwords they used themselves (диск, заказ, ноутбук) are fine to '
-                        .'keep — the sentence around them must be Tajik.'
+                        .'keep — the sentence around them must be Tajik. '
+                        // The second failure: Tajik sentences with English and
+                        // pseudo-Russian filler spliced in — "дар нарх range
+                        // васият", "дар буҷаатон фити кунад".
+                        .'Write natural, everyday Tajik, the way a shop assistant in Khujand speaks it. Do NOT splice '
+                        .'English or Russian words, or half-translated hybrids, into a Tajik sentence: no "range", "fit", '
+                        .'"budget", no "фити кунад", no "нарх range". Say it in Tajik: "дар ҳудуди 6000–7000 сомонӣ", '
+                        .'"ба буҷаи шумо мувофиқ аст", "тақрибан", "наздиктарин". Product names, brands, model numbers, '
+                        .'specs (8GB, 512GB, Intel Core i5) and prices stay exactly as the catalog writes them; every '
+                        .'other word must be Tajik. Before sending, check each word that is not a product name, and '
+                        .'replace any English or Russian one with its Tajik equivalent.'
                     : 'Do not switch to another language unless the customer does.',
                 'If they switch language later, switch with them on that message.',
             ]);

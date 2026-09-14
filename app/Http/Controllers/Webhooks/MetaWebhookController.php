@@ -38,7 +38,15 @@ class MetaWebhookController extends Controller
         // Meta retries aggressively on slow/non-200 responses — all real
         // processing (parsing, RAG, sending the reply) happens in the queued
         // job so this handler can return 200 immediately.
-        HandleIncomingMessageJob::dispatch($channel, $request->all());
+        //
+        // ONE JOB PER MESSAGE, not per delivery. Meta batches: entry, changes
+        // and messages are all arrays, and several messages arriving close
+        // together are posted together. The drivers can only parse one message
+        // per payload, so a batched delivery used to be answered once and the
+        // rest thrown away.
+        foreach ($driver->splitDeliveries($request->all()) as $delivery) {
+            HandleIncomingMessageJob::dispatch($channel, $delivery);
+        }
 
         return response('OK', 200);
     }

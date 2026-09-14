@@ -115,7 +115,7 @@ class WhatsAppWebhookTest extends TestCase
         Queue::fake();
         $channel = Channel::factory()->whatsapp()->create();
 
-        $response = $this->postJson(route('webhooks.whatsapp', $channel), $this->whatsAppTextPayload('wamid.1001', 'Hello'));
+        $response = $this->postSignedMetaWebhook(route('webhooks.whatsapp', $channel), $this->whatsAppTextPayload('wamid.1001', 'Hello'));
 
         $response->assertOk();
         Queue::assertPushed(HandleIncomingMessageJob::class, fn ($job) => $job->channel->id === $channel->id);
@@ -131,7 +131,7 @@ class WhatsAppWebhookTest extends TestCase
         $this->fakeMetaApi();
         $channel = Channel::factory()->whatsapp()->create();
 
-        $this->postJson(route('webhooks.whatsapp', $channel), $this->whatsAppTextPayload('wamid.2001', 'Есть размер M?'))->assertOk();
+        $this->postSignedMetaWebhook(route('webhooks.whatsapp', $channel), $this->whatsAppTextPayload('wamid.2001', 'Есть размер M?'))->assertOk();
 
         $conversation = Conversation::where('channel_id', $channel->id)->where('external_user_id', '15550001234')->first();
         $this->assertNotNull($conversation);
@@ -156,7 +156,7 @@ class WhatsAppWebhookTest extends TestCase
     {
         $channel = Channel::factory()->whatsapp()->create();
 
-        $this->postJson(route('webhooks.whatsapp', $channel), $this->whatsAppStatusPayload())->assertOk();
+        $this->postSignedMetaWebhook(route('webhooks.whatsapp', $channel), $this->whatsAppStatusPayload())->assertOk();
 
         $this->assertDatabaseCount('conversations', 0);
         $this->assertDatabaseCount('messages', 0);
@@ -169,8 +169,8 @@ class WhatsAppWebhookTest extends TestCase
         $channel = Channel::factory()->whatsapp()->create();
         $payload = $this->whatsAppTextPayload('wamid.3001', 'Привет');
 
-        $this->postJson(route('webhooks.whatsapp', $channel), $payload)->assertOk();
-        $this->postJson(route('webhooks.whatsapp', $channel), $payload)->assertOk();
+        $this->postSignedMetaWebhook(route('webhooks.whatsapp', $channel), $payload)->assertOk();
+        $this->postSignedMetaWebhook(route('webhooks.whatsapp', $channel), $payload)->assertOk();
 
         $this->assertDatabaseCount('conversations', 1);
         $this->assertSame(1, Message::where('external_message_id', 'wamid.3001')->count());
@@ -215,7 +215,7 @@ class WhatsAppWebhookTest extends TestCase
     {
         $channel = Channel::factory()->create(); // type: telegram
 
-        $response = $this->postJson(route('webhooks.whatsapp', $channel), $this->whatsAppTextPayload('wamid.1', 'hi'));
+        $response = $this->postSignedMetaWebhook(route('webhooks.whatsapp', $channel), $this->whatsAppTextPayload('wamid.1', 'hi'));
 
         $response->assertNotFound();
     }
@@ -230,7 +230,7 @@ class WhatsAppWebhookTest extends TestCase
             'status' => 'human_takeover',
         ]);
 
-        $this->postJson(route('webhooks.whatsapp', $channel), $this->whatsAppTextPayload('wamid.5001', 'Кто-нибудь ответит?'))->assertOk();
+        $this->postSignedMetaWebhook(route('webhooks.whatsapp', $channel), $this->whatsAppTextPayload('wamid.5001', 'Кто-нибудь ответит?'))->assertOk();
 
         $this->assertDatabaseHas('messages', [
             'conversation_id' => $conversation->id,
@@ -247,7 +247,7 @@ class WhatsAppWebhookTest extends TestCase
         $agent = Agent::factory()->create(['status' => 'paused']);
         $channel = Channel::factory()->whatsapp()->for($agent)->create();
 
-        $this->postJson(route('webhooks.whatsapp', $channel), $this->whatsAppTextPayload('wamid.6001', 'Здравствуйте'))->assertOk();
+        $this->postSignedMetaWebhook(route('webhooks.whatsapp', $channel), $this->whatsAppTextPayload('wamid.6001', 'Здравствуйте'))->assertOk();
 
         $conversation = Conversation::where('channel_id', $channel->id)->first();
         $this->assertNotNull($conversation);

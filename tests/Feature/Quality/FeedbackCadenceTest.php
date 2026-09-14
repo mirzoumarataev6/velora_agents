@@ -12,22 +12,25 @@ use App\Services\Llm\LlmProviderInterface;
 use App\Services\Quality\FeedbackCadence;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 /**
- * How OFTEN a customer is asked to rate a reply.
+ * WHEN a customer is asked to rate a reply. These tests pin the rule:
  *
- * The feature shipped asking after every single turn, which made the control
- * furniture rather than a question. These tests pin the rule that replaced it:
+ *     ask  ⟺  turnsSince >= 3  AND  (a lead was captured
+ *                                    OR the customer is wrapping up)
  *
- *     ask  ⟺  turnsSince >= 3  AND  (a lead was captured  OR  turnsSince >= 5)
- *
- * where turnsSince counts assistant turns since the last one that was prompted
- * or rated. Everything below is that sentence, case by case.
+ * where turnsSince counts assistant turns since the last one that was
+ * prompted, rated, or opened a session with /start.
  */
 class FeedbackCadenceTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected const QUESTION = 'Сколько стоит доставка?';
+
+    protected const THANKS = 'Фахмо рахмат';
 
     protected Agent $agent;
 
@@ -51,8 +54,7 @@ class FeedbackCadenceTest extends TestCase
 
         // A CLOSURE stub reading a mutable flag, rather than one stub per
         // outcome. Http::fake() merges stubs instead of replacing them, so a
-        // later "now fail" fake would lose to the success stub registered here
-        // and the test would silently keep passing.
+        // later "now fail" fake would lose to the success stub registered here.
         Http::fake(fn () => $this->telegramFails
             ? Http::response(['ok' => false], 500)
             : Http::response(['ok' => true, 'result' => ['message_id' => 42]], 200));
@@ -71,17 +73,21 @@ class FeedbackCadenceTest extends TestCase
     // Driving whole turns through the real pipeline
     // -----------------------------------------------------------------
 
+    protected int $updateId = 1000;
+
     /** One customer message, answered. Returns the assistant turn it produced. */
-    protected function turn(int $n): Message
+    protected function turn(string $text): Message
     {
+        $this->updateId++;
+
         app()->call([new HandleIncomingMessageJob($this->channel, [
-            'update_id' => 1000 + $n,
+            'update_id' => $this->updateId,
             'message' => [
-                'message_id' => 1000 + $n,
+                'message_id' => $this->updateId,
                 'from' => ['id' => 555, 'first_name' => 'Ivan'],
                 'chat' => ['id' => 555, 'type' => 'private'],
                 'date' => time(),
-                'text' => "Вопрос номер {$n}?",
+                'text' => $text,
             ],
         ]), 'handle']);
 
@@ -89,88 +95,103 @@ class FeedbackCadenceTest extends TestCase
     }
 
     /**
-     * Which of the first $count turns carried a rating control, by turn number.
+     * Which of these customer messages got a reply carrying a rating control,
+     * by 1-based turn number. Read from the SENT MESSAGES, not the meta flag.
      *
-     * Read from the SENT MESSAGES rather than from the meta flag: the flag is
-     * this feature's bookkeeping, and a test that trusted it would pass even if
-     * no button ever reached Telegram.
-     *
+     * @param  array<int, string>  $texts
      * @return array<int, int>
      */
-    protected function promptedTurns(int $count): array
+    protected function promptedTurns(array $texts): array
     {
         $prompted = [];
 
-        for ($n = 1; $n <= $count; $n++) {
-            // Only the requests THIS turn made. Sliced from an offset rather
-            // than cleared by re-faking, so the stub registered in setUp stays
-            // the only one in play.
+        foreach ($texts as $index => $text) {
             $before = count(Http::recorded());
 
-            $this->turn($n);
+            $this->turn($text);
 
-            $carried = collect(Http::recorded())
-                ->slice($before)
-                ->filter(fn ($pair) => str_contains($pair[0]->url(), '/sendMessage'))
-                ->contains(fn ($pair) => isset($pair[0]->data()['reply_markup']));
-
-            if ($carried) {
-                $prompted[] = $n;
+            if ($this->keyboardMessagesSince($before) !== []) {
+                $prompted[] = $index + 1;
             }
         }
 
         return $prompted;
     }
 
-    // -----------------------------------------------------------------
-    // The default cadence, end to end
-    // -----------------------------------------------------------------
-
-    /**
-     * The headline behaviour, and the whole reason for the change: a customer
-     * having an ordinary conversation is asked once in five turns, not five
-     * times in five turns.
-     */
-    public function test_an_ordinary_conversation_is_asked_once_every_five_turns(): void
+    /** @return array<int, array<string, mixed>> sendMessage bodies carrying a keyboard. */
+    protected function keyboardMessagesSince(int $offset): array
     {
-        $this->assertSame([5, 10], $this->promptedTurns(12));
+        return collect(Http::recorded())
+            ->slice($offset)
+            ->filter(fn ($pair) => str_contains($pair[0]->url(), '/sendMessage'))
+            ->map(fn ($pair) => $pair[0]->data())
+            ->filter(fn ($body) => isset($body['reply_markup']))
+            ->values()
+            ->all();
     }
 
-    /** Nobody can judge an assistant on its opening line. */
-    public function test_the_opening_turns_are_never_asked(): void
+    // -----------------------------------------------------------------
+    // End-of-conversation signals
+    // -----------------------------------------------------------------
+
+    public function test_a_thanks_message_triggers_the_prompt(): void
     {
-        $this->assertSame([], $this->promptedTurns(4));
+        $this->assertSame([4], $this->promptedTurns([
+            self::QUESTION, self::QUESTION, self::QUESTION, self::THANKS,
+        ]));
+    }
+
+    /** No routine interval any more: a conversation still in flow is never interrupted. */
+    public function test_a_mid_flow_question_does_not_trigger_the_prompt(): void
+    {
+        $this->assertSame([], $this->promptedTurns(array_fill(0, 12, self::QUESTION)));
+    }
+
+    /** Thanks with a follow-up question attached is still mid-flow. */
+    public function test_thanks_followed_by_a_question_does_not_trigger_the_prompt(): void
+    {
+        $this->assertSame([], $this->promptedTurns([
+            self::QUESTION, self::QUESTION, self::QUESTION, 'Спасибо, а в Душанбе доставляете?',
+        ]));
+    }
+
+    public function test_a_captured_lead_triggers_the_prompt(): void
+    {
+        $conversation = $this->conversationWithTurns(2);
+        $third = $this->appendTurn($conversation, ['lead_captured' => true]);
+
+        $this->assertTrue(app(FeedbackCadence::class)->shouldAsk($conversation, $third));
+    }
+
+    public function test_a_price_sent_for_approval_counts_as_a_close(): void
+    {
+        $conversation = $this->conversationWithTurns(2);
+        $third = $this->appendTurn($conversation, ['price_approval_requested' => true]);
+
+        $this->assertTrue(app(FeedbackCadence::class)->shouldAsk($conversation, $third));
     }
 
     // -----------------------------------------------------------------
     // The floor
     // -----------------------------------------------------------------
 
-    /**
-     * "Once a rating is given, don't keep prompting again immediately after."
-     *
-     * The count restarts on a RATING as well as on a prompt, so answering one
-     * buys the same quiet as being asked one.
-     */
-    public function test_a_rating_restarts_the_clock_just_as_a_prompt_does(): void
+    /** Nobody can judge an assistant on its opening lines — not even a thankful customer. */
+    public function test_the_floor_still_blocks_turns_one_and_two(): void
+    {
+        $this->assertSame([3], $this->promptedTurns([self::THANKS, self::THANKS, self::THANKS]));
+    }
+
+    /** A rating restarts the clock just as a prompt does. */
+    public function test_a_rating_restarts_the_clock(): void
     {
         $cadence = app(FeedbackCadence::class);
 
         $conversation = $this->conversationWithTurns(4);
-        $rated = $conversation->messages()->where('role', 'assistant')->orderBy('id')->get()[3];
-        $rated->rate(Message::RATING_UP);
+        $conversation->messages()->where('role', 'assistant')->orderBy('id')->get()[3]->rate(Message::RATING_UP);
 
-        // Turn 5 would have been asked on the routine interval; the vote on
-        // turn 4 puts it back inside the floor.
-        $fifth = $this->appendTurn($conversation);
-        $this->assertFalse($cadence->shouldAsk($conversation, $fifth));
-
-        // And it stays quiet until the interval has run again from the vote.
-        foreach ([6, 7, 8] as $ignored) {
-            $this->assertFalse($cadence->shouldAsk($conversation, $this->appendTurn($conversation)));
-        }
-
-        $this->assertTrue($cadence->shouldAsk($conversation, $this->appendTurn($conversation)));
+        $this->assertFalse($cadence->shouldAsk($conversation, $this->appendTurn($conversation, [], self::THANKS)));
+        $this->assertFalse($cadence->shouldAsk($conversation, $this->appendTurn($conversation, [], self::THANKS)));
+        $this->assertTrue($cadence->shouldAsk($conversation, $this->appendTurn($conversation, [], self::THANKS)));
     }
 
     /** Two prompts are never closer together than the floor. */
@@ -182,139 +203,134 @@ class FeedbackCadenceTest extends TestCase
         $conversation->messages()->where('role', 'assistant')->orderBy('id')->get()[4]
             ->forceFill(['meta' => ['feedback_requested' => true]])->save();
 
-        // An order lands on the very next turn — the strongest signal there is,
-        // and still not enough to ask again this soon.
-        $sixth = $this->appendTurn($conversation, ['lead_captured' => true]);
-        $this->assertFalse($cadence->shouldAsk($conversation, $sixth));
-
-        $seventh = $this->appendTurn($conversation, ['lead_captured' => true]);
-        $this->assertFalse($cadence->shouldAsk($conversation, $seventh));
-
-        // Three turns on, it may.
-        $eighth = $this->appendTurn($conversation, ['lead_captured' => true]);
-        $this->assertTrue($cadence->shouldAsk($conversation, $eighth));
+        $this->assertFalse($cadence->shouldAsk($conversation, $this->appendTurn($conversation, ['lead_captured' => true])));
+        $this->assertFalse($cadence->shouldAsk($conversation, $this->appendTurn($conversation, ['lead_captured' => true])));
+        $this->assertTrue($cadence->shouldAsk($conversation, $this->appendTurn($conversation, ['lead_captured' => true])));
     }
-
-    // -----------------------------------------------------------------
-    // The lead shortcut
-    // -----------------------------------------------------------------
 
     /**
-     * The moment the conversation achieved what it was for: the best point to
-     * ask, and a naturally rare one.
+     * The Bug-2 regression: Telegram keeps one chat per customer for ever, and
+     * turns from days ago counted toward the prompt on a fresh /start session.
      */
-    public function test_a_captured_lead_brings_the_prompt_forward(): void
+    public function test_a_start_command_restarts_the_clock(): void
     {
-        $cadence = app(FeedbackCadence::class);
+        $this->promptedTurns(array_fill(0, 6, self::QUESTION));
 
-        $conversation = $this->conversationWithTurns(2);
-        $third = $this->appendTurn($conversation, ['lead_captured' => true]);
-
-        // Turn 3 is short of the routine interval but clear of the floor.
-        $this->assertTrue($cadence->shouldAsk($conversation, $third));
-    }
-
-    public function test_a_price_sent_for_approval_counts_as_a_close(): void
-    {
-        $cadence = app(FeedbackCadence::class);
-
-        $conversation = $this->conversationWithTurns(2);
-        $third = $this->appendTurn($conversation, ['price_approval_requested' => true]);
-
-        $this->assertTrue($cadence->shouldAsk($conversation, $third));
+        $this->assertSame([], $this->promptedTurns(['/start', 'Ассалому алейкум', self::THANKS]));
+        $this->assertSame([1], $this->promptedTurns([self::THANKS]));
     }
 
     // -----------------------------------------------------------------
     // Turns that must never be rated
     // -----------------------------------------------------------------
 
-    /** Asking someone to rate the apology for an outage is the wrong question. */
     public function test_a_failed_turn_is_never_rated(): void
     {
         $conversation = $this->conversationWithTurns(6);
-        $seventh = $this->appendTurn($conversation, ['failed' => true]);
+        $seventh = $this->appendTurn($conversation, ['failed' => true], self::THANKS);
 
         $this->assertFalse(app(FeedbackCadence::class)->shouldAsk($conversation, $seventh));
     }
 
-    /** A handover is on its way to a human; the bot's answer is not the subject. */
     public function test_an_escalated_turn_is_never_rated(): void
     {
         $conversation = $this->conversationWithTurns(6);
-        $seventh = $this->appendTurn($conversation, ['escalated' => true]);
+        $seventh = $this->appendTurn($conversation, ['escalated' => true], self::THANKS);
 
         $this->assertFalse(app(FeedbackCadence::class)->shouldAsk($conversation, $seventh));
     }
 
-    /**
-     * A skipped turn must not spend the conversation's slot: the next eligible
-     * turn is asked instead of waiting out another interval.
-     */
+    /** A skipped turn does not spend the slot: the next eligible one is asked. */
     public function test_skipping_an_ineligible_turn_does_not_cost_the_next_one(): void
     {
         $cadence = app(FeedbackCadence::class);
 
         $conversation = $this->conversationWithTurns(4);
-        $fifth = $this->appendTurn($conversation, ['failed' => true]);
 
-        $this->assertFalse($cadence->shouldAsk($conversation, $fifth));
-        $this->assertTrue($cadence->shouldAsk($conversation, $this->appendTurn($conversation)));
+        $this->assertFalse($cadence->shouldAsk($conversation, $this->appendTurn($conversation, ['failed' => true], self::THANKS)));
+        $this->assertTrue($cadence->shouldAsk($conversation, $this->appendTurn($conversation, [], self::THANKS)));
+    }
+
+    // -----------------------------------------------------------------
+    // The explanatory line
+    // -----------------------------------------------------------------
+
+    /**
+     * @return array<string, array{0: array<int, string>, 1: string}>
+     */
+    public static function conversationsByLanguage(): array
+    {
+        return [
+            'russian' => [['У вас есть ноутбуки?', 'Сколько стоит доставка?', 'Спасибо!'], 'ru'],
+            'tajik' => [['Шумо ноутбукҳо доред?', 'Нархаш чӣ қадар аст?', 'Раҳмат калон'], 'tg'],
+            'english' => [['Do you have laptops?', 'How much is delivery?', 'Thanks!'], 'en'],
+        ];
+    }
+
+    /** @param  array<int, string>  $texts */
+    #[DataProvider('conversationsByLanguage')]
+    public function test_the_prompt_explains_why_in_the_customers_language(array $texts, string $locale): void
+    {
+        $this->turn($texts[0]);
+        $this->turn($texts[1]);
+
+        $before = count(Http::recorded());
+        $this->turn($texts[2]);
+
+        $prompts = $this->keyboardMessagesSince($before);
+        $this->assertCount(1, $prompts);
+
+        $this->assertStringContainsString(__('feedback.prompt', [], $locale), $prompts[0]['text']);
+
+        foreach (array_diff(['ru', 'tg', 'en'], [$locale]) as $other) {
+            $this->assertStringNotContainsString(__('feedback.prompt', [], $other), $prompts[0]['text']);
+        }
+    }
+
+    /** The line is delivery, not part of the reply the owner sees in the inbox. */
+    public function test_the_explanatory_line_is_not_stored_on_the_reply(): void
+    {
+        $this->promptedTurns([self::QUESTION, self::QUESTION, 'Спасибо!']);
+
+        $reply = Message::where('role', 'assistant')->latest('id')->firstOrFail();
+
+        $this->assertTrue($reply->meta['feedback_requested']);
+        $this->assertStringNotContainsString(__('feedback.prompt', [], 'ru'), $reply->content);
     }
 
     // -----------------------------------------------------------------
     // Bookkeeping
     // -----------------------------------------------------------------
 
-    /**
-     * A prompt is recorded only once the reply is actually out. A delivery that
-     * failed must not spend the next slot on a message nobody saw.
-     */
+    /** A delivery that failed must not spend the next slot on a message nobody saw. */
     public function test_a_failed_delivery_does_not_consume_the_prompt(): void
     {
         $this->telegramFails = true;
 
-        for ($n = 1; $n <= 5; $n++) {
-            $this->turn($n);
-        }
+        $this->turn(self::QUESTION);
+        $this->turn(self::QUESTION);
+        $third = $this->turn(self::THANKS);
 
-        $fifth = Message::where('role', 'assistant')->latest('id')->firstOrFail();
-        $this->assertArrayNotHasKey('feedback_requested', $fifth->meta);
+        $this->assertArrayNotHasKey('feedback_requested', $third->meta);
 
-        // So the next turn to get through is asked, rather than waiting out
-        // another five for a prompt that never landed.
         $this->telegramFails = false;
-        $sixth = $this->turn(6);
+        $fourth = $this->turn(self::THANKS);
 
-        $this->assertTrue($sixth->fresh()->meta['feedback_requested']);
+        $this->assertTrue($fourth->fresh()->meta['feedback_requested']);
     }
 
-    /** The record lives in the transcript, so the cadence is reconstructible. */
-    public function test_asking_is_recorded_on_the_message_that_asked(): void
+    public function test_the_floor_is_configurable(): void
     {
-        $this->promptedTurns(5);
+        config()->set('agent.feedback.min_turns_between', 1);
 
-        $turns = Message::where('role', 'assistant')->orderBy('id')->get();
-
-        $this->assertTrue($turns[4]->meta['feedback_requested']);
-        foreach ([0, 1, 2, 3] as $index) {
-            $this->assertArrayNotHasKey('feedback_requested', $turns[$index]->meta);
-        }
-    }
-
-    /** The thresholds are configuration, and changing them changes the cadence. */
-    public function test_the_cadence_is_configurable(): void
-    {
-        config()->set('agent.feedback.min_turns_between', 2);
-        config()->set('agent.feedback.every_n_turns', 2);
-
-        $this->assertSame([2, 4, 6], $this->promptedTurns(7));
+        $this->assertSame([1, 2], $this->promptedTurns([self::THANKS, self::THANKS]));
     }
 
     // -----------------------------------------------------------------
     // Fixtures
     // -----------------------------------------------------------------
 
-    /** A conversation with $count plain assistant turns already behind it. */
+    /** A conversation with $count plain question/answer turns already behind it. */
     protected function conversationWithTurns(int $count): Conversation
     {
         $conversation = $this->agent->conversations()->create([
@@ -333,9 +349,9 @@ class FeedbackCadenceTest extends TestCase
     /**
      * @param  array<string, mixed>  $meta
      */
-    protected function appendTurn(Conversation $conversation, array $meta = []): Message
+    protected function appendTurn(Conversation $conversation, array $meta = [], string $customerText = self::QUESTION): Message
     {
-        $conversation->messages()->create(['role' => 'user', 'content' => 'вопрос']);
+        $conversation->messages()->create(['role' => 'user', 'content' => $customerText]);
 
         return $conversation->messages()->create([
             'role' => 'assistant',

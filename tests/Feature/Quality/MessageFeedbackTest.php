@@ -14,6 +14,7 @@ use App\Services\Channels\HasNoMessageFeedback;
 use App\Services\Channels\HumanizedReplySender;
 use App\Services\Channels\IncomingMessage;
 use App\Services\Llm\LlmProviderInterface;
+use App\Services\Quality\FeedbackCadence;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
@@ -51,11 +52,16 @@ class MessageFeedbackTest extends TestCase
         ]);
 
         // These tests are about the CONTROL — how it is attached, recorded and
-        // guarded — not about how often it is offered. The cadence is switched
-        // to "every turn" so each test can work on the reply in front of it;
-        // how rarely a real customer sees one is FeedbackCadenceTest's subject.
-        config()->set('agent.feedback.min_turns_between', 1);
-        config()->set('agent.feedback.every_n_turns', 1);
+        // guarded — not about when it is offered. The cadence is stubbed to
+        // "every turn" so each test can work on the reply in front of it; when
+        // a real customer sees one is FeedbackCadenceTest's subject.
+        $this->app->bind(FeedbackCadence::class, fn () => new class(1) extends FeedbackCadence
+        {
+            public function shouldAsk(Conversation $conversation, Message $reply, ?Message $customerMessage = null): bool
+            {
+                return true;
+            }
+        });
 
         // One catch-all whose result satisfies every Telegram method these
         // tests reach — sendMessage wants a message_id, getMe wants bot info.
@@ -423,6 +429,11 @@ abstract class FakeUnsupportedDriver implements ChannelDriverInterface
     public function parseIncomingMessage(array $payload, Channel $channel): ?IncomingMessage
     {
         return null;
+    }
+
+    public function splitDeliveries(array $payload): array
+    {
+        return [$payload];
     }
 
     public function sendTypingIndicator(Channel $channel, string $externalUserId): void {}

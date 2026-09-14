@@ -6,6 +6,7 @@ use App\Models\Conversation;
 use App\Models\Lead;
 use App\Models\Message;
 use App\Services\Channels\ChannelDriverManager;
+use App\Services\Channels\OutsideMessagingWindowException;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -125,6 +126,19 @@ class ConversationController extends Controller
 
         try {
             $drivers->for($channel)->sendMessage($channel, $conversation->external_user_id, $data['content']);
+        } catch (OutsideMessagingWindowException $e) {
+            // Not a failure to fix by retrying — WhatsApp and Instagram both
+            // refuse free-form messages more than 24 hours after the customer's
+            // last one. The operator needs to be told THAT, specifically,
+            // rather than "delivery failed"; there is nothing they can do until
+            // the customer writes again. Before this the driver returned
+            // silently and the reply was recorded as sent.
+            Log::info('Operator reply blocked by the platform messaging window', [
+                'conversation_id' => $conversation->id,
+                'channel_id' => $channel->id,
+            ]);
+
+            return response()->json(['message' => __('conversations.errors.outside_window')], 422);
         } catch (Throwable $e) {
             Log::error('Operator reply could not be delivered', [
                 'conversation_id' => $conversation->id,
