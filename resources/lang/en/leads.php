@@ -43,6 +43,7 @@ return [
     'source' => [
         'telegram' => 'Telegram',
         'whatsapp' => 'WhatsApp',
+        'greenapi' => 'WhatsApp (Green API)',
         'instagram' => 'Instagram',
         'playground' => 'Playground',
     ],

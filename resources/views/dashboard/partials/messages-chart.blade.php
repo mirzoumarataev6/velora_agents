@@ -25,6 +25,7 @@
     $channelTint = [
         'telegram' => 'bg-brand',
         'whatsapp' => 'bg-brand/70',
+        'greenapi' => 'bg-brand/60',
         'instagram' => 'bg-brand/45',
         'playground' => 'bg-brand/25',
     ];

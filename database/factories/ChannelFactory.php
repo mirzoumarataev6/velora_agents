@@ -52,6 +52,28 @@ class ChannelFactory extends Factory
         ]);
     }
 
+    /** What Green API sends back in the Authorization header for greenApi() channels. */
+    public const GREEN_API_WEBHOOK_TOKEN = 'test-green-api-webhook-token-0123456789';
+
+    public function greenApi(): static
+    {
+        return $this->state(fn () => [
+            'type' => 'greenapi',
+            'credentials' => [
+                'id_instance' => '1101000001',
+                'api_token_instance' => 'FAKEGREENAPITOKEN0123456789abcdef',
+                'api_url' => 'https://1101.api.greenapi.com',
+                'webhook_token' => self::GREEN_API_WEBHOOK_TOKEN,
+            ],
+            'settings' => [
+                'state_instance' => 'authorized',
+                'webhook_registered' => true,
+                'webhook_error' => null,
+                'webhook_url' => 'https://example.test/webhooks/greenapi/fake-uuid',
+            ],
+        ]);
+    }
+
     public function instagram(): static
     {
         return $this->state(fn () => [

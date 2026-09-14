@@ -3,6 +3,7 @@
     $webhookUrl = $telegram ? ($telegram->settings['webhook_url'] ?? route('webhooks.telegram', $telegram)) : null;
     $whatsapp = $agent->channels->firstWhere('type', 'whatsapp');
     $instagram = $agent->channels->firstWhere('type', 'instagram');
+    $greenApi = $agent->channels->firstWhere('type', 'greenapi');
 @endphp
 
 <div class="max-w-2xl space-y-6">
@@ -213,6 +214,132 @@
         </div>
     </div>
 
+    {{-- WhatsApp via Green API card --}}
+    <div class="rounded-2xl border border-black/10 bg-white p-5 transition-shadow hover:shadow-md dark:border-white/10 dark:bg-white/5"
+        x-data="{ ...metaChannel({
+            connectUrl: '{{ route('agents.channels.greenapi.connect', $agent) }}',
+            disconnectUrlBase: '{{ route('agents.channels.greenapi.disconnect', ['agent' => $agent, 'channel' => '__ID__']) }}',
+            fields: ['id_instance', 'api_token_instance', 'api_url'],
+            defaults: { api_url: {{ Js::from(\App\Services\Channels\GreenApiDriver::DEFAULT_API_URL) }} },
+            fallbackWebhookUrl: '',
+            connectedToast: (c) => c.webhook_registered ? {{ Js::from(__('agents.channels.toasts.greenapi_connected')) }} : {{ Js::from(__('agents.channels.toasts.greenapi_connected_manual')) }},
+            disconnectConfirm: {{ Js::from(__('agents.channels.toasts.disconnect_confirm_greenapi')) }},
+            initial: {{ Js::from($greenApi ? [
+                'id' => $greenApi->id,
+                'status' => $greenApi->status,
+                'id_instance' => $greenApi->credentials['id_instance'] ?? null,
+                'state_instance' => $greenApi->settings['state_instance'] ?? null,
+                'webhook_url' => $greenApi->settings['webhook_url'] ?? route('webhooks.greenapi', $greenApi),
+                'webhook_registered' => $greenApi->settings['webhook_registered'] ?? false,
+                'webhook_error' => $greenApi->settings['webhook_error'] ?? null,
+            ] : null) }},
+        }), showManual: false }">
+        <div class="flex items-center justify-between gap-3">
+            <div class="flex items-center gap-3">
+                <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#25D366]/10 text-[#25D366]">
+                    <svg class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.477 2 2 6.477 2 12c0 1.89.525 3.66 1.438 5.168L2 22l4.938-1.396A9.955 9.955 0 0012 22c5.523 0 10-4.477 10-10S17.523 2 12 2zm0 18a7.94 7.94 0 01-4.06-1.115l-.29-.172-3.017.853.867-2.94-.19-.303A7.947 7.947 0 014 12c0-4.411 3.589-8 8-8s8 3.589 8 8-3.589 8-8 8z"/></svg>
+                </div>
+                <div>
+                    <h3 class="text-base font-semibold">{{ __('agents.channels.greenapi.name') }}</h3>
+                    <p class="text-xs text-muted dark:text-night-muted">
+                        <template x-if="channel?.status === 'connected'">
+                            <span>{{ __('agents.channels.greenapi.connected') }}<span x-text="channel.id_instance"></span></span>
+                        </template>
+                        <template x-if="channel?.status === 'error'">
+                            <span>{{ __('agents.channels.greenapi.error') }}</span>
+                        </template>
+                        <template x-if="!channel || channel.status === 'disconnected'">
+                            <span>{{ __('agents.channels.greenapi.disconnected') }}</span>
+                        </template>
+                    </p>
+                </div>
+            </div>
+            <span class="h-2.5 w-2.5 shrink-0 rounded-full"
+                :class="channel?.status === 'connected' ? 'bg-success' : (channel?.status === 'error' ? 'bg-danger' : 'bg-black/20 dark:bg-white/20')"></span>
+        </div>
+
+        <div x-show="channel?.status === 'connected'" class="mt-4 space-y-3">
+            <p x-show="channel?.state_instance && channel.state_instance !== 'authorized'" class="rounded-xl bg-danger/10 px-3 py-2 text-xs text-danger dark:text-danger-light">
+                {{ __('agents.channels.greenapi.not_authorized') }} (<span x-text="channel?.state_instance"></span>)
+            </p>
+
+            <div>
+                <label class="text-xs font-medium uppercase tracking-wide text-muted dark:text-night-muted">{{ __('agents.channels.shared.webhook_url_label') }}</label>
+                <div class="mt-1 flex items-center gap-2">
+                    <code class="flex-1 truncate rounded-lg bg-black/5 px-3 py-2 text-xs dark:bg-white/10" x-text="channel?.webhook_url"></code>
+                    <button type="button" @click="copy(channel.webhook_url)"
+                        class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-black/10 text-muted transition-colors hover:bg-black/5 dark:border-white/10 dark:text-night-muted dark:hover:bg-white/10">
+                        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+                    </button>
+                </div>
+            </div>
+
+            <p x-show="channel?.webhook_registered" class="rounded-xl bg-success/10 px-3 py-2 text-xs text-success">
+                ✓ {{ __('agents.channels.greenapi.webhook_auto_ok') }}
+            </p>
+            <p x-show="channel && !channel.webhook_registered" class="rounded-xl bg-danger/10 px-3 py-2 text-xs text-danger dark:text-danger-light">
+                {{ __('agents.channels.greenapi.webhook_auto_failed') }} <span x-text="channel?.webhook_error"></span>
+            </p>
+
+            <button type="button" x-show="channel?.webhook_registered" @click="showManual = !showManual" class="flex items-center gap-1 text-xs font-medium text-muted hover:text-brand dark:text-night-muted">
+                <svg class="h-3 w-3 transition-transform" :class="showManual ? 'rotate-90' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+                {{ __('agents.channels.greenapi.manual_toggle') }}
+            </button>
+            {{-- Always open when auto-registration failed: it is then the only way to finish setup. --}}
+            <ol x-show="showManual || !channel?.webhook_registered" x-cloak class="list-decimal space-y-1 pl-5 text-xs text-muted dark:text-night-muted">
+                @foreach (__('agents.channels.greenapi.manual_steps') as $step)
+                    <li>{{ $step }}</li>
+                @endforeach
+            </ol>
+
+            <button type="button" @click="disconnect()" :disabled="disconnecting"
+                class="rounded-full border border-danger/30 px-4 py-2 text-sm font-semibold text-danger transition-all hover:-translate-y-0.5 hover:bg-danger/5 disabled:opacity-60 dark:text-danger-light">
+                <span x-show="!disconnecting">{{ __('agents.channels.shared.disconnect') }}</span>
+                <span x-show="disconnecting" class="spinner"></span>
+            </button>
+        </div>
+
+        <div x-show="channel?.status !== 'connected'">
+            <form @submit.prevent="connect()" class="mt-4 space-y-3">
+                <div>
+                    <label for="ga_id_instance" class="text-sm font-medium">{{ __('agents.channels.greenapi.id_instance_label') }}</label>
+                    <input id="ga_id_instance" x-model="form.id_instance" type="text" inputmode="numeric" required placeholder="710722736476"
+ class="field mt-1 w-full rounded-xl px-4 py-2.5 font-mono text-sm" />
+                    <p x-show="errors.id_instance" x-text="errors.id_instance?.[0]" class="mt-1 text-xs text-danger"></p>
+                </div>
+                <div>
+                    <label for="ga_api_token_instance" class="text-sm font-medium">{{ __('agents.channels.greenapi.api_token_label') }}</label>
+                    <input id="ga_api_token_instance" x-model="form.api_token_instance" type="password" required autocomplete="off"
+ class="field mt-1 w-full rounded-xl px-4 py-2.5 font-mono text-sm" />
+                    <p x-show="errors.api_token_instance" x-text="errors.api_token_instance?.[0]" class="mt-1 text-xs text-danger"></p>
+                </div>
+                <div>
+                    <label for="ga_api_url" class="text-sm font-medium">{{ __('agents.channels.greenapi.api_url_label') }}</label>
+                    <input id="ga_api_url" x-model="form.api_url" type="url" required
+ class="field mt-1 w-full rounded-xl px-4 py-2.5 font-mono text-sm" />
+                    <p class="mt-1 text-xs text-muted dark:text-night-muted">{{ __('agents.channels.greenapi.api_url_help') }}</p>
+                    <p x-show="errors.api_url" x-text="errors.api_url?.[0]" class="mt-1 text-xs text-danger"></p>
+                </div>
+                <button type="submit" :disabled="connecting" class="rounded-xl bg-brand px-5 py-2.5 text-sm font-semibold text-on-accent transition-all hover:-translate-y-0.5 hover:bg-brand-hover disabled:opacity-60">
+                    <span x-show="!connecting">{{ __('agents.channels.shared.connect') }}</span>
+                    <span x-show="connecting" class="spinner"></span>
+                </button>
+            </form>
+
+            <p class="mt-3 text-xs text-muted dark:text-night-muted">{{ __('agents.channels.greenapi.unofficial_note') }}</p>
+
+            <button type="button" @click="showInstructions = !showInstructions" class="mt-3 flex items-center gap-1 text-xs font-medium text-muted hover:text-brand dark:text-night-muted">
+                <svg class="h-3 w-3 transition-transform" :class="showInstructions ? 'rotate-90' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+                {{ __('agents.channels.greenapi.instructions_toggle') }}
+            </button>
+            <ol x-show="showInstructions" x-cloak x-transition.opacity.duration.200ms class="mt-2 list-decimal space-y-1 pl-5 text-xs text-muted dark:text-night-muted">
+                @foreach (__('agents.channels.greenapi.steps') as $step)
+                    <li>{{ $step }}</li>
+                @endforeach
+            </ol>
+        </div>
+    </div>
+
     {{-- Instagram card --}}
     <div class="rounded-2xl border border-black/10 bg-white p-5 transition-shadow hover:shadow-md dark:border-white/10 dark:bg-white/5"
         x-data="metaChannel({
@@ -417,13 +544,13 @@
         return Array.from(bytes, (b) => b.toString(36).padStart(2, '0')).join('').slice(0, length);
     }
 
-    // Shared by the WhatsApp and Instagram cards — both are Meta platforms with
-    // an identical connect/disconnect/copy-webhook-details flow, differing only
-    // in which credential fields they collect.
-    function metaChannel({ connectUrl, disconnectUrlBase, fields, fallbackWebhookUrl, initial }) {
+    // Shared by the WhatsApp, Instagram and Green API cards — the same
+    // connect/disconnect/copy-webhook-details flow, differing only in which
+    // credential fields they collect and what they say on connect.
+    function metaChannel({ connectUrl, disconnectUrlBase, fields, fallbackWebhookUrl, initial, defaults = {}, connectedToast = null, disconnectConfirm = null }) {
         return {
             channel: initial,
-            form: Object.fromEntries(fields.map((f) => [f, f === 'verify_token' ? randomToken() : ''])),
+            form: Object.fromEntries(fields.map((f) => [f, f === 'verify_token' ? randomToken() : (defaults[f] ?? '')])),
             errors: {},
             connecting: false,
             disconnecting: false,
@@ -461,7 +588,7 @@
                     }
                     const data = await res.json();
                     this.channel = data.channel;
-                    window.showToast?.(@json(__('agents.channels.toasts.channel_connected')), 'success');
+                    window.showToast?.(connectedToast ? connectedToast(data.channel) : @json(__('agents.channels.toasts.channel_connected')), 'success');
                 } catch (e) {
                     window.showToast?.(@json(__('agents.channels.toasts.network_error')), 'error');
                 } finally {
@@ -469,7 +596,7 @@
                 }
             },
             async disconnect() {
-                if (!confirm(@json(__('agents.channels.toasts.disconnect_confirm_channel')))) return;
+                if (!confirm(disconnectConfirm ?? @json(__('agents.channels.toasts.disconnect_confirm_channel')))) return;
                 this.disconnecting = true;
                 try {
                     const res = await fetch(disconnectUrlBase.replace('__ID__', this.channel.id), {
@@ -483,7 +610,7 @@
                     const data = await res.json();
                     this.channel = data.channel;
                     this.showInstructions = true;
-                    this.form.verify_token = randomToken();
+                    if ('verify_token' in this.form) this.form.verify_token = randomToken();
                     window.showToast?.(@json(__('agents.channels.toasts.channel_disconnected')), 'success');
                 } catch (e) {
                     window.showToast?.(@json(__('agents.channels.toasts.network_error')), 'error');

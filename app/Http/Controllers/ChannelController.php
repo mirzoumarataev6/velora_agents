@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Agent;
 use App\Models\Channel;
 use App\Services\Channels\ChannelDriverManager;
+use App\Services\Channels\GreenApiDriver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -237,6 +238,88 @@ class ChannelController extends Controller
         return back()->with('status', 'Instagram отключён.');
     }
 
+    public function connectGreenApi(Request $request, Agent $agent, ChannelDriverManager $drivers): RedirectResponse|JsonResponse
+    {
+        $this->authorize('update', $agent);
+
+        $data = $request->validate([
+            'id_instance' => ['required', 'string', 'regex:/^\d{6,20}$/'],
+            'api_token_instance' => ['required', 'string', 'regex:/^[A-Za-z0-9]{20,}$/'],
+            // Editable because instances live on numbered servers (7107.api...).
+            'api_url' => ['nullable', 'url:https'],
+        ], [], [
+            'id_instance' => 'idInstance',
+            'api_token_instance' => 'apiTokenInstance',
+            'api_url' => 'apiUrl',
+        ]);
+
+        $channel = $agent->channels()->firstOrNew(['type' => 'greenapi']);
+        $channel->credentials = [
+            'id_instance' => $data['id_instance'],
+            'api_token_instance' => $data['api_token_instance'],
+            'api_url' => rtrim(($data['api_url'] ?? null) ?: GreenApiDriver::DEFAULT_API_URL, '/'),
+        ];
+        $channel->status = 'error'; // corrected to "connected" below only on success
+        $channel->save(); // the webhook URL connect() registers needs the uuid
+
+        try {
+            $info = $drivers->for($channel)->connect($channel);
+
+            $channel->credentials = array_merge($channel->credentials, ['webhook_token' => $info['webhook_token']]);
+            $channel->settings = array_merge($channel->settings ?? [], [
+                'state_instance' => $info['state_instance'] ?? null,
+                'webhook_url' => $info['webhook_url'],
+                'webhook_registered' => $info['webhook_registered'],
+                'webhook_error' => $info['webhook_error'],
+            ]);
+            $channel->status = 'connected';
+            $channel->save();
+
+            if ($request->wantsJson()) {
+                return response()->json(['channel' => $this->serialize($channel)]);
+            }
+
+            return back()->with('status', $info['webhook_registered']
+                ? 'WhatsApp (Green API) подключён, вебхук настроен автоматически.'
+                : 'WhatsApp (Green API) подключён, но вебхук не удалось настроить автоматически — укажите URL в консоли Green API.');
+        } catch (Throwable $e) {
+            $channel->save();
+            $message = 'Не удалось подключить Green API: '.$e->getMessage();
+
+            if ($request->wantsJson()) {
+                return response()->json([
+                    'message' => $message,
+                    'errors' => ['api_token_instance' => [$message]],
+                ], 422);
+            }
+
+            return back()->withErrors(['api_token_instance' => $message]);
+        }
+    }
+
+    public function disconnectGreenApi(Request $request, Agent $agent, Channel $channel, ChannelDriverManager $drivers): RedirectResponse|JsonResponse
+    {
+        $this->authorize('delete', $channel);
+
+        try {
+            $drivers->for($channel)->disconnect($channel);
+        } catch (Throwable) {
+            // Best-effort: still disconnect locally even if clearing the webhook fails.
+        }
+
+        $channel->update([
+            'status' => 'disconnected',
+            'credentials' => null,
+            'settings' => null,
+        ]);
+
+        if ($request->wantsJson()) {
+            return response()->json(['channel' => $this->serialize($channel)]);
+        }
+
+        return back()->with('status', 'WhatsApp (Green API) отключён.');
+    }
+
     protected function serialize(Channel $channel): array
     {
         return [
@@ -250,6 +333,10 @@ class ChannelController extends Controller
             'ig_name' => $channel->settings['ig_name'] ?? null,
             'webhook_url' => $channel->settings['webhook_url'] ?? null,
             'verify_token' => $channel->credentials['verify_token'] ?? null,
+            'id_instance' => $channel->credentials['id_instance'] ?? null,
+            'state_instance' => $channel->settings['state_instance'] ?? null,
+            'webhook_registered' => $channel->settings['webhook_registered'] ?? null,
+            'webhook_error' => $channel->settings['webhook_error'] ?? null,
         ];
     }
 }
