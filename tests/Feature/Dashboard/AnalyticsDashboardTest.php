@@ -380,8 +380,8 @@ class AnalyticsDashboardTest extends TestCase
 
     public function test_the_heatmap_buckets_messages_by_weekday_and_hour(): void
     {
-        // A Wednesday at 15:00 — ISO weekday 3, so row index 2.
-        $this->conversationWith(3, at: CarbonImmutable::parse('2026-09-02 15:20:00'));
+        // A Wednesday at 15:00 in Khujand — ISO weekday 3, so row index 2.
+        $this->conversationWith(3, at: CarbonImmutable::parse('2026-09-02 15:20:00', 'Asia/Dushanbe')->utc());
         $this->travelTo(CarbonImmutable::parse('2026-09-03 12:00:00'));
 
         $heatmap = $this->metrics()['heatmap'];
@@ -390,6 +390,33 @@ class AnalyticsDashboardTest extends TestCase
         $this->assertSame(3, $heatmap['max']);
         $this->assertCount(7, $heatmap['grid']);
         $this->assertCount(24, $heatmap['grid'][0]);
+    }
+
+    /**
+     * Stored in UTC, drawn on the shop's clock: 20:30 UTC on a Tuesday is
+     * 01:30 on Wednesday in Khujand, and that is the cell it belongs in.
+     */
+    public function test_the_heatmap_reads_hours_in_the_shop_timezone(): void
+    {
+        $this->conversationWith(2, at: CarbonImmutable::parse('2026-09-01 20:30:00'));
+        $this->travelTo(CarbonImmutable::parse('2026-09-03 12:00:00'));
+
+        $grid = $this->metrics()['heatmap']['grid'];
+
+        $this->assertSame(2, $grid[2][1]);
+        $this->assertSame(0, $grid[1][20]);
+    }
+
+    /** 18:00 UTC is 23:00 in Khujand — the customer wrote at night. */
+    public function test_after_hours_is_judged_on_the_shop_clock(): void
+    {
+        $metrics = new DashboardMetrics($this->owner);
+
+        $this->assertTrue($metrics->isAfterHours(CarbonImmutable::parse('2026-09-02 18:00:00')));
+        $this->assertFalse($metrics->isAfterHours(CarbonImmutable::parse('2026-09-02 05:00:00')));
+
+        config()->set('agent.analytics.timezone', 'UTC');
+        $this->assertFalse($metrics->isAfterHours(CarbonImmutable::parse('2026-09-02 18:00:00')));
     }
 
     public function test_the_funnel_reports_each_stage_and_its_drop_off(): void

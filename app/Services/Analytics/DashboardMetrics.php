@@ -198,7 +198,8 @@ class DashboardMetrics
         $grid = array_fill(0, 7, array_fill(0, 24, 0));
 
         foreach ($timeline as $row) {
-            $grid[$row->at->dayOfWeekIso - 1][(int) $row->at->format('G')]++;
+            $local = $this->local($row->at);
+            $grid[$local->dayOfWeekIso - 1][(int) $local->format('G')]++;
         }
 
         return [
@@ -239,6 +240,7 @@ class DashboardMetrics
     public function isAfterHours(CarbonImmutable $at): bool
     {
         $config = config('agent.analytics.after_hours');
+        $at = $this->local($at);
 
         if ($at->isWeekend() && ($config['weekends'] ?? true)) {
             return true;
@@ -251,6 +253,15 @@ class DashboardMetrics
         // The window wraps midnight, so it is "at or after 22" OR "before 8",
         // not a range between two numbers.
         return $hour >= $from || $hour < $to;
+    }
+
+    /**
+     * A stored (UTC) moment on the shop's wall clock. "Busy at 10" and "after
+     * 22:00" are questions about Khujand time, not about the server's.
+     */
+    protected function local(CarbonImmutable $at): CarbonImmutable
+    {
+        return $at->setTimezone(config('agent.analytics.timezone') ?: config('app.timezone'));
     }
 
     /**

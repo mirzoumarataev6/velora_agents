@@ -143,6 +143,10 @@ return [
     |
     */
     'analytics' => [
+        // Timestamps are stored in UTC; the heatmap and the after-hours window
+        // are about the shop's wall clock, so they are read in this zone.
+        'timezone' => env('AGENT_ANALYTICS_TIMEZONE', 'Asia/Dushanbe'),
+
         'after_hours' => [
             'from_hour' => env('AGENT_AFTER_HOURS_FROM', 22),
             'to_hour' => env('AGENT_AFTER_HOURS_TO', 8),
