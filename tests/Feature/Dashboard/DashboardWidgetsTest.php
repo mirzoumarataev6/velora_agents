@@ -186,8 +186,8 @@ class DashboardWidgetsTest extends TestCase
         $page->assertSee(__('dashboard.funnel.confirmed_hint'), false);
     }
 
-    /** The drop-off reads as a loss to act on, not as a bare number. */
-    public function test_the_drop_off_is_framed_as_a_loss_at_that_stage(): void
+    /** Neutral, analytical framing — a conversion rate, not a loss to act on. */
+    public function test_the_stage_reads_as_a_conversion_rate_not_a_loss(): void
     {
         $this->conversationWith();
         $this->conversationWith();
@@ -196,8 +196,9 @@ class DashboardWidgetsTest extends TestCase
 
         $funnel = collect($this->metrics()['funnel'])->firstWhere('key', 'leads');
 
-        $this->assertSame(50.0, $funnel['drop_off']);
-        $this->page()->assertSee(__('dashboard.funnel.drop_off', ['percent' => 50.0]), false);
+        $this->assertSame(50.0, $funnel['conversion']);
+        $this->page()->assertSee(__('dashboard.funnel.conversion', ['percent' => 50.0]), false);
+        $this->page()->assertDontSee('потеряно', false);
     }
 
     // -----------------------------------------------------------------
@@ -325,6 +326,38 @@ class DashboardWidgetsTest extends TestCase
         $this->page()
             ->assertSee(__('dashboard.ratings.no_negative'), false)
             ->assertDontSee(__('dashboard.ratings.view_negative'), false);
+    }
+
+    /**
+     * Symmetric to the negative link: a positive rating is a fact worth
+     * reviewing too, and the inbox has a matching filter for it.
+     */
+    public function test_the_card_links_to_the_inbox_filtered_to_positive_ratings(): void
+    {
+        $this->conversationWith(1, rating: Message::RATING_UP);
+
+        $this->page()
+            ->assertSee(__('dashboard.ratings.view_positive'), false)
+            ->assertSee(route('conversations.index', ['status' => 'rated_up']), false);
+    }
+
+    /** With ratings but no good ones, there is nothing positive to go and look at. */
+    public function test_the_positive_link_is_absent_when_nothing_was_liked(): void
+    {
+        $this->conversationWith(2, rating: Message::RATING_DOWN);
+
+        $this->page()->assertDontSee(__('dashboard.ratings.view_positive'), false);
+    }
+
+    /** Both links appear together when there are both kinds of ratings. */
+    public function test_both_rating_links_appear_when_there_are_both_kinds(): void
+    {
+        $this->conversationWith(1, rating: Message::RATING_UP);
+        $this->conversationWith(1, rating: Message::RATING_DOWN);
+
+        $this->page()
+            ->assertSee(__('dashboard.ratings.view_positive'), false)
+            ->assertSee(__('dashboard.ratings.view_negative'), false);
     }
 
     /**
@@ -512,6 +545,26 @@ class DashboardWidgetsTest extends TestCase
         $this->assertSame(2, $comparison[1]['messages']);
 
         $this->page()->assertSee(__('dashboard.agents_compare.title'), false);
+    }
+
+    /**
+     * The share is of the TOTAL across every agent (so the bars read together
+     * against one 100%), not of the busiest agent — 5 of 7 messages is ~71%,
+     * not 100%.
+     */
+    public function test_the_agent_comparison_shows_each_agents_share_of_total_load(): void
+    {
+        $second = Agent::factory()->for($this->owner)->create(['name' => 'Второй']);
+
+        $this->conversationWith(2);
+        $this->conversationWith(5, agent: $second);
+
+        $comparison = collect($this->metrics()['agent_comparison'])->keyBy('name');
+
+        $this->assertSame(71.4, $comparison['Второй']['share']);
+        $this->assertSame(28.6, $comparison['Первый']['share']);
+
+        $this->page()->assertSee(__('dashboard.agents_compare.share', ['percent' => 71.4]), false);
     }
 
     // -----------------------------------------------------------------

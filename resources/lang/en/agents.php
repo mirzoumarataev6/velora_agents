@@ -551,6 +551,17 @@ return [
                 'Click Connect — we will set the webhook URL in Green API automatically and show the result here.',
             ],
         ],
+        'instagrapi' => [
+            'name' => 'Instagram (instagrapi)',
+            'connected' => 'Connected · ',
+            'error' => 'Connection error — check the details',
+            'disconnected' => 'Not connected',
+            'username_label' => 'Instagram username',
+            'password_label' => 'Instagram password',
+            'not_ok' => 'The Instagram session is not usable right now — check the account for a login challenge.',
+            'how_it_works' => 'A background service checks for new direct messages every 10 seconds and answers them the same way as your other channels.',
+            'unofficial_warning' => 'This uses instagrapi, an unofficial Instagram API that logs in as a normal account rather than Meta\'s official Messaging API. Instagram may challenge this login (ask for a code, or a confirmation on another device) or, in rare cases, temporarily restrict the account for automated-looking activity. Use a Business or Creator account you can monitor, not your main personal one.',
+        ],
         'shared' => [
             'copied' => 'Copied',
             'webhook_url_label' => 'Webhook URL',
@@ -562,6 +573,7 @@ return [
             'app_secret_help' => 'Meta App Dashboard → Settings → Basic → App Secret. Used to verify the signature on incoming webhooks — without it the channel cannot accept messages.',
             'disconnect' => 'Disconnect',
             'connect' => 'Connect',
+            'manage' => 'Manage',
         ],
         'toasts' => [
             'connect_bot_failed' => 'Failed to connect the bot',
@@ -578,6 +590,7 @@ return [
             'greenapi_connected' => 'WhatsApp (Green API) connected — the webhook was set automatically.',
             'greenapi_connected_manual' => 'WhatsApp (Green API) connected, but the webhook URL has to be set manually — see the steps in the card.',
             'disconnect_confirm_greenapi' => 'Disconnect WhatsApp (Green API)? We will also clear the webhook URL in Green API.',
+            'instagrapi_connected' => 'Instagram (instagrapi) connected.',
         ],
     ],
 

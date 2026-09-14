@@ -167,6 +167,9 @@ Route::middleware(['auth', 'auth.session'])->group(function () {
 
         Route::post('greenapi', [ChannelController::class, 'connectGreenApi'])->name('greenapi.connect');
         Route::delete('greenapi/{channel}', [ChannelController::class, 'disconnectGreenApi'])->name('greenapi.disconnect');
+
+        Route::post('instagrapi', [ChannelController::class, 'connectInstagrapi'])->name('instagrapi.connect');
+        Route::delete('instagrapi/{channel}', [ChannelController::class, 'disconnectInstagrapi'])->name('instagrapi.disconnect');
     });
 });
 

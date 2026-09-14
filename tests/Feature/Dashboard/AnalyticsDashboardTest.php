@@ -39,9 +39,9 @@ class AnalyticsDashboardTest extends TestCase
         $this->channel = Channel::factory()->for($this->agent)->create(['type' => 'telegram']);
     }
 
-    protected function metrics(int $days = 7): array
+    protected function metrics(int $days = 7, ?int $agentId = null): array
     {
-        return (new DashboardMetrics($this->owner->fresh()))->forRange($days);
+        return (new DashboardMetrics($this->owner->fresh()))->forRange($days, $agentId);
     }
 
     /**
@@ -132,6 +132,101 @@ class AnalyticsDashboardTest extends TestCase
     }
 
     // -----------------------------------------------------------------
+    // Per-agent filter
+    // -----------------------------------------------------------------
+
+    /**
+     * Every widget is built from the same handful of query builders
+     * (conversations()/leads()/messages(), all via agentIds()) — this proves
+     * the filter reaches them by testing the shared primitive plus one
+     * representative widget of each kind, rather than every widget by name.
+     */
+    public function test_selecting_an_agent_scopes_every_widget_to_it(): void
+    {
+        $second = Agent::factory()->for($this->owner)->create(['name' => 'Второй']);
+        $secondChannel = Channel::factory()->for($second)->create(['type' => 'telegram']);
+
+        $this->conversationWith(1, ['total_ms' => 500]);
+
+        $secondConversation = $second->conversations()->create([
+            'status' => 'ai',
+            'channel_id' => $secondChannel->id,
+            'external_user_id' => 'u'.uniqid(),
+            'last_message_at' => CarbonImmutable::now(),
+        ]);
+        $secondConversation->messages()
+            ->create(['role' => 'assistant', 'content' => 'ответ', 'meta' => ['total_ms' => 900]]);
+        $second->leads()->create(['items' => 'чужая заявка', 'source' => 'telegram', 'status' => 'new']);
+
+        $all = $this->metrics();
+        $this->assertSame(2, $all['summary']['conversations_total']);
+        $this->assertSame(1, $all['leads_by_status']['total']);
+
+        $scoped = $this->metrics(7, $this->agent->id);
+        $this->assertSame($this->agent->id, $scoped['agent_id']);
+        $this->assertSame(1, $scoped['summary']['conversations_total']);
+        $this->assertSame(500.0, $scoped['summary']['avg_response_ms']);
+        // The other agent's lead must not leak into this agent's breakdown.
+        $this->assertSame(0, $scoped['leads_by_status']['total']);
+    }
+
+    /** Comparing an agent against itself is not a comparison. */
+    public function test_the_agent_comparison_disappears_once_the_page_is_scoped_to_one_agent(): void
+    {
+        $second = Agent::factory()->for($this->owner)->create();
+        $secondChannel = Channel::factory()->for($second)->create(['type' => 'telegram']);
+
+        $this->conversationWith(2);
+
+        $secondConversation = $second->conversations()->create([
+            'status' => 'ai',
+            'channel_id' => $secondChannel->id,
+            'external_user_id' => 'u'.uniqid(),
+            'last_message_at' => CarbonImmutable::now(),
+        ]);
+        $secondConversation->messages()->createMany(array_fill(0, 5, ['role' => 'assistant', 'content' => 'ответ']));
+
+        $this->assertNotEmpty($this->metrics()['agent_comparison']);
+        $this->assertSame([], $this->metrics(7, $this->agent->id)['agent_comparison']);
+    }
+
+    /** A stranger's agent id is ignored, not trusted — falls back to "all". */
+    public function test_the_dashboard_ignores_an_agent_id_that_does_not_belong_to_the_owner(): void
+    {
+        $strangerAgent = Agent::factory()->create();
+        $this->conversationWith();
+
+        $response = $this->actingAs($this->owner)
+            ->get(route('dashboard', ['agent_id' => $strangerAgent->id]))
+            ->assertOk();
+
+        // Still sees their own conversation — the bad id was dropped, not
+        // treated as "show nothing".
+        $response->assertSee(__('dashboard.funnel.title'), false);
+    }
+
+    /** Pointless with one agent — same rule the "Нагрузка по агентам" card uses. */
+    public function test_the_agent_selector_is_absent_for_a_single_agent_account(): void
+    {
+        $this->conversationWith();
+
+        $this->actingAs($this->owner)->get(route('dashboard'))
+            ->assertOk()
+            ->assertDontSee('dashboard_agent_filter', false);
+    }
+
+    public function test_the_agent_selector_lists_every_agent_when_there_is_more_than_one(): void
+    {
+        $second = Agent::factory()->for($this->owner)->create(['name' => 'Второй агент']);
+        $this->conversationWith();
+
+        $this->actingAs($this->owner)->get(route('dashboard'))
+            ->assertOk()
+            ->assertSee('dashboard_agent_filter', false)
+            ->assertSee('Второй агент', false);
+    }
+
+    // -----------------------------------------------------------------
     // Scoping
     // -----------------------------------------------------------------
 
@@ -217,6 +312,33 @@ class AnalyticsDashboardTest extends TestCase
         $this->conversationWith(1, ['total_ms' => 3000]);
 
         $this->assertSame(2000.0, $this->metrics()['summary']['avg_response_ms']);
+    }
+
+    // -----------------------------------------------------------------
+    // Number formatting
+    // -----------------------------------------------------------------
+
+    /**
+     * A space thousands separator (1 238, not 1238), and the count-up
+     * animation still gets a bare, parseable integer — see app.js's
+     * countUpNumbers(), which reads data-countup with Number() and restores
+     * this exact formatted string once the animation ends.
+     */
+    public function test_a_stat_cards_large_number_gets_a_thousands_separator(): void
+    {
+        $html = view('dashboard.partials.stat', ['label' => 'Test', 'value' => 1238])->render();
+
+        $this->assertStringContainsString('1 238', $html);
+        $this->assertStringContainsString('data-countup="1238"', $html);
+    }
+
+    /** A value that isn't a plain int (a dash, a percentage) is shown as-is. */
+    public function test_a_non_integer_stat_value_is_not_reformatted(): void
+    {
+        $html = view('dashboard.partials.stat', ['label' => 'Test', 'value' => '5.2 с'])->render();
+
+        $this->assertStringContainsString('5.2 с', $html);
+        $this->assertStringNotContainsString('data-countup', $html);
     }
 
     // -----------------------------------------------------------------
@@ -407,6 +529,16 @@ class AnalyticsDashboardTest extends TestCase
         $this->assertSame(0, $grid[1][20]);
     }
 
+    /** The owner is told which clock the grid is drawn on. */
+    public function test_the_heatmap_shows_which_timezone_it_is_drawn_in(): void
+    {
+        $this->conversationWith();
+
+        $this->actingAs($this->owner)->get(route('dashboard'))
+            ->assertOk()
+            ->assertSee(__('dashboard.heatmap.timezone_label'), false);
+    }
+
     /** 18:00 UTC is 23:00 in Khujand — the customer wrote at night. */
     public function test_after_hours_is_judged_on_the_shop_clock(): void
     {
@@ -419,7 +551,7 @@ class AnalyticsDashboardTest extends TestCase
         $this->assertFalse($metrics->isAfterHours(CarbonImmutable::parse('2026-09-02 18:00:00')));
     }
 
-    public function test_the_funnel_reports_each_stage_and_its_drop_off(): void
+    public function test_the_funnel_reports_each_stage_and_its_conversion(): void
     {
         $converted = $this->conversationWith();
         $this->conversationWith();
@@ -432,13 +564,13 @@ class AnalyticsDashboardTest extends TestCase
         [$conversations, $leads, $confirmed] = $this->metrics()['funnel'];
 
         $this->assertSame(4, $conversations['value']);
-        $this->assertNull($conversations['drop_off']);
+        $this->assertNull($conversations['conversion']);
         $this->assertSame(2, $leads['value']);
-        $this->assertSame(50.0, $leads['drop_off']);
+        $this->assertSame(50.0, $leads['conversion']);
         // Only the `done` one counts as confirmed — a lead still at `new` is a
         // lead, not an order.
         $this->assertSame(1, $confirmed['value']);
-        $this->assertSame(50.0, $confirmed['drop_off']);
+        $this->assertSame(50.0, $confirmed['conversion']);
     }
 
     // -----------------------------------------------------------------

@@ -5,6 +5,11 @@ return [
     'heading' => 'Аналитика',
     'subheading' => 'Что ваши ассистенты сделали за вас.',
 
+    'agent_filter' => [
+        'label' => 'Агент',
+        'all' => 'Все агенты',
+    ],
+
     'empty' => [
         'title' => 'Данных пока нет',
         'description' => 'Данные появятся здесь, когда наберётся достаточно диалогов. Подключите канал и дайте ассистенту поработать — первые цифры появятся уже после нескольких переписок.',
@@ -85,15 +90,16 @@ return [
         'title' => 'Воронка',
         // The one sentence the widget was missing: what it is, in plain words.
         'description' => 'Как диалоги превращаются в заявки и подтверждённые продажи.',
-        'conversations' => 'Диалоги',
+        'conversations' => 'Диалоги начаты',
         'conversations_hint' => 'Все переписки с клиентами за всё время',
-        'leads' => 'Заявки',
+        'leads' => 'Заявки созданы',
         'leads_hint' => 'Диалоги, в которых клиент оставил заказ или контакт',
-        'confirmed' => 'Подтверждённые',
+        'confirmed' => 'Продажи закрыты',
         'confirmed_hint' => 'Заявки, взятые в работу или закрытые',
-        // Framed as a loss, not as a bare percentage: «-40%» reads as a change,
-        // «потеряно 40%» reads as the thing to fix.
-        'drop_off' => 'потеряно на этом этапе: :percent%',
+        // Neutral, analytical framing — like Amplitude or Mixpanel: this
+        // reports the conversion rate INTO this stage, not a loss. A customer
+        // not converting at a step is what happened, not a failure.
+        'conversion' => 'конверсия на этом этапе: :percent%',
         'of_all' => ':percent% от диалогов',
     ],
 
@@ -108,6 +114,7 @@ return [
         'trend_title' => 'Как менялось по дням',
         'worst_title' => 'Последние ответы с 👎',
         'view_negative' => 'Все негативные оценки',
+        'view_positive' => 'Все позитивные оценки',
         'open_conversation' => 'Открыть диалог',
         'no_negative' => 'Ни одного 👎 за период — клиентов всё устроило.',
         'empty_title' => 'Оценок пока нет',
@@ -146,11 +153,13 @@ return [
         'description' => 'Кто из ассистентов ведёт больше переписок за период.',
         'messages' => ':count сообщ.',
         'leads' => ':count заявок',
+        'share' => ':percent% нагрузки',
     ],
 
     'heatmap' => [
         'title' => 'Когда пишут клиенты',
         'description' => 'Объём сообщений по дням недели и часам.',
+        'timezone_label' => 'Время: Душанбе (UTC+5)',
         'less' => 'меньше',
         'more' => 'больше',
         'days' => ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'],

@@ -62,11 +62,19 @@
         </div>
     </div>
 
-    <div class="mt-3 flex items-center justify-end gap-1.5 border-t border-black/5 pt-3 dark:border-white/10">
-        <span class="text-[10px] text-muted dark:text-night-muted">{{ __('dashboard.heatmap.less') }}</span>
-        @foreach ($steps as $step)
-            <span class="h-3 w-3 rounded-[3px] {{ $step }}"></span>
-        @endforeach
-        <span class="text-[10px] text-muted dark:text-night-muted">{{ __('dashboard.heatmap.more') }}</span>
+    <div class="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-black/5 pt-3 dark:border-white/10">
+        {{-- The hour columns are already converted to this timezone (see
+             DashboardMetrics::heatmap() / local()) — this just says so, so an
+             owner comparing it to their own clock isn't left guessing which
+             clock the grid is drawn on. --}}
+        <span class="text-[10px] text-muted dark:text-night-muted">{{ __('dashboard.heatmap.timezone_label') }}</span>
+
+        <span class="flex items-center gap-1.5">
+            <span class="text-[10px] text-muted dark:text-night-muted">{{ __('dashboard.heatmap.less') }}</span>
+            @foreach ($steps as $step)
+                <span class="h-3 w-3 rounded-[3px] {{ $step }}"></span>
+            @endforeach
+            <span class="text-[10px] text-muted dark:text-night-muted">{{ __('dashboard.heatmap.more') }}</span>
+        </span>
     </div>
 </div>

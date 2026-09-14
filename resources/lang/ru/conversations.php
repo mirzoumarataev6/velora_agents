@@ -57,6 +57,7 @@ return [
         'needs_human' => 'Нужен человек',
         'has_lead' => 'С заявкой',
         'rated_down' => 'С 👎',
+        'rated_up' => 'С 👍',
         'closed' => 'Закрытые',
     ],
 

@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\CompressResponse;
+use App\Http\Middleware\RestrictToLocalhost;
 use App\Http\Middleware\ServeBuiltAssetsToRemoteClients;
 use App\Http\Middleware\SetLocale;
 use Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests;
@@ -8,6 +9,7 @@ use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Route;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -16,6 +18,14 @@ return Application::configure(basePath: dirname(__DIR__))
         apiPrefix: 'webhooks',
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
+        then: function () {
+            // routes/internal.php: localhost-only helper endpoints (the
+            // Instagram polling microservice today). 'api' middleware, not
+            // 'web' — stateless, no CSRF — plus RestrictToLocalhost on top.
+            Route::middleware(['api', RestrictToLocalhost::class])
+                ->prefix('internal')
+                ->group(__DIR__.'/../routes/internal.php');
+        },
     )
     ->withMiddleware(function (Middleware $middleware): void {
         // The app always sits behind a reverse proxy/tunnel (ngrok in dev,

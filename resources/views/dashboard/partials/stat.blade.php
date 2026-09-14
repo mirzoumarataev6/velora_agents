@@ -13,6 +13,13 @@
     // toward, and animating them would mean parsing display strings back into
     // numbers — which is how a dash becomes a zero.
     $countTo = $countTo ?? (is_int($value) ? $value : null);
+
+    // The number shown to a reader gets a thousands separator; the number
+    // handed to the count-up animation stays a bare integer, since it is
+    // parsed back with Number() in app.js. countUpNumbers() restores this
+    // exact formatted string once the animation ends, so the two never
+    // disagree — see resources/js/app.js.
+    $display = is_int($value) ? number_format($value, 0, '.', ' ') : $value;
 @endphp
 
 <div @if (!empty($hint)) title="{{ $hint }}" @endif
@@ -29,6 +36,6 @@
         @endif
         {{ $label }}
     </p>
-    <p class="mt-2 font-display text-3xl leading-none"
-        @if ($countTo !== null) data-countup="{{ $countTo }}" @endif>{{ $value }}</p>
+    <p class="mt-2 font-display text-3xl leading-none tnum"
+        @if ($countTo !== null) data-countup="{{ $countTo }}" @endif>{{ $display }}</p>
 </div>

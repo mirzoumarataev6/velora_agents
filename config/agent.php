@@ -18,6 +18,21 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Instagram (instagrapi) microservice
+    |--------------------------------------------------------------------------
+    |
+    | Base URL of the Python FastAPI service in instagram_service/ that drives
+    | instagrapi (an unofficial Instagram private-API client). InstagrapiDriver
+    | posts to it to log in and to send messages; it posts back to this app at
+    | POST /internal/instagram/incoming with new DMs.
+    |
+    */
+    'instagram_service' => [
+        'url' => env('INSTAGRAM_SERVICE_URL', 'http://127.0.0.1:8001'),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | OpenAI API
     |--------------------------------------------------------------------------
     */

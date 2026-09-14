@@ -19,6 +19,7 @@ class ChannelDriverManager
         'whatsapp' => WhatsAppDriver::class,
         'instagram' => InstagramDriver::class,
         'greenapi' => GreenApiDriver::class,
+        'instagrapi' => InstagrapiDriver::class,
     ];
 
     public function __construct(protected Container $container) {}

@@ -179,16 +179,30 @@
                             </li>
                         @endforeach
                     </ul>
-
-                    {{-- What turns this card from a report into a task. The
-                         inbox has a matching filter, so this lands on exactly
-                         these replies rather than on the inbox in general. --}}
-                    <a href="{{ route('conversations.index', ['status' => 'rated_down']) }}"
-                        class="mt-3 flex w-fit items-center gap-1.5 rounded-full bg-danger/10 px-3.5 py-1.5 text-xs font-semibold text-danger transition-all hover:-translate-y-0.5 hover:bg-danger/15">
-                        {{ __('dashboard.ratings.view_negative') }}
-                        <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M5 12h14m-6-6 6 6-6 6"/></svg>
-                    </a>
                 @endif
+
+                {{-- Both links turn this card from a report into a task. The
+                     inbox has a matching filter for each, so a click lands on
+                     exactly those replies rather than on the inbox in
+                     general. Symmetric on purpose: a positive rating is as
+                     much a fact worth reviewing (what's working) as a
+                     negative one. --}}
+                <div class="mt-3 flex flex-wrap items-center gap-2">
+                    @if ($ratings['down'] > 0)
+                        <a href="{{ route('conversations.index', ['status' => 'rated_down']) }}"
+                            class="flex w-fit items-center gap-1.5 rounded-full bg-danger/10 px-3.5 py-1.5 text-xs font-semibold text-danger transition-all hover:-translate-y-0.5 hover:bg-danger/15">
+                            {{ __('dashboard.ratings.view_negative') }}
+                            <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M5 12h14m-6-6 6 6-6 6"/></svg>
+                        </a>
+                    @endif
+                    @if ($ratings['up'] > 0)
+                        <a href="{{ route('conversations.index', ['status' => 'rated_up']) }}"
+                            class="flex w-fit items-center gap-1.5 rounded-full bg-success/10 px-3.5 py-1.5 text-xs font-semibold text-success transition-all hover:-translate-y-0.5 hover:bg-success/15">
+                            {{ __('dashboard.ratings.view_positive') }}
+                            <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M5 12h14m-6-6 6 6-6 6"/></svg>
+                        </a>
+                    @endif
+                </div>
             </div>
         </div>
     @endif

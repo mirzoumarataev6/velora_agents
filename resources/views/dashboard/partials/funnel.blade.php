@@ -40,8 +40,11 @@
                         <span class="ml-1 cursor-help text-xs font-normal text-muted dark:text-night-muted" title="{{ $hints[$stage['key']] }}">ⓘ</span>
                     </span>
                     <span class="flex items-baseline gap-2">
-                        @if ($stage['drop_off'] !== null && $stage['drop_off'] > 0)
-                            <span class="text-xs text-danger">{{ __('dashboard.funnel.drop_off', ['percent' => $stage['drop_off']]) }}</span>
+                        {{-- Neutral analytical framing, not a loss: a customer
+                             not converting at this step is what happened, not
+                             a failure on the business's part. --}}
+                        @if ($stage['conversion'] !== null)
+                            <span class="text-xs text-muted dark:text-night-muted">{{ __('dashboard.funnel.conversion', ['percent' => $stage['conversion']]) }}</span>
                         @endif
                         <span class="font-display text-xl leading-none">{{ $stage['value'] }}</span>
                     </span>

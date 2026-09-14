@@ -40,20 +40,32 @@ class DashboardMetrics
     /** Ranges the messages chart can be shown over. */
     public const RANGES = [7, 30];
 
+    /**
+     * When set (via forRange's $agentId), every widget on the page is scoped
+     * to this one agent instead of all of the owner's agents — set once per
+     * request and read by agentIds(), so a single filter change here reaches
+     * every widget without threading a parameter through each of them.
+     */
+    protected ?int $agentId = null;
+
     public function __construct(protected User $user) {}
 
     /**
      * @return array<string, mixed>
      */
-    public function forRange(int $days): array
+    public function forRange(int $days, ?int $agentId = null): array
     {
         $days = in_array($days, self::RANGES, true) ? $days : self::RANGES[0];
         $since = CarbonImmutable::now()->subDays($days - 1)->startOfDay();
+        $this->agentId = $agentId;
 
         $timeline = $this->messageTimeline($since);
 
         return [
             'range' => $days,
+            // Echoed back so the view can build links (range toggle, etc.)
+            // that keep the selected agent rather than silently dropping it.
+            'agent_id' => $this->agentId,
             'has_history' => $this->hasAnyHistory(),
             'summary' => $this->summary(),
             'series' => $this->series($timeline, $since, $days),
@@ -271,6 +283,13 @@ class DashboardMetrics
      * done). A lead still sitting at `new` is a lead, not yet an order, and
      * counting it as one would make the funnel flatter than the business is.
      *
+     * Each stage after the first carries `conversion` — the share of the
+     * PREVIOUS stage that reached this one — rather than the drop-off. Not
+     * finding a lead in every conversation is not a failure on the business's
+     * part, it is a customer who did not convert at that step; a SaaS funnel
+     * (Amplitude, Mixpanel) reports that as a conversion rate, not a loss, and
+     * so does this one now.
+     *
      * @return array<int, array<string, mixed>>
      */
     protected function funnel(): array
@@ -289,9 +308,9 @@ class DashboardMetrics
             $previous = $i === 0 ? null : $stages[$i - 1]['value'];
 
             $stages[$i]['share'] = $conversations > 0 ? round($stage['value'] / $conversations * 100, 1) : 0.0;
-            $stages[$i]['drop_off'] = $previous === null || $previous === 0
+            $stages[$i]['conversion'] = $previous === null || $previous === 0
                 ? null
-                : round(($previous - $stage['value']) / $previous * 100, 1);
+                : round($stage['value'] / $previous * 100, 1);
         }
 
         return $stages;
@@ -550,12 +569,18 @@ class DashboardMetrics
      *
      * Returns an empty array for a single-agent account rather than a
      * one-bar chart: a comparison of one thing is not a comparison, and the
-     * view drops the whole widget on empty.
+     * view drops the whole widget on empty. Also empty once the page itself
+     * is scoped to one agent (the per-agent filter) — comparing an agent
+     * against itself is not a comparison either.
      *
      * @return array<int, array<string, mixed>>
      */
     protected function agentComparison(CarbonImmutable $since): array
     {
+        if ($this->agentId !== null) {
+            return [];
+        }
+
         $agents = $this->user->agents()->orderBy('name')->get(['id', 'name']);
 
         if ($agents->count() < 2) {
@@ -577,12 +602,18 @@ class DashboardMetrics
             ->groupBy('leads.agent_id')
             ->pluck('aggregate', 'leads.agent_id');
 
+        $totalMessages = (int) $messages->sum();
+
         return $agents
             ->map(fn (Agent $agent) => [
                 'id' => $agent->id,
                 'name' => $agent->name,
-                'messages' => (int) ($messages[$agent->id] ?? 0),
+                'messages' => $agentMessages = (int) ($messages[$agent->id] ?? 0),
                 'leads' => (int) ($leads[$agent->id] ?? 0),
+                // Share of the TOTAL, not of the busiest agent: "who is
+                // carrying how much of the whole" is a different question
+                // from "who is busiest", and the bar answers the first one.
+                'share' => $totalMessages > 0 ? round($agentMessages / $totalMessages * 100, 1) : 0.0,
             ])
             ->sortByDesc('messages')
             ->values()
@@ -672,6 +703,8 @@ class DashboardMetrics
     /** @return Builder<Agent> */
     protected function agentIds()
     {
-        return $this->user->agents()->select('agents.id');
+        return $this->user->agents()
+            ->select('agents.id')
+            ->when($this->agentId !== null, fn ($q) => $q->where('agents.id', $this->agentId));
     }
 }

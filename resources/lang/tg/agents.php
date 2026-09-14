@@ -554,6 +554,17 @@ return [
                 '«Пайваст кардан»-ро пахш кунед — мо Webhook URL-ро дар Green API худкор насб карда, натиҷаро дар ин ҷо нишон медиҳем.',
             ],
         ],
+        'instagrapi' => [
+            'name' => 'Instagram (instagrapi)',
+            'connected' => 'Пайваст шуд · ',
+            'error' => 'Хатои пайвастшавӣ — маълумотро тафтиш кунед',
+            'disconnected' => 'Пайваст нашудааст',
+            'username_label' => 'Логини Instagram',
+            'password_label' => 'Пароли Instagram',
+            'not_ok' => 'Сессияи Instagram ҳоло кор намекунад — аккаунтро барои дархости тасдиқи вуруд тафтиш кунед.',
+            'how_it_works' => 'Хидмати замина ҳар 10 сония паёмҳои нави шахсиро тафтиш карда, ба онҳо мисли дигар каналҳо ҷавоб медиҳад.',
+            'unofficial_warning' => 'Ин instagrapi-ро истифода мебарад — API-и ғайрирасмии Instagram, ки ҳамчун аккаунти оддӣ ворид мешавад, на тавассути Messaging API-и расмии Meta. Instagram метавонад тасдиқи вуродро дархост кунад (код ё тасдиқ аз дастгоҳи дигар) ё дар ҳолатҳои нодир аккаунтро муваққатан барои фаъолияти шубҳанок маҳдуд кунад. Аккаунти тиҷоратӣ ё муаллифиеро истифода баред, ки метавонед назорат кунед, на аккаунти асосии шахсии худро.',
+        ],
         'shared' => [
             'copied' => 'Нусха бардошта шуд',
             'webhook_url_label' => 'Webhook URL',
@@ -565,6 +576,7 @@ return [
             'app_secret_help' => 'Meta App Dashboard → Settings → Basic → App Secret. Барои тафтиши имзои дархостҳои воридотӣ лозим аст — бе он канал паёмҳоро қабул карда наметавонад.',
             'disconnect' => 'Қатъ кардан',
             'connect' => 'Пайваст кардан',
+            'manage' => 'Танзим кардан',
         ],
         'toasts' => [
             'connect_bot_failed' => 'Ботро пайваст карда нашуд',
@@ -581,6 +593,7 @@ return [
             'greenapi_connected' => 'WhatsApp (Green API) пайваст шуд — webhook худкор танзим шуд.',
             'greenapi_connected_manual' => 'WhatsApp (Green API) пайваст шуд, аммо Webhook URL-ро дастӣ гузоштан лозим аст — қадамҳоро дар корт бинед.',
             'disconnect_confirm_greenapi' => 'WhatsApp (Green API)-ро қатъ кунам? Webhook URL дар Green API низ тоза карда мешавад.',
+            'instagrapi_connected' => 'Instagram (instagrapi) пайваст шуд.',
         ],
     ],
 

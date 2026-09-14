@@ -52,7 +52,7 @@
          cost the inbox a whole band of vertical space. The negative margin lets
          it bleed to the edge while scrolling rather than clipping mid-chip. --}}
     <div data-filter-bar class="{{ $scopeAgent ? '' : 'mt-6' }} -mx-1 flex flex-nowrap items-center gap-1.5 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        @foreach (['all', 'unread', 'needs_human', 'has_lead', 'rated_down', 'closed'] as $key)
+        @foreach (['all', 'unread', 'needs_human', 'has_lead', 'rated_down', 'rated_up', 'closed'] as $key)
             <button type="button" @click="setStatus('{{ $key }}')"
                 :class="filters.status === '{{ $key }}'
                     ? 'border-brand bg-brand/10 text-brand'

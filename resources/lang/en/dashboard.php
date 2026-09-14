@@ -5,6 +5,11 @@ return [
     'heading' => 'Analytics',
     'subheading' => 'What your assistants did for you.',
 
+    'agent_filter' => [
+        'label' => 'Agent',
+        'all' => 'All agents',
+    ],
+
     'empty' => [
         'title' => 'Nothing to show yet',
         'description' => 'Your numbers will appear here once there are enough conversations. Connect a channel and let the assistant work — the first figures show up after a handful of chats.',
@@ -82,13 +87,15 @@ return [
     'funnel' => [
         'title' => 'Funnel',
         'description' => 'How conversations turn into leads and confirmed sales.',
-        'conversations' => 'Conversations',
+        'conversations' => 'Conversations started',
         'conversations_hint' => 'Every customer conversation, all time',
-        'leads' => 'Leads',
+        'leads' => 'Leads created',
         'leads_hint' => 'Conversations where the customer left an order or a contact',
-        'confirmed' => 'Confirmed',
+        'confirmed' => 'Sales closed',
         'confirmed_hint' => 'Leads taken up or closed',
-        'drop_off' => 'lost at this step: :percent%',
+        // Neutral, analytical framing — like Amplitude or Mixpanel: this
+        // reports the conversion rate INTO this stage, not a loss.
+        'conversion' => 'conversion at this step: :percent%',
         'of_all' => ':percent% of conversations',
     ],
 
@@ -103,6 +110,7 @@ return [
         'trend_title' => 'Day by day',
         'worst_title' => 'Latest replies rated 👎',
         'view_negative' => 'All negative ratings',
+        'view_positive' => 'All positive ratings',
         'open_conversation' => 'Open conversation',
         'no_negative' => 'Not a single 👎 this period — customers were happy.',
         'empty_title' => 'No ratings yet',
@@ -141,11 +149,13 @@ return [
         'description' => 'Which assistant is handling more of the conversations this period.',
         'messages' => ':count msg.',
         'leads' => ':count leads',
+        'share' => ':percent% of load',
     ],
 
     'heatmap' => [
         'title' => 'When customers write',
         'description' => 'Message volume by day of week and hour.',
+        'timezone_label' => 'Time zone: Dushanbe (UTC+5)',
         'less' => 'less',
         'more' => 'more',
         'days' => ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],

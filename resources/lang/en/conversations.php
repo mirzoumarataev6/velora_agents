@@ -57,6 +57,7 @@ return [
         'needs_human' => 'Needs human',
         'has_lead' => 'With a lead',
         'rated_down' => 'Rated 👎',
+        'rated_up' => 'Rated 👍',
         'closed' => 'Closed',
     ],
 

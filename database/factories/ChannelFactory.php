@@ -74,6 +74,21 @@ class ChannelFactory extends Factory
         ]);
     }
 
+    public function instagrapi(): static
+    {
+        return $this->state(fn () => [
+            'type' => 'instagrapi',
+            'credentials' => [
+                'ig_username' => 'test_shop',
+                'ig_password' => 'FAKE-PASSWORD-0123456789',
+            ],
+            'settings' => [
+                'status_instance' => 'ok',
+                'username' => 'test_shop',
+            ],
+        ]);
+    }
+
     public function instagram(): static
     {
         return $this->state(fn () => [

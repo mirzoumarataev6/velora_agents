@@ -27,7 +27,7 @@ use Throwable;
 class ConversationController extends Controller
 {
     /** How the inbox can be sliced. `all` is the absence of a filter. */
-    protected const STATUS_FILTERS = ['all', 'unread', 'needs_human', 'has_lead', 'rated_down', 'closed'];
+    protected const STATUS_FILTERS = ['all', 'unread', 'needs_human', 'has_lead', 'rated_down', 'rated_up', 'closed'];
 
     protected const PER_PAGE = 25;
 
@@ -271,16 +271,23 @@ class ConversationController extends Controller
                 'messages',
                 fn ($m) => $m->where('messages.rating', Message::RATING_DOWN)
             ))
+            // The positive counterpart — what the dashboard's "Все позитивные
+            // оценки" link lands on, symmetric to rated_down above.
+            ->when($filters['status'] === 'rated_up', fn ($q) => $q->whereHas(
+                'messages',
+                fn ($m) => $m->where('messages.rating', Message::RATING_UP)
+            ))
             // "All" sits next to its own "Closed" chip in the UI, so it means
             // all ACTIVE conversations — an inbox hides archived mail until
             // asked for it explicitly.
             //
-            // `rated_down` is the deliberate exception. A wrong answer does not
-            // stop being a wrong answer because the thread was archived, and
-            // hiding those would make this list disagree with the count on the
-            // card that linked here — which reads as a bug, not as a policy.
+            // `rated_down` and `rated_up` are the deliberate exceptions. A
+            // reply does not stop being a rated reply because the thread was
+            // archived, and hiding those would make this list disagree with
+            // the count on the card that linked here — which reads as a bug,
+            // not as a policy.
             ->when(
-                ! in_array($filters['status'], ['closed', 'rated_down'], true),
+                ! in_array($filters['status'], ['closed', 'rated_down', 'rated_up'], true),
                 fn ($q) => $q->where('conversations.status', '!=', 'closed')
             )
             // Message-content search, Telegram-style: the term is looked for in

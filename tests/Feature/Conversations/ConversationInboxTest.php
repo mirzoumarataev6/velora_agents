@@ -344,4 +344,51 @@ class ConversationInboxTest extends TestCase
             ->assertOk()
             ->assertSee(__('conversations.filters.rated_down'), false);
     }
+
+    /**
+     * The positive counterpart — what the dashboard's "Все позитивные оценки"
+     * link lands on, symmetric to rated_down above.
+     */
+    public function test_the_rated_up_filter_returns_only_conversations_holding_a_liked_reply(): void
+    {
+        $good = $this->conversationFor(null, ['external_user_name' => 'Happy']);
+        $good->messages()->create(['role' => 'assistant', 'content' => 'Верный ответ'])
+            ->forceFill(['rating' => Message::RATING_UP, 'rated_at' => now()])->save();
+
+        $bad = $this->conversationFor(null, ['external_user_name' => 'Unhappy']);
+        $bad->messages()->create(['role' => 'assistant', 'content' => 'Неверный ответ'])
+            ->forceFill(['rating' => Message::RATING_DOWN, 'rated_at' => now()])->save();
+
+        $this->conversationFor(null, ['external_user_name' => 'Unrated']);
+
+        $names = collect($this->actingAs($this->owner)
+            ->getJson('/conversations/list?status=rated_up')
+            ->assertOk()
+            ->json('data'))
+            ->pluck('customer');
+
+        $this->assertCount(1, $names);
+        $this->assertSame('Happy', $names->first());
+    }
+
+    /** Same archived-thread exception as rated_down, for the same reason. */
+    public function test_a_liked_reply_in_a_closed_conversation_is_still_listed(): void
+    {
+        $closed = $this->conversationFor(null, ['external_user_name' => 'Closed', 'status' => 'closed']);
+        $closed->messages()->create(['role' => 'assistant', 'content' => 'Верный ответ'])
+            ->forceFill(['rating' => Message::RATING_UP, 'rated_at' => now()])->save();
+
+        $this->actingAs($this->owner)
+            ->getJson('/conversations/list?status=rated_up')
+            ->assertOk()
+            ->assertJsonPath('data.0.customer', 'Closed');
+    }
+
+    public function test_the_inbox_offers_a_rated_up_chip(): void
+    {
+        $this->actingAs($this->owner)
+            ->get('/conversations')
+            ->assertOk()
+            ->assertSee(__('conversations.filters.rated_up'), false);
+    }
 }

@@ -57,6 +57,7 @@ return [
         'needs_human' => 'Одам лозим аст',
         'has_lead' => 'Бо дархост',
         'rated_down' => 'Бо 👎',
+        'rated_up' => 'Бо 👍',
         'closed' => 'Пӯшида',
     ],
 

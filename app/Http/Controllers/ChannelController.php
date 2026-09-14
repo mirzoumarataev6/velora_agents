@@ -320,6 +320,76 @@ class ChannelController extends Controller
         return back()->with('status', 'WhatsApp (Green API) отключён.');
     }
 
+    public function connectInstagrapi(Request $request, Agent $agent, ChannelDriverManager $drivers): RedirectResponse|JsonResponse
+    {
+        $this->authorize('update', $agent);
+
+        $data = $request->validate([
+            'ig_username' => ['required', 'string', 'max:255'],
+            'ig_password' => ['required', 'string', 'min:6'],
+        ], [], [
+            'ig_username' => 'логин Instagram',
+            'ig_password' => 'пароль Instagram',
+        ]);
+
+        $channel = $agent->channels()->firstOrNew(['type' => 'instagrapi']);
+        $channel->credentials = $data;
+        $channel->status = 'error'; // corrected to "connected" below only on success
+        $channel->save();
+
+        try {
+            $info = $drivers->for($channel)->connect($channel);
+
+            $channel->settings = array_merge($channel->settings ?? [], [
+                'status_instance' => $info['status_instance'] ?? null,
+                'username' => $info['username'] ?? null,
+            ]);
+            $channel->status = 'connected';
+            $channel->save();
+
+            if ($request->wantsJson()) {
+                return response()->json(['channel' => $this->serialize($channel)]);
+            }
+
+            return back()->with('status', 'Instagram (instagrapi) подключён.');
+        } catch (Throwable $e) {
+            $channel->save();
+            $message = 'Не удалось подключить Instagram (instagrapi): '.$e->getMessage();
+
+            if ($request->wantsJson()) {
+                return response()->json([
+                    'message' => $message,
+                    'errors' => ['ig_password' => [$message]],
+                ], 422);
+            }
+
+            return back()->withErrors(['ig_password' => $message]);
+        }
+    }
+
+    public function disconnectInstagrapi(Request $request, Agent $agent, Channel $channel, ChannelDriverManager $drivers): RedirectResponse|JsonResponse
+    {
+        $this->authorize('delete', $channel);
+
+        try {
+            $drivers->for($channel)->disconnect($channel);
+        } catch (Throwable) {
+            // Best-effort: still disconnect locally even if this call fails.
+        }
+
+        $channel->update([
+            'status' => 'disconnected',
+            'credentials' => null,
+            'settings' => null,
+        ]);
+
+        if ($request->wantsJson()) {
+            return response()->json(['channel' => $this->serialize($channel)]);
+        }
+
+        return back()->with('status', 'Instagram (instagrapi) отключён.');
+    }
+
     protected function serialize(Channel $channel): array
     {
         return [
@@ -337,6 +407,8 @@ class ChannelController extends Controller
             'state_instance' => $channel->settings['state_instance'] ?? null,
             'webhook_registered' => $channel->settings['webhook_registered'] ?? null,
             'webhook_error' => $channel->settings['webhook_error'] ?? null,
+            'ig_username' => $channel->credentials['ig_username'] ?? null,
+            'instagram_status' => $channel->settings['status_instance'] ?? null,
         ];
     }
 }

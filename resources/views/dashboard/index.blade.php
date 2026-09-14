@@ -14,6 +14,26 @@
             <h1 class="text-2xl font-semibold">{{ __('dashboard.heading') }}</h1>
             <p class="mt-1 text-sm text-muted dark:text-night-muted">{{ __('dashboard.subheading') }}</p>
         </div>
+
+        {{-- Pointless with one agent — same rule the "Нагрузка по агентам"
+             card uses: a filter over one thing is not a filter. --}}
+        @if ($agents->count() > 1)
+            <div x-data="{ agentId: {{ Js::from((string) ($metrics['agent_id'] ?? '')) }} }"
+                x-init="$watch('agentId', (value) => {
+                    const url = new URL(window.location.href);
+                    if (value) { url.searchParams.set('agent_id', value); } else { url.searchParams.delete('agent_id'); }
+                    window.location.href = url.toString();
+                })">
+                <label for="dashboard_agent_filter" class="sr-only">{{ __('dashboard.agent_filter.label') }}</label>
+                <select id="dashboard_agent_filter" x-model="agentId"
+                    class="field rounded-xl px-3 py-2 text-sm font-medium">
+                    <option value="">{{ __('dashboard.agent_filter.all') }}</option>
+                    @foreach ($agents as $agentOption)
+                        <option value="{{ $agentOption->id }}">{{ $agentOption->name }}</option>
+                    @endforeach
+                </select>
+            </div>
+        @endif
     </div>
 
     @if (! $metrics['has_history'])

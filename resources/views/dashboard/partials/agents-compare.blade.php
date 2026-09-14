@@ -11,7 +11,6 @@
 --}}
 @php
     $agents = $metrics['agent_comparison'];
-    $peak = max(1, max(array_column($agents, 'messages')));
 @endphp
 
 <div class="flex h-full flex-col rounded-2xl border border-black/10 bg-white p-5 dark:border-white/10 dark:bg-white/5">
@@ -26,14 +25,16 @@
                     <span class="shrink-0 text-xs text-muted dark:text-night-muted">
                         <span class="tnum font-medium text-ink dark:text-night-ink">{{ __('dashboard.agents_compare.messages', ['count' => $agent['messages']]) }}</span>
                         · {{ __('dashboard.agents_compare.leads', ['count' => $agent['leads']]) }}
+                        · <span class="tnum font-semibold text-brand">{{ __('dashboard.agents_compare.share', ['percent' => $agent['share']]) }}</span>
                     </span>
                 </div>
                 <div class="mt-1.5 h-2 overflow-hidden rounded-full bg-black/5 dark:bg-white/10">
-                    {{-- A share of the busiest agent, not of the total: the
-                         question is "who is doing the most", and against a
-                         total every agent looks idle once there are five. --}}
+                    {{-- A share of the TOTAL across every agent, not of the
+                         busiest one — this is the load-balance question
+                         ("who's carrying how much of the whole"), so the bars
+                         across every agent read together against one 100%. --}}
                     <div class="h-full rounded-full bg-brand transition-all duration-slow ease-out"
-                        style="width: {{ $agent['messages'] === 0 ? 0 : max(2, round($agent['messages'] / $peak * 100)) }}%"></div>
+                        style="width: {{ $agent['messages'] === 0 ? 0 : max(2, $agent['share']) }}%"></div>
                 </div>
             </div>
         @endforeach

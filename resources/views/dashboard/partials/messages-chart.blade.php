@@ -55,7 +55,11 @@
              either way. --}}
         <div class="flex rounded-full border border-black/10 p-0.5 dark:border-white/10">
             @foreach (\App\Services\Analytics\DashboardMetrics::RANGES as $option)
-                <a href="{{ route('dashboard', ['range' => $option]) }}"
+                {{-- array_filter drops agent_id when it's null rather than
+                     writing an empty "?agent_id=" — the selected agent must
+                     survive switching ranges the same way the range survives
+                     switching agents. --}}
+                <a href="{{ route('dashboard', array_filter(['range' => $option, 'agent_id' => $metrics['agent_id'] ?? null])) }}"
                     class="rounded-full px-3 py-1 text-xs font-semibold transition-colors {{ $range === $option ? 'bg-brand/10 text-brand' : 'text-muted hover:text-ink dark:text-night-muted dark:hover:text-night-ink' }}">
                     {{ __('dashboard.messages_chart.range_'.$option) }}
                 </a>
