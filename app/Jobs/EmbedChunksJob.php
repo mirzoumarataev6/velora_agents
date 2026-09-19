@@ -12,8 +12,10 @@ use Throwable;
 
 class EmbedChunksJob extends KnowledgeJob
 {
+    // Создаёт задачу построения эмбеддингов для чанков источника знаний
     public function __construct(public KnowledgeSource $source) {}
 
+    // Строит эмбеддинги для необработанных чанков и переводит источник в статус "готов"
     public function handle(LlmProviderInterface $llm, UsageRecorder $usage): void
     {
         $usage->for($this->source->agent);
@@ -27,7 +29,6 @@ class EmbedChunksJob extends KnowledgeJob
             }
 
             if ($pending->isNotEmpty()) {
-                // Embed the source name alongside the text — see KnowledgeChunk::embeddingText().
                 $pending->load('knowledgeSource');
                 $embeddings = $llm->embedBatch(
                     $pending->mapWithKeys(fn ($chunk) => [$chunk->id => $chunk->embeddingText()])->all()

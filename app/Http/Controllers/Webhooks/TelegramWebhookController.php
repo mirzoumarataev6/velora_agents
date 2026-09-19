@@ -11,6 +11,7 @@ use Illuminate\Http\Response;
 
 class TelegramWebhookController extends Controller
 {
+    // Принимает вебхук Telegram и ставит в очередь обработку входящего обновления
     public function handle(Request $request, Channel $channel, ChannelDriverManager $drivers): Response
     {
         if ($channel->type !== 'telegram') {
@@ -23,9 +24,6 @@ class TelegramWebhookController extends Controller
             abort(403);
         }
 
-        // All real processing (parsing, RAG, sending the reply) happens in the
-        // queued job — this handler only validates and enqueues, so Telegram
-        // gets its 200 OK immediately regardless of downstream latency.
         HandleIncomingMessageJob::dispatch($channel, $request->all());
 
         return response('OK', 200);

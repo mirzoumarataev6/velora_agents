@@ -11,14 +11,6 @@ use Throwable;
 
 use function __;
 
-/**
- * Tells the owner, on Telegram, that a customer has been escalated.
- *
- * Deliberately the same shape as SendLeadNotificationJob: the in-app bell is
- * driven by the conversation row itself (an unread escalation bumps the badge),
- * so this is purely the optional Telegram fan-out and no-ops quietly when the
- * owner hasn't linked a chat.
- */
 class SendEscalationNotificationJob implements ShouldQueue
 {
     use Queueable;
@@ -27,8 +19,10 @@ class SendEscalationNotificationJob implements ShouldQueue
 
     public int $tries = 2;
 
+    // Создаёт задачу уведомления владельца об эскалации диалога
     public function __construct(public Conversation $conversation) {}
 
+    // Отправляет владельцу в Telegram уведомление о диалоге, требующем внимания человека
     public function handle(ChannelDriverManager $drivers): void
     {
         $agent = $this->conversation->agent;
@@ -37,8 +31,6 @@ class SendEscalationNotificationJob implements ShouldQueue
             return;
         }
 
-        // The same account-wide mute that silences lead alerts: an owner who
-        // turned notifications off meant all of them.
         if ($agent->user && ! $agent->user->lead_notifications_enabled) {
             return;
         }

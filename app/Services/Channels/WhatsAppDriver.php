@@ -10,34 +10,21 @@ use Illuminate\Support\Facades\Log;
 use RuntimeException;
 use Throwable;
 
-/**
- * WhatsApp Cloud API driver (Meta). Webhook payload format:
- * https://developers.facebook.com/docs/whatsapp/cloud-api/webhooks/payload-examples
- *
- * Setup is manual on Meta's side (unlike Telegram's setWebhook API call):
- * the business owner pastes our webhook URL + a verify token they choose into
- * their Meta App Dashboard. connect() only validates the credentials; it
- * cannot register the webhook for them — see the Channels tab UI for the
- * step-by-step instructions we show them.
- */
 class WhatsAppDriver implements ChannelDriverInterface
 {
     use ChecksMessagingWindow, DescribesImagesWithConfidence, HasNoMessageFeedback, SplitsLongMessages, VerifiesMetaWebhook;
 
     protected const API_VERSION = 'v21.0';
 
-    // Meta's documented limit for a WhatsApp text message body.
     protected const MAX_MESSAGE_LENGTH = 4096;
 
+    // Создаёт драйвер WhatsApp с сервисом LLM и markdown-конвертацией
     public function __construct(
         protected LlmProviderInterface $llm,
         protected OutboundMarkdown $markdown = new OutboundMarkdown,
     ) {}
 
-    /**
-     * One payload per message in the batch, each carrying the `contacts` block
-     * from its own change so the customer's display name survives the split.
-     */
+    // Выделяет из пейлоада вебхука отдельные доставки сообщений WhatsApp
     public function splitDeliveries(array $payload): array
     {
         $deliveries = [];
@@ -47,7 +34,7 @@ class WhatsAppDriver implements ChannelDriverInterface
                 $value = $change['value'] ?? null;
 
                 if (! is_array($value) || empty($value['messages'])) {
-                    continue; // A "statuses" (delivery/read receipt) change, or something else.
+                    continue;
                 }
 
                 foreach ($value['messages'] as $message) {
@@ -64,13 +51,12 @@ class WhatsAppDriver implements ChannelDriverInterface
         return $deliveries;
     }
 
+    // Преобразует пейлоад WhatsApp во внутреннее представление входящего сообщения
     public function parseIncomingMessage(array $payload, Channel $channel): ?IncomingMessage
     {
         $value = $payload['entry'][0]['changes'][0]['value'] ?? null;
 
         if (! is_array($value) || empty($value['messages'][0])) {
-            // No "messages" key means this is some other webhook field we don't
-            // handle yet (e.g. "statuses" delivery/read receipts) — ignore.
             return null;
         }
 
@@ -103,12 +89,6 @@ class WhatsAppDriver implements ChannelDriverInterface
             );
         }
 
-        // A reaction or a system notice is not the customer asking us anything,
-        // so it stays silent. Anything else they deliberately SENT — a voice
-        // note, a video, a PDF, a pinned location — gets an answer saying we
-        // can only read text and photos. Returning null here meant the customer
-        // sent a document and got nothing back at all, which from their side is
-        // indistinguishable from a dead bot.
         if (in_array($type, ['reaction', 'system', 'unknown'], true)) {
             return null;
         }
@@ -155,9 +135,6 @@ class WhatsAppDriver implements ChannelDriverInterface
         );
     }
 
-    /**
-     * @return array{confident: bool, description: ?string}
-     */
     protected function describeMedia(Channel $channel, string $mediaId, ?string $mimeType): array
     {
         $unclear = ['confident' => false, 'description' => null];
@@ -165,8 +142,6 @@ class WhatsAppDriver implements ChannelDriverInterface
         try {
             $token = $this->accessToken($channel);
 
-            // WhatsApp media is two-step: resolve the media id to a short-lived
-            // download URL, then fetch it — both calls need the same bearer token.
             $meta = Http::withToken($token)->timeout(15)->get($this->apiUrl($mediaId));
 
             if ($meta->failed()) {
@@ -191,24 +166,14 @@ class WhatsAppDriver implements ChannelDriverInterface
         }
     }
 
+    // Отправляет текстовое сообщение пользователю WhatsApp, разбивая длинный текст на части
     public function sendMessage(Channel $channel, string $externalUserId, string $text): void
     {
-        // Throws rather than returning quietly. Returning was the bug: the
-        // caller recorded a Message row and reported success, so the transcript
-        // showed the operator a reply the customer had never received, and the
-        // owner had no way to find out. The exception reaches the inbox as a
-        // real error and the reply pipeline as a logged failure.
         $this->assertWithinMessagingWindow($channel, $externalUserId);
 
         $phoneNumberId = $this->phoneNumberId($channel);
         $token = $this->accessToken($channel);
 
-        // Converted before splitting, not after: WhatsApp's markers are plain
-        // characters, so a span cut across two messages degrades to a visible
-        // asterisk rather than to a rejected message. Converting first keeps the
-        // chunk sizes honest about what is actually sent.
-        // Falls back to the model's own text if the conversion throws: visible
-        // asterisks are a blemish, an undelivered message is a lost customer.
         try {
             $body = $this->markdown->toWhatsApp($text);
         } catch (Throwable $e) {
@@ -230,15 +195,12 @@ class WhatsAppDriver implements ChannelDriverInterface
         }
     }
 
+    // Отправляет индикатор набора текста (WhatsApp Cloud API его не поддерживает)
     public function sendTypingIndicator(Channel $channel, string $externalUserId): void
     {
-        // The Cloud API's typing indicator is sent by marking a specific inbound
-        // message as read (POST .../messages with status=read + typing_indicator),
-        // which needs that message's id — not available from this method's
-        // signature (externalUserId only). Best-effort no-op, same as other
-        // drivers treat this as optional.
     }
 
+    // Проверяет учётные данные и возвращает данные аккаунта при подключении канала
     public function connect(Channel $channel): array
     {
         $phoneNumberId = $this->phoneNumberId($channel);
@@ -259,12 +221,9 @@ class WhatsAppDriver implements ChannelDriverInterface
         ];
     }
 
+    // Отключает канал WhatsApp (дополнительных действий не требуется)
     public function disconnect(Channel $channel): void
     {
-        // Meta has no API to programmatically unsubscribe a webhook the way
-        // Telegram's deleteWebhook works — unsubscribing means removing the
-        // callback URL in the Meta App Dashboard. Nothing to call here; the
-        // controller clears local credentials/status.
     }
 
     protected function phoneNumberId(Channel $channel): string
@@ -294,9 +253,6 @@ class WhatsAppDriver implements ChannelDriverInterface
         return 'https://graph.facebook.com/'.self::API_VERSION.'/'.$path;
     }
 
-    /**
-     * @return array<string, mixed>
-     */
     protected function call(string $token, string $phoneNumberId, array $payload): array
     {
         try {
@@ -307,10 +263,6 @@ class WhatsAppDriver implements ChannelDriverInterface
             throw new RuntimeException("WhatsApp API connection failed: {$e->getMessage()}");
         }
 
-        // 4xx as well as 5xx. Only server errors were checked before, so every
-        // business-level rejection Meta returns with a 400 — an expired token,
-        // a number that is not on WhatsApp, a closed window, a template
-        // violation — was read as success and the message silently vanished.
         if ($response->failed()) {
             $error = $response->json('error.message') ?? $response->body();
             $code = $response->json('error.code');

@@ -5,56 +5,20 @@ namespace App\Services\Dataset;
 use App\Models\Agent;
 use Illuminate\Support\Facades\Log;
 
-/**
- * The `search_products` function-calling tool: everything the model is allowed
- * to do to an agent's products.
- *
- * The model never writes SQL. It fills in a fixed set of parameters, and this
- * class validates them and hands them to whichever ProductSource the agent is
- * using — the uploaded catalog or a live connection to the business's own
- * database. That is the whole security model, and it holds three lines in
- * particular:
- *
- *  - The tenant scope is applied by the resolver, from the Agent the reply
- *    pipeline is already holding — never from anything the model said. There is
- *    no tool parameter that names an agent or a data source, so there is nothing
- *    for a prompt injection to point at another tenant's products.
- *
- *  - MAX_LIMIT is enforced after the model's own limit, not before. A model that
- *    asks for 500 rows gets 20, which keeps a "list everything you have" both
- *    fast and non-exhaustive.
- *
- *  - The tool definition, the argument validation and the result shape are the
- *    same whatever the source. An agent behaves identically whether its prices
- *    come from a spreadsheet or from the shop's live table; only where the
- *    numbers are read from changes.
- */
 class ProductSearchService
 {
     public const TOOL_NAME = 'search_products';
 
-    /**
-     * Hard ceiling on rows returned, whatever the model asks for. Protects the
-     * query, the token budget, and the customer from being handed the catalog.
-     */
     public const MAX_LIMIT = 20;
 
-    /** Used when the model names no limit — a chat reply quotes a few items, not twenty. */
     public const DEFAULT_LIMIT = 5;
 
-    /**
-     * Rows fetched for the "nearest thing we do have" consolation search. Small
-     * on purpose: it is a suggestion attached to a miss, not a second catalog.
-     */
     public const NEAREST_LIMIT = 3;
 
-    /** Longest text query accepted; anything beyond is noise for a LIKE match. */
     protected const MAX_QUERY_LENGTH = 120;
 
-    /** Most rejected brands/families honoured on one search. */
     protected const MAX_EXCLUSIONS = 10;
 
-    /** For skeleton(): Russian and Tajik Cyrillic to a rough Latin reading. */
     protected const CYRILLIC_TO_LATIN = [
         'а' => 'a', 'б' => 'b', 'в' => 'v', 'г' => 'g', 'ғ' => 'g', 'д' => 'd', 'е' => 'e', 'ё' => 'e',
         'ж' => 'zh', 'з' => 'z', 'и' => 'i', 'ӣ' => 'i', 'й' => 'i', 'к' => 'k', 'қ' => 'k', 'л' => 'l',
@@ -63,25 +27,16 @@ class ProductSearchService
         'щ' => 'sh', 'ъ' => '', 'ы' => 'i', 'ь' => '', 'э' => 'e', 'ю' => 'yu', 'я' => 'ya',
     ];
 
+    // Создаёт сервис поиска товаров с резолвером источников каталога
     public function __construct(protected ProductSourceResolver $sources) {}
 
-    /**
-     * Whether this agent has products worth offering the tool for. An empty
-     * catalog, or a live connection that is not finished being set up, must not
-     * put the tool in the prompt: the model would call it, get nothing, and tell
-     * the customer the shop sells nothing.
-     */
+    // Сообщает, включён ли для агента поиск по каталогу товаров
     public function enabledFor(Agent $agent): bool
     {
         return $this->sources->for($agent)?->hasProducts() === true;
     }
 
-    /**
-     * The tool definition in the neutral shape LlmProviderInterface::generate()
-     * accepts under $options['tools'].
-     *
-     * @return array{name: string, description: string, parameters: array}
-     */
+    // Возвращает описание инструмента поиска товаров для LLM
     public function toolDefinition(): array
     {
         return [
@@ -147,28 +102,12 @@ class ProductSearchService
                             .self::DEFAULT_LIMIT.'. Ask for more only when the customer explicitly wants a list.',
                     ],
                 ],
-                // Nothing is required: "what do you sell?" is a legitimate call
-                // with no arguments at all.
                 'required' => [],
             ],
         ];
     }
 
-    /**
-     * Guidance appended to the system prompt when the agent has products.
-     *
-     * The freshness block below is the load-bearing part, and it is written the
-     * way it is because of a real failure: asked about a laptop it had already
-     * quoted earlier in the same conversation, the model answered from its own
-     * previous message and repeated a price that had since changed in the shop's
-     * database. It only re-checked when the customer asked it to.
-     *
-     * That is the worst thing this feature can do — a confidently quoted stale
-     * price is worse than no price — and it is not a tool bug: the model simply
-     * believed it already knew. So "I saw this above" is named and forbidden
-     * explicitly, rather than being left to follow from "the tool is the only
-     * source", which it evidently does not.
-     */
+    // Возвращает системную инструкцию о правилах использования поиска по каталогу
     public function systemInstruction(): string
     {
         return implode("\n", [
@@ -224,13 +163,7 @@ class ProductSearchService
         ]);
     }
 
-    /**
-     * Run one tool call. Returns a small structured payload for the model to
-     * phrase, never a raw model or an exception.
-     *
-     * @param  array<string, mixed>  $args  Raw search_products arguments.
-     * @return array{count: int, limit: int, filters: array<string, mixed>, products: array<int, array<string, mixed>>, note?: string}
-     */
+    // Выполняет поиск товаров по каталогу агента с учётом фильтров из аргументов
     public function search(Agent $agent, array $args): array
     {
         $limit = $this->limit($args['limit'] ?? null);
@@ -246,11 +179,6 @@ class ProductSearchService
 
             $products = $this->fetch($source, $filters, $limit);
         } catch (\Throwable $e) {
-            // A failed lookup must read to the customer as "I could not find
-            // that", never as an error. This is also the path a customer's own
-            // database being down, slow or firewalled ends up on: the reply
-            // pipeline has no better recovery available than an honest empty
-            // result, and the customer must never see a connection error.
             Log::error('search_products query failed', [
                 'agent_id' => $agent->id,
                 'source' => $source?->key(),
@@ -296,14 +224,6 @@ class ProductSearchService
         return $result;
     }
 
-    /**
-     * Normalize the model's arguments into the filters actually applied,
-     * dropping anything unusable. Returned to the model alongside the results so
-     * it can see what was really searched for.
-     *
-     * @param  array<string, mixed>  $args
-     * @return array<string, mixed>
-     */
     protected function filters(array $args): array
     {
         $filters = [];
@@ -321,9 +241,6 @@ class ProductSearchService
         $min = $this->money($args['min_price'] ?? null);
         $max = $this->money($args['max_price'] ?? null);
 
-        // A model that fills both in the wrong order ("between 500 and 100")
-        // would otherwise get a guaranteed-empty result and tell the customer
-        // there is nothing in their budget.
         if ($min !== null && $max !== null && $min > $max) {
             [$min, $max] = [$max, $min];
         }
@@ -352,12 +269,6 @@ class ProductSearchService
         return $filters;
     }
 
-    /**
-     * The model's exclusions as a clean list. Accepts a comma-separated string
-     * too: models do not always honour an array type.
-     *
-     * @return string[]
-     */
     protected function exclusions(mixed $value): array
     {
         $items = is_string($value) ? explode(',', $value) : (is_array($value) ? $value : []);
@@ -374,20 +285,6 @@ class ProductSearchService
         return array_slice(array_values(array_unique($clean)), 0, self::MAX_EXCLUSIONS);
     }
 
-    /**
-     * One source fetch, with the customer's exclusions applied.
-     *
-     * Applied here rather than inside each source: the live-database query
-     * builder has no negative condition, and a rejection has to hold the same
-     * whichever source the agent uses. With exclusions it over-fetches to the
-     * row cap first, so excluded rows are replaced by the next ones rather than
-     * just shrinking the answer. The cost is that in a catalog much larger than
-     * MAX_LIMIT a heavily-excluded search can come back short — which still
-     * never re-offers what the customer rejected.
-     *
-     * @param  array<string, mixed>  $filters
-     * @return array<int, array<string, mixed>>
-     */
     protected function fetch(ProductSource $source, array $filters, int $limit): array
     {
         $exclude = $filters['exclude'] ?? [];
@@ -404,10 +301,6 @@ class ProductSearchService
         return array_slice(array_values($rows), 0, $limit);
     }
 
-    /**
-     * @param  array<string, mixed>  $row
-     * @param  string[]  $exclude
-     */
     protected function isExcluded(array $row, array $exclude): bool
     {
         $haystack = $this->skeleton(implode(' ', array_map(
@@ -426,11 +319,6 @@ class ProductSearchService
         return false;
     }
 
-    /**
-     * A spelling-insensitive form for matching a rejected brand: Cyrillic
-     * transliterated, spaces dropped, and the Latin spellings that sound alike
-     * folded together — so "МакБук", "мак бук" and "MacBook" are one word.
-     */
     protected function skeleton(string $text): string
     {
         $text = strtr(mb_strtolower($text), self::CYRILLIC_TO_LATIN);
@@ -440,10 +328,6 @@ class ProductSearchService
         return (string) preg_replace('/(.)\1+/', '$1', $text);
     }
 
-    /**
-     * The row count actually used: the model's request clamped into
-     * [1, MAX_LIMIT], defaulting when it asked for nothing sensible.
-     */
     protected function limit(mixed $requested): int
     {
         if (! is_numeric($requested)) {
@@ -470,25 +354,6 @@ class ProductSearchService
         return $value === '' ? null : mb_substr($value, 0, $limit);
     }
 
-    /**
-     * Remove filters this source physically cannot answer, and say so.
-     *
-     * THE BUG THIS EXISTS FOR. A catalog uploaded without a stock column stores
-     * NULL stock on every row. `stock > 0` is false for NULL, so a single
-     * in_stock_only argument excluded the entire catalog — every query, every
-     * category, ten rows in and nothing out. And the model reaches for that
-     * argument constantly, because "есть ли у вас игровые ноуты" means "do you
-     * HAVE gaming laptops", which reads exactly like asking what is available.
-     * The shop looked empty to its own assistant.
-     *
-     * Dropping the filter is right, but silently dropping it is not: the model
-     * asked for in-stock products and would otherwise assume that is what came
-     * back, and go on to tell the customer the item is in stock. So the note
-     * says the catalog does not track stock and forbids the claim.
-     *
-     * @param  array<string, mixed>  $filters  Modified in place.
-     * @return array{note?: string}
-     */
     protected function dropUnanswerableFilters(Agent $agent, ?ProductSource $source, array &$filters): array
     {
         if (empty($filters['in_stock_only']) || $source === null || $source->tracksStock()) {
@@ -508,22 +373,6 @@ class ProductSearchService
             .'need to know, offer to check.'];
     }
 
-    /**
-     * The nearest thing the catalog does have, found by dropping one filter.
-     *
-     * An empty result is where this feature used to fail the customer: the model
-     * was handed nothing but a fixed sentence saying so, and wrote the same
-     * apology every turn because that was genuinely all it had. Giving it the
-     * products that were ONE filter away — the same laptops just over budget,
-     * the same category without the price cap — means the not-found reply has
-     * something real and different in it every time.
-     *
-     * Bounded, and tried in the order a customer would accept them: the budget
-     * stretched first, then availability, then the category widened.
-     *
-     * @param  array<string, mixed>  $filters
-     * @return array{products: array<int, array<string, mixed>>, note: string|null, relaxed: string|null}
-     */
     protected function nearest(?ProductSource $source, array $filters): array
     {
         $none = ['products' => [], 'note' => null, 'relaxed' => null];
@@ -539,10 +388,6 @@ class ProductSearchService
         }
 
         if (! empty($filters['in_stock_only'])) {
-            // Before the category, deliberately. Asked for a gaming laptop that
-            // is in stock, "we have that one, it is just not in right now" is
-            // the answer the customer wants; a monitor from a wider search is
-            // not. Widening the category is the last resort, not the first.
             $relaxations['stock'] = array_diff_key($filters, array_flip(['in_stock_only']));
         }
 
@@ -556,8 +401,6 @@ class ProductSearchService
                     ? $this->nearestByPrice($source, $wider, $filters)
                     : $this->fetch($source, $wider, self::NEAREST_LIMIT);
             } catch (\Throwable $e) {
-                // The first query already failed loudly enough; a failed
-                // consolation query is not worth a second log line or a turn.
                 return $none;
             }
 
@@ -584,20 +427,6 @@ class ProductSearchService
         return $none;
     }
 
-    /**
-     * The products closest to the budget the customer named, nearest first,
-     * each carrying how far outside it lies.
-     *
-     * THE BUG THIS REPLACES. The price filter used to be dropped and the next
-     * three rows taken in catalog order — in the reported catalog, three
-     * MacBooks at 8199-11999 — while a laptop at 5999, one somoni under the
-     * customer's 6000 floor, sat further down the file. Two sorted queries, one
-     * each side of the range, find the true nearest in any source.
-     *
-     * @param  array<string, mixed>  $wider  The filters without the price bounds.
-     * @param  array<string, mixed>  $filters  The original filters, bounds included.
-     * @return array<int, array<string, mixed>>
-     */
     protected function nearestByPrice(ProductSource $source, array $wider, array $filters): array
     {
         $min = $filters['min_price'] ?? null;
@@ -620,7 +449,6 @@ class ProductSearchService
             }
         }
 
-        // A row with no readable price cannot be placed relative to a budget.
         $candidates = array_values(array_filter($candidates, fn (array $row) => isset($row['budget_gap'])));
 
         usort($candidates, fn (array $a, array $b) => $a['budget_gap']['amount'] <=> $b['budget_gap']['amount']);
@@ -628,10 +456,6 @@ class ProductSearchService
         return array_slice($candidates, 0, self::NEAREST_LIMIT);
     }
 
-    /**
-     * @param  array<string, mixed>  $row
-     * @return array<string, mixed>
-     */
     protected function withBudgetGap(array $row, ?float $min, ?float $max): array
     {
         $price = is_numeric($row['price'] ?? null)
@@ -658,19 +482,6 @@ class ProductSearchService
         return $amount == floor($amount) ? (int) $amount : $amount;
     }
 
-    /**
-     * What the model is told about an empty result.
-     *
-     * Written per call, from the filters that were actually applied, and it says
-     * so out loud. The static version of this string was the reason a customer
-     * got the identical "к сожалению, ничего не нашлось" on every turn: given the
-     * same sentence each time, the model repeated it each time. Naming this
-     * search's own filters, and forbidding the reuse of an earlier reply, gives
-     * it something specific to say and no template to fall back on.
-     *
-     * @param  array<string, mixed>  $filters
-     * @param  array{products: array<int, array<string, mixed>>, note: string|null, relaxed: string|null}  $nearest
-     */
     protected function emptyResultNote(array $filters, array $nearest): string
     {
         $note = $filters === []
@@ -692,12 +503,6 @@ class ProductSearchService
             .'again reads as a broken bot rather than a person. Vary the wording every time.';
     }
 
-    /**
-     * The applied filters in words, so the model's reply can be about this
-     * search rather than about searching in general.
-     *
-     * @param  array<string, mixed>  $filters
-     */
     protected function describeFilters(array $filters): string
     {
         $parts = [];

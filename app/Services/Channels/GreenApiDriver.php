@@ -15,48 +15,30 @@ use RuntimeException;
 use Symfony\Component\HttpFoundation\Response;
 use Throwable;
 
-/**
- * WhatsApp through Green API (green-api.com) — an unofficial gateway driving a
- * linked WhatsApp Web session on the owner's own number, as opposed to
- * WhatsAppDriver's official Cloud API. Notification format:
- * https://green-api.com/en/docs/api/receiving/notifications-format/
- *
- * Where it differs from the Cloud API, and why the code looks the way it does:
- *  - Webhooks carry no signature. The body names the instance it came from,
- *    which must match the stored idInstance. idInstance alone is not a secret
- *    (it is in every API URL), so once connect() has registered the webhook
- *    itself, the per-channel token it handed Green API (webhookUrlToken) must
- *    also come back in the Authorization header.
- *  - No GET handshake: verifyWebhook() just answers 200.
- *  - The webhook URL CAN be set over the API (setSettings), so connect() does
- *    it — and reports, rather than fails, when it cannot.
- *  - No message editing and no inline buttons, so no 👍/👎 (HasNoMessageFeedback).
- */
 class GreenApiDriver implements ChannelDriverInterface
 {
     use ChecksMessagingWindow, DescribesImagesWithConfidence, HasNoMessageFeedback, SplitsLongMessages;
 
     public const DEFAULT_API_URL = 'https://7107.api.greenapi.com';
 
-    // Green API accepts far more, but WhatsApp clients render long walls of
-    // text badly; kept equal to the Cloud driver so both channels read alike.
     protected const MAX_MESSAGE_LENGTH = 4096;
 
     protected const INCOMING_MESSAGE = 'incomingMessageReceived';
 
+    // Создаёт драйвер Green API с сервисами LLM, транскрибации и markdown-конвертации
     public function __construct(
         protected LlmProviderInterface $llm,
         protected VoiceTranscriber $transcriber,
         protected OutboundMarkdown $markdown = new OutboundMarkdown,
     ) {}
 
+    // Подтверждает вебхук Green API (у Green API отдельной верификации нет)
     public function verifyWebhook(Request $request, Channel $channel): ?Response
     {
-        // Green API has no verification handshake; a GET is only ever someone
-        // checking whether the endpoint is up.
         return response('OK', 200);
     }
 
+    // Проверяет подлинность входящего запроса по idInstance и токену вебхука
     public function authenticateIncomingRequest(Request $request, Channel $channel): bool
     {
         $expected = (string) ($channel->credentials['id_instance'] ?? '');
@@ -68,43 +50,31 @@ class GreenApiDriver implements ChannelDriverInterface
 
         $token = $channel->credentials['webhook_token'] ?? null;
 
-        // Demanded only once Green API is known to have the token, i.e.
-        // connect()'s setSettings call succeeded. An owner who pasted the URL
-        // by hand never gave Green API a token, and requiring one would reject
-        // every message they receive.
         if (empty($channel->settings['webhook_registered']) || empty($token)) {
             return true;
         }
 
-        // Accepted with or without the "Bearer " prefix.
         return hash_equals($token, Str::after((string) $request->header('Authorization', ''), 'Bearer '));
     }
 
-    /**
-     * One notification per POST, but most are not customer messages — delivery
-     * statuses, the owner's own outgoing messages, instance state changes.
-     * Those are dropped here so they never cost a queued job.
-     */
+    // Выделяет из пейлоада вебхука доставки, относящиеся к входящему сообщению
     public function splitDeliveries(array $payload): array
     {
         return ($payload['typeWebhook'] ?? null) === self::INCOMING_MESSAGE ? [$payload] : [];
     }
 
+    // Преобразует пейлоад Green API во внутреннее представление входящего сообщения
     public function parseIncomingMessage(array $payload, Channel $channel): ?IncomingMessage
     {
         if (($payload['typeWebhook'] ?? null) !== self::INCOMING_MESSAGE) {
             return null;
         }
 
-        // The documented notification is flat; some examples wrap everything
-        // below instanceData in "body". Both are read.
         $body = is_array($payload['body'] ?? null) ? $payload['body'] : $payload;
 
         $chatId = (string) data_get($body, 'senderData.chatId', '');
         $messageId = (string) ($body['idMessage'] ?? '');
 
-        // Personal chats only: a group (@g.us) is not a customer talking to the
-        // business, and answering in one would reply to everybody in it.
         if (! str_ends_with($chatId, '@c.us') || $messageId === '') {
             return null;
         }
@@ -116,11 +86,9 @@ class GreenApiDriver implements ChannelDriverInterface
 
         return match ($type) {
             'textMessage' => new IncomingMessage($messageId, $userId, $userName, (string) data_get($data, 'textMessageData.textMessage', ''), 'text'),
-            // A message with a link preview, or a reply quoting an earlier one.
             'extendedTextMessage', 'quotedMessage' => new IncomingMessage($messageId, $userId, $userName, (string) data_get($data, 'extendedTextMessageData.text', ''), 'text'),
             'imageMessage' => $this->buildPhotoMessage($messageId, $userId, $userName, $data['fileMessageData'] ?? []),
             'audioMessage' => $this->handleVoice($channel, $messageId, $userId, $userName, $data['fileMessageData'] ?? []),
-            // Not the customer asking anything — same silence as WhatsAppDriver.
             '', 'reactionMessage', 'deletedMessage', 'editedMessage' => null,
             default => new IncomingMessage(
                 $messageId,
@@ -132,9 +100,6 @@ class GreenApiDriver implements ChannelDriverInterface
         };
     }
 
-    /**
-     * @param  array<string, mixed>  $file
-     */
     protected function buildPhotoMessage(string $messageId, string $userId, ?string $userName, array $file): IncomingMessage
     {
         $caption = trim((string) ($file['caption'] ?? ''));
@@ -155,10 +120,6 @@ class GreenApiDriver implements ChannelDriverInterface
         return new IncomingMessage($messageId, $userId, $userName, "[Customer sent an image. Identified: {$vision['description']}]", 'photo');
     }
 
-    /**
-     * @param  array<string, mixed>  $file
-     * @return array{confident: bool, description: ?string}
-     */
     protected function describeDownload(array $file): array
     {
         $unclear = ['confident' => false, 'description' => null];
@@ -180,14 +141,6 @@ class GreenApiDriver implements ChannelDriverInterface
         }
     }
 
-    /**
-     * Same contract as TelegramDriver::handleVoice(): the transcript becomes an
-     * ordinary text turn, and every failure is a typed placeholder rather than
-     * an exception. Green API reports neither duration nor size up front, so
-     * the byte limit is enforced on the download itself.
-     *
-     * @param  array<string, mixed>  $file
-     */
     protected function handleVoice(Channel $channel, string $messageId, string $userId, ?string $userName, array $file): IncomingMessage
     {
         $message = fn (string $text, string $type) => new IncomingMessage($messageId, $userId, $userName, $text, $type);
@@ -209,9 +162,6 @@ class GreenApiDriver implements ChannelDriverInterface
                 return $message('[Customer sent a voice message that is too large to process.]', 'voice_too_long');
             }
 
-            // Extension on the name actually written — ffmpeg and Whisper both
-            // go by it. tempnam() creates the file it reserves, so release it
-            // (see TelegramDriver::downloadVoice()).
             $extension = pathinfo((string) ($file['fileName'] ?? ''), PATHINFO_EXTENSION) ?: 'oga';
             $reserved = tempnam(sys_get_temp_dir(), 'velora-voice-');
             $tempPath = $reserved.'.'.$extension;
@@ -238,15 +188,11 @@ class GreenApiDriver implements ChannelDriverInterface
         }
     }
 
+    // Отправляет текстовое сообщение пользователю через Green API, разбивая длинный текст на части
     public function sendMessage(Channel $channel, string $externalUserId, string $text): void
     {
-        // Green API itself would deliver after 24 hours — it is a WhatsApp Web
-        // session, not the Cloud API. The window is kept so both WhatsApp
-        // channels behave the same, and because unsolicited messages from an
-        // unofficial client are the quickest way to get a number banned.
         $this->assertWithinMessagingWindow($channel, $externalUserId);
 
-        // Same fallback as WhatsAppDriver: visible asterisks beat a lost reply.
         try {
             $body = $this->markdown->toWhatsApp($text);
         } catch (Throwable $e) {
@@ -264,18 +210,13 @@ class GreenApiDriver implements ChannelDriverInterface
                 'message' => $chunk,
             ]);
 
-            // Throws for the same reason WhatsAppDriver does: a swallowed
-            // failure shows the operator a reply the customer never received.
             if ($response->failed()) {
                 throw new RuntimeException("Green API rejected the message (HTTP {$response->status()}): {$this->errorOf($response)}");
             }
         }
     }
 
-    /**
-     * "79001234567" → "79001234567@c.us". An id that already names its chat
-     * is passed through untouched.
-     */
+    // Приводит идентификатор пользователя к формату chatId Green API
     public function chatId(string $externalUserId): string
     {
         return str_contains($externalUserId, '@')
@@ -283,16 +224,12 @@ class GreenApiDriver implements ChannelDriverInterface
             : preg_replace('/\D/', '', $externalUserId).'@c.us';
     }
 
+    // Отправляет индикатор набора текста (Green API его не поддерживает)
     public function sendTypingIndicator(Channel $channel, string $externalUserId): void
     {
-        // Best-effort no-op, as for the Cloud driver.
     }
 
-    /**
-     * Validates the credentials, then tries to point the instance's webhook at
-     * us. A failed registration does not fail the connection: the owner can
-     * still paste the URL into the Green API console, and the result says why.
-     */
+    // Проверяет учётные данные и регистрирует вебхук при подключении канала
     public function connect(Channel $channel): array
     {
         $response = $this->call($channel, 'get', 'getStateInstance');
@@ -302,19 +239,12 @@ class GreenApiDriver implements ChannelDriverInterface
         }
 
         return [
-            // "authorized" once the QR code has been scanned; anything else
-            // means messages will not arrive yet.
             'state_instance' => $response->json('stateInstance'),
             'webhook_url' => route('webhooks.greenapi', $channel),
         ] + $this->registerWebhook($channel, Str::random(48));
     }
 
-    /**
-     * Set the webhook URL (and the token Green API must send back with it) via
-     * setSettings — Green API's counterpart to Telegram's setWebhook.
-     *
-     * @return array{webhook_registered: bool, webhook_error: ?string, webhook_token: string}
-     */
+    // Регистрирует URL и токен вебхука в настройках инстанса Green API
     public function registerWebhook(Channel $channel, string $token): array
     {
         $result = fn (bool $ok, ?string $error = null) => [
@@ -340,16 +270,12 @@ class GreenApiDriver implements ChannelDriverInterface
         return $result(false, "HTTP {$response->status()}: {$this->errorOf($response)}");
     }
 
+    // Отключает канал, очищая настройки вебхука в Green API
     public function disconnect(Channel $channel): void
     {
-        // Stop Green API posting to a channel that no longer exists here.
         $this->call($channel, 'post', 'setSettings', ['webhookUrl' => '', 'webhookUrlToken' => '']);
     }
 
-    /**
-     * @param  'get'|'post'  $method
-     * @param  array<string, mixed>  $payload
-     */
     protected function call(Channel $channel, string $method, string $apiMethod, array $payload = []): ClientResponse
     {
         $url = sprintf(
@@ -365,7 +291,6 @@ class GreenApiDriver implements ChannelDriverInterface
                 ->retry(2, 300, fn ($e) => $e instanceof ConnectionException, throw: false)
                 ->{$method}($url, $payload);
         } catch (ConnectionException) {
-            // Without the exception's message: it quotes the URL, which embeds the token.
             throw new RuntimeException("Could not reach Green API ({$apiMethod}).");
         }
     }

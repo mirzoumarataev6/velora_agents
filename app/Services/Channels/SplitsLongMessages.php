@@ -2,15 +2,8 @@
 
 namespace App\Services\Channels;
 
-/**
- * Splits outgoing text at a platform's message-length limit, preferring to
- * break on a paragraph/sentence/word boundary so words aren't cut mid-way.
- */
 trait SplitsLongMessages
 {
-    /**
-     * @return string[]
-     */
     protected function splitMessage(string $text, int $maxLength): array
     {
         if (mb_strlen($text) <= $maxLength) {

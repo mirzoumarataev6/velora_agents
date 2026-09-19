@@ -13,8 +13,10 @@ use Throwable;
 
 class ChunkTextJob extends KnowledgeJob
 {
+    // Создаёт задачу разбиения извлечённого текста источника на чанки
     public function __construct(public KnowledgeSource $source) {}
 
+    // Разбивает извлечённый текст источника на чанки и запускает их эмбеддинг
     public function handle(ChunkerService $chunker, LlmProviderInterface $llm): void
     {
         $this->beginStep();

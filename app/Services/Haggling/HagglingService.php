@@ -8,53 +8,28 @@ use App\Models\Lead;
 use App\Services\Leads\PhoneNumberDetector;
 use Illuminate\Support\Str;
 
-/**
- * Owns price negotiation: the tool the model calls when a customer pushes below
- * the owner's floor, the per-level prompt guidance that decides how the haggle
- * SOUNDS, and the pending-approval row it produces.
- *
- * Shaped like LeadCaptureService and EscalationService on purpose — the reply
- * pipeline only has to decide "offer the tool?" and "a call came back — act on
- * it" — but with one rule the other two do not have:
- *
- *   The level changes style. It never changes the answer.
- *
- * Soft, moderate and firm differ in how quickly the assistant warms up, how
- * many rounds it holds out and what it offers instead of money. All three end
- * in exactly the same place when the customer will not come up to the floor:
- * the owner is asked. There is no level at which the assistant may agree a
- * below-floor price by itself, because an assistant that can discount 10% on
- * its own can be talked into discounting 10% on everything.
- */
 class HagglingService
 {
     public const TOOL_NAME = 'request_price_approval';
 
-    /** Conversational styles the owner can pick between. */
     public const LEVELS = ['soft', 'moderate', 'firm'];
 
     public const DEFAULT_LEVEL = 'moderate';
 
-    /** Marks a lead row as a price request rather than an order. */
     public const TYPE = 'haggle';
 
-    /** The status such a row sits in until the owner answers. */
     public const STATUS_PENDING = 'awaiting_price_approval';
 
+    // Создаёт сервис торга с детектором телефонных номеров
     public function __construct(protected PhoneNumberDetector $phones) {}
 
-    /** Whether this agent negotiates at all. */
+    // Сообщает, включён ли для агента торг по цене
     public function enabledFor(Agent $agent): bool
     {
         return $agent->hagglesOnPrice();
     }
 
-    /**
-     * The tool definition in the neutral shape LlmProviderInterface::generate()
-     * accepts under $options['tools'].
-     *
-     * @return array{name: string, description: string, parameters: array}
-     */
+    // Возвращает описание инструмента запроса одобрения цены для LLM
     public function toolDefinition(): array
     {
         return [
@@ -104,13 +79,7 @@ class HagglingService
         ];
     }
 
-    /**
-     * Guidance appended to the system prompt when the agent negotiates.
-     *
-     * The floor is stated as a percentage rather than as an absolute figure
-     * because one agent covers a whole catalog: the model is told the rule, and
-     * applies it to whatever price search_products just returned.
-     */
+    // Возвращает системную инструкцию о правилах торга для конкретного агента
     public function systemInstruction(Agent $agent): string
     {
         $percent = max(1, min(100, (int) ($agent->haggle_min_price_percent ?? 100)));
@@ -141,26 +110,6 @@ class HagglingService
         ], $this->styleLines($this->levelFor($agent)), $this->ownerGuidanceLines($agent)));
     }
 
-    /**
-     * The owner's own free-text negotiating instructions, and the fence around
-     * them.
-     *
-     * They sit AFTER the level's style block because that is what they are for:
-     * refining how the negotiation sounds, naming products that never move,
-     * supplying the phrase the owner wants used. Within the conversation they
-     * outrank the generic style lines — the owner knows their shop better than
-     * a three-way preset does.
-     *
-     * What they must never do is move the floor. An owner typing "just approve
-     * anything above 3000" into a textarea has written a sentence, not changed
-     * a setting, and a model that treated the two as equivalent would hand out
-     * discounts nobody configured. So the fence is stated to the model here —
-     * and, more importantly, is not left to the model at all: the escalation
-     * decision is isBelowFloor(), which reads the numbers and never reads this
-     * text. The paragraph below is the belt; that check is the braces.
-     *
-     * @return string[]
-     */
     protected function ownerGuidanceLines(Agent $agent): array
     {
         $instructions = trim((string) ($agent->haggling_instructions ?? ''));
@@ -186,11 +135,6 @@ class HagglingService
         ];
     }
 
-    /**
-     * The one thing the level actually changes.
-     *
-     * @return string[]
-     */
     protected function styleLines(string $level): array
     {
         return match ($level) {
@@ -230,23 +174,13 @@ class HagglingService
         };
     }
 
+    // Возвращает уровень жёсткости торга, настроенный для агента
     public function levelFor(Agent $agent): string
     {
         return $agent->hagglingLevel();
     }
 
-    /**
-     * Whether this asking price is genuinely below the owner's floor.
-     *
-     * The prompt already tells the model not to escalate a price it is allowed
-     * to give, and the model sometimes does it anyway — usually because it read
-     * the listed price off its own earlier message. Checked here so an offer
-     * the assistant could simply have accepted never reaches the owner's inbox
-     * as a decision they have to make.
-     *
-     * Unknown prices (either side missing or zero) fall through as "below": a
-     * request we cannot price is one a person should look at.
-     */
+    // Определяет, ниже ли запрошенная цена минимально допустимой для агента
     public function isBelowFloor(Agent $agent, ?float $requested, ?float $listed): bool
     {
         if ($requested === null || $listed === null || $listed <= 0 || $requested <= 0) {
@@ -256,11 +190,7 @@ class HagglingService
         return $requested < $agent->minimumPriceFor($listed);
     }
 
-    /**
-     * Record the pending request as a lead the owner can act on.
-     *
-     * @param  array<string, mixed>  $args  Raw request_price_approval arguments.
-     */
+    // Сохраняет запрос на торг как лид, ожидающий одобрения цены владельцем
     public function persist(Agent $agent, ?Conversation $conversation, array $args, string $source): Lead
     {
         $requested = $this->money($args['requested_price'] ?? null);
@@ -284,13 +214,7 @@ class HagglingService
         ]);
     }
 
-    /**
-     * What the model is told once the request is filed.
-     *
-     * It is told, in as many words, that nothing has been granted — a model that
-     * believes the discount went through writes "готово, цена ваша", and the
-     * customer arrives at the shop expecting a price nobody agreed to.
-     */
+    // Возвращает инструкцию для ответа клиенту, пока цена ожидает одобрения владельца
     public function pendingInstruction(): string
     {
         return implode("\n", [
@@ -304,7 +228,7 @@ class HagglingService
         ]);
     }
 
-    /** What the model is told when the request could not be written. */
+    // Возвращает инструкцию для ответа клиенту, если сохранить запрос на торг не удалось
     public function failureInstruction(): string
     {
         return 'The price request could NOT be sent — the write failed. Do not tell the customer their price is '
@@ -312,10 +236,7 @@ class HagglingService
             .'technical problem, and tell them a colleague will get back to them about the price.';
     }
 
-    /**
-     * Said when the model could not write the holding sentence itself. The
-     * request is already filed by then, so the customer must still hear back.
-     */
+    // Возвращает запасной текст сообщения о том, что цена уточняется у менеджера
     public function pendingFallback(Agent $agent): string
     {
         return $agent->response_format['haggle_pending_message']

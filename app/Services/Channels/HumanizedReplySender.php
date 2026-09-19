@@ -6,35 +6,12 @@ use App\Models\Channel;
 use App\Models\Message;
 use Illuminate\Support\Sleep;
 
-/**
- * Delivers one assistant reply to a customer as the 2-3 short consecutive
- * messages a person would actually type instead of a single wall of text —
- * with a typing indicator during each pause.
- *
- * This is a DELIVERY concern only. The reply is still one assistant turn: one
- * Message row, one lead-capture pass, one usage log. Nothing downstream sees
- * the split, so conversation history and analytics can't double-count it.
- */
 class HumanizedReplySender
 {
+    // Создаёт отправитель ответов с разбивкой текста через HumanReplySplitter
     public function __construct(protected HumanReplySplitter $splitter) {}
 
-    /**
-     * @param  Message|null  $rateable  The assistant turn these messages are a
-     *                                  delivery of. When given, the LAST message
-     *                                  carries a 👍/👎 control bound to it — the
-     *                                  last, because the answer is not finished
-     *                                  until it lands, and asking someone to rate
-     *                                  a reply still being typed is asking them
-     *                                  to rate half of it. Channels that cannot
-     *                                  carry a control simply send the text.
-     * @param  string|null  $feedbackPrompt  One line telling the customer why
-     *                                       they are being asked, appended to
-     *                                       the message that carries the
-     *                                       control. Delivery only — it is not
-     *                                       part of the stored reply.
-     * @return int How many messages the reply was delivered as.
-     */
+    // Отправляет ответ частями с имитацией печати, как это делает человек
     public function send(
         ChannelDriverInterface $driver,
         Channel $channel,
@@ -48,8 +25,6 @@ class HumanizedReplySender
 
         foreach ($messages as $index => $message) {
             if ($index > 0) {
-                // Indicator first, then the pause, so the customer sees
-                // "typing…" for the whole gap rather than after it.
                 $driver->sendTypingIndicator($channel, $externalUserId);
                 Sleep::for($this->delayMsFor($message))->milliseconds();
             }
@@ -70,14 +45,9 @@ class HumanizedReplySender
         return count($messages);
     }
 
-    /**
-     * @return string[]
-     */
+    // Возвращает список сообщений, на которые будет разбит текст ответа
     public function messagesFor(string $text): array
     {
-        // Unconditional. This used to be a per-agent toggle; sounding like a
-        // person is not a preference an owner benefits from switching off, and
-        // the splitter already leaves anything short as one message.
         return $this->splitter->split(
             $text,
             (int) config('agent.humanize.min_length', 200),
@@ -85,10 +55,6 @@ class HumanizedReplySender
         );
     }
 
-    /**
-     * Pause before a follow-up message, scaled by its length (a longer message
-     * reads as taking longer to type) and clamped to the configured range.
-     */
     protected function delayMsFor(string $message): int
     {
         $min = (int) config('agent.humanize.min_delay_ms', 800);

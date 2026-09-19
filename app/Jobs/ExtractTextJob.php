@@ -10,8 +10,10 @@ use Throwable;
 
 class ExtractTextJob extends KnowledgeJob
 {
+    // Создаёт задачу извлечения текста из источника знаний
     public function __construct(public KnowledgeSource $source) {}
 
+    // Извлекает текст из источника знаний и запускает его разбиение на чанки
     public function handle(KnowledgeExtractionService $extractor, UsageRecorder $usage): void
     {
         $usage->for($this->source->agent);

@@ -4,20 +4,10 @@ namespace App\Services\Channels;
 
 use Throwable;
 
-/**
- * Shared vision confidence check used by every channel driver's photo
- * handling: identify a specific product/brand if possible, or signal
- * "unclear" via a sentinel so the caller can ask a short clarifying question
- * instead of describing the image or guessing. Requires the using class to
- * expose a `protected LlmProviderInterface $llm` property.
- */
 trait DescribesImagesWithConfidence
 {
     protected const VISION_UNKNOWN_SENTINEL = 'UNKNOWN';
 
-    /**
-     * @return array{confident: bool, description: ?string}
-     */
     protected function describeImageBytes(string $bytes, string $mimeType): array
     {
         $unclear = ['confident' => false, 'description' => null];
@@ -45,7 +35,6 @@ trait DescribesImagesWithConfidence
 
             return ['confident' => true, 'description' => $text];
         } catch (Throwable) {
-            // Vision description is a nice-to-have; treat any failure as "unclear" rather than propagating.
             return $unclear;
         } finally {
             @unlink($tmpPath);

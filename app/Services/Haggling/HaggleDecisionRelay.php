@@ -10,81 +10,46 @@ use App\Services\Reply\LanguageDetector;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
-/**
- * Carries the owner's answer back into the customer's conversation.
- *
- * The customer was told "я уточню у менеджера и вернусь к вам". That sentence
- * is a promise with a deadline the customer sets, not us: if the owner clicks
- * approve and nothing reaches the chat, the shop has quietly lost the sale it
- * just agreed to. So the relay is part of the decision, not a follow-up task.
- *
- * The wording is templated rather than generated. Three reasons: the owner's
- * answer is a commitment about money and must not be paraphrased by a model; a
- * decline has to stay polite even when the provider is down; and one API call
- * per click is a cost with nothing to show for it. The customer's language is
- * detected from what they actually wrote — the same detector the reply pipeline
- * uses — so the templates still arrive in Russian, Tajik or English as
- * appropriate.
- */
 class HaggleDecisionRelay
 {
-    /** How far back to look for the language the customer is writing in. */
     protected const LANGUAGE_LOOKBACK = 5;
 
+    // Создаёт транслятор решений по торгу с драйверами каналов и определением языка
     public function __construct(
         protected ChannelDriverManager $drivers,
         protected HumanizedReplySender $sender,
         protected LanguageDetector $languages,
     ) {}
 
-    /**
-     * The owner said yes — at the price the customer asked for, or at a counter
-     * the owner typed in instead.
-     */
+    // Одобряет запрошенную клиентом цену и отправляет ему подтверждение
     public function approve(Lead $lead, ?float $price = null): Message
     {
         $granted = $price ?? (float) $lead->requested_price;
 
         $lead->forceFill([
             'approved_price' => $granted > 0 ? $granted : null,
-            // Approved, not finished: somebody still has to fulfil the order.
             'status' => 'in_progress',
         ])->save();
 
         return $this->relay($lead, $this->approvalText($lead, $granted));
     }
 
-    /**
-     * The owner said no — optionally naming a price they WOULD do, which turns
-     * a dead end back into a negotiation.
-     */
+    // Отклоняет запрошенную клиентом цену, при желании предлагая встречную
     public function decline(Lead $lead, ?float $counterPrice = null): Message
     {
         $lead->forceFill([
             'approved_price' => $counterPrice !== null && $counterPrice > 0 ? $counterPrice : null,
-            // A counter is still a live conversation; a flat no is finished.
             'status' => $counterPrice !== null && $counterPrice > 0 ? 'in_progress' : 'done',
         ])->save();
 
         return $this->relay($lead, $this->declineText($lead, $counterPrice));
     }
 
-    /**
-     * Persist the relayed sentence as an ordinary assistant turn and deliver it
-     * on whatever channel the conversation came in on.
-     *
-     * Persisted first, and delivery failures are logged rather than thrown: the
-     * owner's decision is recorded either way, and a transcript that shows what
-     * the shop decided is more useful to them than an error page. Playground
-     * conversations have no channel and simply get the message in the thread.
-     */
     protected function relay(Lead $lead, string $text): Message
     {
         $conversation = $lead->conversation;
 
         if ($conversation === null) {
-            // The chat was pruned. There is nobody to tell; the decision still
-            // stands on the lead row, which is what the owner will work from.
             return new Message(['role' => 'assistant', 'content' => $text]);
         }
 
@@ -170,11 +135,6 @@ class HaggleDecisionRelay
         };
     }
 
-    /**
-     * The language the customer has been writing in, so the answer arrives in
-     * the language the question was asked in. Russian when there is no signal —
-     * it is the language the rest of the panel is in.
-     */
     protected function languageFor(Lead $lead): string
     {
         $conversation = $lead->conversation;

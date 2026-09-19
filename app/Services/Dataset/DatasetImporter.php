@@ -8,37 +8,16 @@ use App\Models\DatasetProduct;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
-/**
- * Imports a parsed catalog file into an agent's products table under a mapping
- * the owner has confirmed.
- *
- * Two guarantees this class exists to provide:
- *
- *  - REPLACE IS ATOMIC. A re-upload clears the agent's products and reinserts
- *    them inside one transaction, so a failure halfway through leaves the old
- *    catalog intact rather than half a new one. An agent whose dataset silently
- *    lost half its products would keep answering — with wrong answers.
- *
- *  - ONE BAD ROW IS NOT A BAD FILE. A row missing a name, or with junk in the
- *    price column, is skipped and counted, never fatal. The counts and reasons
- *    are reported back so the owner learns their file had 12 empty rows instead
- *    of wondering why the catalog is short.
- */
 class DatasetImporter
 {
-    /** Rows inserted per statement. Large enough to be fast, small enough to fit MySQL's packet. */
     protected const INSERT_CHUNK = 500;
 
+    // Создаёт импортёр датасета с сервисом разбора значений ячеек
     public function __construct(
         protected ValueParser $values,
     ) {}
 
-    /**
-     * @param  string[]  $headers
-     * @param  array<int, array<int, string>>  $rows  Data rows only (no header).
-     * @param  array<string, int|int[]>  $mapping  field => column index; 'extra' => column indexes.
-     * @return array{imported: int, skipped: int, reasons: array<string, int>}
-     */
+    // Импортирует строки таблицы в каталог товаров агента, заменяя прежний каталог
     public function import(Agent $agent, string $filename, array $headers, array $rows, array $mapping): array
     {
         $mapping = $this->validateMapping($mapping, count($headers));
@@ -55,9 +34,6 @@ class DatasetImporter
             $name = $this->values->text($row[$nameColumn] ?? null);
 
             if ($name === null) {
-                // A trailing blank row is spreadsheet noise; a row that has
-                // content but no product name is a real data problem, and the
-                // owner is told which of the two they have.
                 $reason = $this->isBlankRow($row) ? 'empty_row' : 'missing_name';
                 $reasons[$reason] = ($reasons[$reason] ?? 0) + 1;
 
@@ -85,8 +61,6 @@ class DatasetImporter
                 'description' => $description,
                 'sku' => $sku,
                 'url' => isset($mapping['url']) ? $this->values->url($row[$mapping['url']] ?? null) : null,
-                // Set here, not by the model's saving hook: these rows are bulk
-                // inserted and never instantiated.
                 'search_text' => DatasetProduct::searchText($name, $description, $sku, $category, $extra),
                 'category_key' => DatasetProduct::categoryKey($category),
                 'extra' => $extra === [] ? null : json_encode($extra, JSON_UNESCAPED_UNICODE),
@@ -115,9 +89,6 @@ class DatasetImporter
                 'imported_at' => now(),
             ])->save();
 
-            // Replace, not merge: the uploaded file is the catalog now. Scoped by
-            // agent_id as well as dataset_id so a stray product from an earlier
-            // schema could never survive into another tenant's results.
             DatasetProduct::query()->where('agent_id', $agent->id)->delete();
 
             foreach (array_chunk($products, self::INSERT_CHUNK) as $chunk) {
@@ -131,15 +102,7 @@ class DatasetImporter
         return ['imported' => count($products), 'skipped' => $skipped, 'reasons' => $reasons];
     }
 
-    /**
-     * Reject a mapping before a single row is read: an out-of-range column index
-     * or a missing name column would otherwise import a catalog of nulls that
-     * looks successful until a customer asks a question.
-     *
-     * @param  array<string, mixed>  $mapping
-     * @param  int  $columnCount  Number of columns in the file.
-     * @return array<string, int|int[]>
-     */
+    // Проверяет и очищает сопоставление столбцов, требуя обязательные поля
     public function validateMapping(array $mapping, int $columnCount): array
     {
         $clean = [];
@@ -181,9 +144,6 @@ class DatasetImporter
         return $clean;
     }
 
-    /**
-     * @param  array<int, string>  $row
-     */
     protected function isBlankRow(array $row): bool
     {
         foreach ($row as $cell) {

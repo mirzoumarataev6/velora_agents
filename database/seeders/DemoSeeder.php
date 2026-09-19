@@ -55,6 +55,7 @@ class DemoSeeder extends Seeder
     public function run(): void
     {
         $data = require __DIR__.'/data/demo.php';
+        $agents = $data['agents'];
 
         $owner = $this->ownerEmail
             ? User::where('email', $this->ownerEmail)->first()
@@ -69,12 +70,14 @@ class DemoSeeder extends Seeder
         // Same "random" gaps, response times and ratings on every run.
         mt_srand(20260914);
 
-        DB::transaction(function () use ($data, $owner) {
-            $this->purge(array_column($data, 'slug'));
+        DB::transaction(function () use ($agents, $data, $owner) {
+            $this->purge(array_column($agents, 'slug'));
 
-            foreach ($data as $spec) {
+            foreach ($agents as $spec) {
                 $this->seedAgent($owner, $spec);
             }
+
+            $this->seedPixelShopExtra($data['pixelshop_extra']);
 
             $this->applyRatings();
         });
@@ -85,7 +88,7 @@ class DemoSeeder extends Seeder
             ExtractTextJob::dispatch($source);
         }
 
-        $this->summary($owner, array_column($data, 'slug'));
+        $this->summary($owner, array_column($agents, 'slug'));
     }
 
     /** @param  array<int, string>  $slugs */
@@ -95,6 +98,55 @@ class DemoSeeder extends Seeder
             Storage::disk('local')->deleteDirectory("knowledge/{$agent->id}");
             $agent->delete();
         }
+    }
+
+    /**
+     * The real PixelShop agent (Олами Компютерхо's live counterpart) is never
+     * purged or recreated — it is the owner's actual data. This only adds a
+     * handful of `demo_v2`-tagged conversations on top of it, and only ever
+     * touches rows carrying that marker, so a real conversation or lead the
+     * owner already has is never at risk.
+     *
+     * @param  array<int, array<string, mixed>>  $conversations
+     */
+    protected function seedPixelShopExtra(array $conversations): void
+    {
+        $agent = Agent::where('slug', self::PIXELSHOP_SLUG)->first();
+
+        if (! $agent) {
+            return;
+        }
+
+        $this->purgeDemoV2($agent);
+
+        $createdAt = now();
+
+        $channels = [
+            'telegram' => $agent->channels()->where('type', 'telegram')->first()
+                ?? $this->seedChannel($agent, 'telegram', 'pixelshop_khujand_bot', $createdAt),
+            'greenapi' => $agent->channels()->where('type', 'greenapi')->first()
+                ?? $this->seedChannel($agent, 'greenapi', '+992 92 666 70 80', $createdAt),
+        ];
+
+        foreach ($conversations as $spec) {
+            $this->seedConversation($agent, $channels, $spec, 'demo_v2');
+        }
+    }
+
+    /**
+     * Deletes only the `demo_v2`-tagged conversations (and any leads pointing
+     * at them) that belong to a live, non-demo agent — leaving every real
+     * conversation, lead and channel of that agent untouched.
+     */
+    protected function purgeDemoV2(Agent $agent): void
+    {
+        $conversationIds = Message::where('external_message_id', 'like', 'demo_v2-%')
+            ->whereIn('conversation_id', $agent->conversations()->select('id'))
+            ->distinct()
+            ->pluck('conversation_id');
+
+        Lead::whereIn('conversation_id', $conversationIds)->delete();
+        Conversation::whereIn('id', $conversationIds)->delete();
     }
 
     /** @param  array<string, mixed>  $spec */
@@ -140,7 +192,7 @@ class DemoSeeder extends Seeder
         }
 
         foreach ($spec['conversations'] as $conversation) {
-            $this->seedConversation($agent, $channels, $conversation);
+            $this->seedConversation($agent, $channels, $conversation, ! empty($conversation['v2']) ? 'demo_v2' : 'demo');
         }
 
         foreach ($spec['leads'] as $lead) {
@@ -155,6 +207,7 @@ class DemoSeeder extends Seeder
 
         [$factory, $settings] = match ($type) {
             'whatsapp' => [$factory->whatsapp(), ['display_phone_number' => $handle, 'verified_name' => $agent->name]],
+            'greenapi' => [$factory->greenApi(), ['display_phone_number' => $handle, 'state_instance' => 'authorized', 'webhook_registered' => true, 'webhook_error' => null]],
             'instagram' => [$factory->instagram(), ['ig_username' => $handle, 'ig_name' => $agent->name]],
             default => [$factory, ['bot_username' => $handle, 'bot_first_name' => $agent->name, 'webhook_secret' => Str::random(48)]],
         };
@@ -230,7 +283,7 @@ class DemoSeeder extends Seeder
      * @param  array<string, Channel>  $channels
      * @param  array<string, mixed>  $spec
      */
-    protected function seedConversation(Agent $agent, array $channels, array $spec): void
+    protected function seedConversation(Agent $agent, array $channels, array $spec, string $idPrefix = 'demo'): Conversation
     {
         $channel = $channels[$spec['channel']];
         $at = $this->localTime($spec['days'], $spec['at']);
@@ -261,7 +314,7 @@ class DemoSeeder extends Seeder
             if ($role === 'u') {
                 $lastQuestion = $content;
                 $this->message($conversation, 'user', $content, $at, null, [
-                    'external_message_id' => $this->nextExternalId(),
+                    'external_message_id' => $this->nextExternalId($idPrefix),
                     'source_type' => isset($flags['voice']) ? 'voice' : 'text',
                     'voice_duration' => $flags['voice'] ?? null,
                 ]);
@@ -283,7 +336,7 @@ class DemoSeeder extends Seeder
                 $lead = $this->createLead($agent, $conversation, $spec['lead'], $spec['channel'], $at);
             }
 
-            $message = $this->message($conversation, 'assistant', $content, $at, $this->replyMeta($totalMs, $flags, $lastQuestion, $lead));
+            $message = $this->message($conversation, 'assistant', $content, $at, $this->replyMeta($totalMs, $flags, $lastQuestion, $lead, $idPrefix === 'demo_v2'));
 
             $this->replies[] = [
                 'message' => $message,
@@ -303,6 +356,8 @@ class DemoSeeder extends Seeder
             'operator_read_at' => $unread ? null : ($readAt->isFuture() ? now() : $readAt),
             'updated_at' => $at,
         ])->save();
+
+        return $conversation;
     }
 
     /**
@@ -312,7 +367,7 @@ class DemoSeeder extends Seeder
      * @param  array<string, mixed>  $flags
      * @return array<string, mixed>
      */
-    protected function replyMeta(int $totalMs, array $flags, string $question, ?Lead $lead): array
+    protected function replyMeta(int $totalMs, array $flags, string $question, ?Lead $lead, bool $isV2 = false): array
     {
         $queries = array_map(fn ($q) => ['query' => $q[0], 'category' => null, 'count' => $q[1]], $flags['q'] ?? []);
         $miss = $flags['miss'] ?? null;
@@ -342,6 +397,7 @@ class DemoSeeder extends Seeder
             'unanswered_question' => $miss === null ? null : mb_substr(trim($question), 0, 300),
             'short_follow_up' => false,
             'demo' => true,
+            'demo_v2' => $isV2,
         ];
     }
 
@@ -449,15 +505,15 @@ class DemoSeeder extends Seeder
     protected function externalUserId(string $channel): string
     {
         return match ($channel) {
-            'whatsapp' => '99292'.mt_rand(1000000, 9999999),
+            'whatsapp', 'greenapi' => '99292'.mt_rand(1000000, 9999999),
             'instagram' => '178414'.mt_rand(10000000, 99999999).mt_rand(100, 999),
             default => (string) mt_rand(5000000000, 7999999999),
         };
     }
 
-    protected function nextExternalId(): string
+    protected function nextExternalId(string $prefix = 'demo'): string
     {
-        return 'demo-'.(++$this->externalId);
+        return $prefix.'-'.(++$this->externalId);
     }
 
     /** @param  array<int, string>  $slugs */
@@ -486,9 +542,34 @@ class DemoSeeder extends Seeder
             ];
         })->all();
 
-        $assistant = (clone $messages)->where('role', 'assistant')->count();
-        $up = (clone $messages)->where('rating', Message::RATING_UP)->count();
-        $down = (clone $messages)->where('rating', Message::RATING_DOWN)->count();
+        $pixelshop = Agent::where('slug', self::PIXELSHOP_SLUG)->first();
+        $pixelshopMsg = null;
+
+        if ($pixelshop) {
+            $v2ConversationIds = Message::where('external_message_id', 'like', 'demo_v2-%')
+                ->whereIn('conversation_id', $pixelshop->conversations()->select('id'))
+                ->distinct()->pluck('conversation_id');
+
+            $pixelshopMsg = Message::whereIn('conversation_id', $v2ConversationIds);
+
+            $rows[] = [
+                $pixelshop->name.' (demo_v2)',
+                $v2ConversationIds->count(),
+                (clone $pixelshopMsg)->count(),
+                Lead::whereIn('conversation_id', $v2ConversationIds)->count(),
+                Lead::whereIn('conversation_id', $v2ConversationIds)->where('type', HagglingService::TYPE)->count(),
+                (clone $pixelshopMsg)->where('rating', Message::RATING_UP)->count(),
+                (clone $pixelshopMsg)->where('rating', Message::RATING_DOWN)->count(),
+                $pixelshop->datasetProducts()->count(),
+            ];
+        }
+
+        $assistant = (clone $messages)->where('role', 'assistant')->count()
+            + ($pixelshopMsg ? (clone $pixelshopMsg)->where('role', 'assistant')->count() : 0);
+        $up = (clone $messages)->where('rating', Message::RATING_UP)->count()
+            + ($pixelshopMsg ? (clone $pixelshopMsg)->where('rating', Message::RATING_UP)->count() : 0);
+        $down = (clone $messages)->where('rating', Message::RATING_DOWN)->count()
+            + ($pixelshopMsg ? (clone $pixelshopMsg)->where('rating', Message::RATING_DOWN)->count() : 0);
 
         $rows[] = ['ИТОГО', array_sum(array_column($rows, 1)), array_sum(array_column($rows, 2)), array_sum(array_column($rows, 3)),
             array_sum(array_column($rows, 4)), $up, $down, array_sum(array_column($rows, 7))];
@@ -498,7 +579,7 @@ class DemoSeeder extends Seeder
         $this->command->table(['Agent', 'Conversations', 'Messages', 'Leads', 'Haggle', '👍', '👎', 'Products'], $rows);
         $this->command->line(sprintf(
             '  Agents: %d · Agent replies: %d · Rated: %d (%.0f%%) · 👍 %.0f%% / 👎 %.0f%%',
-            $agents->count(), $assistant, $up + $down,
+            $agents->count() + ($pixelshop ? 1 : 0), $assistant, $up + $down,
             $assistant ? ($up + $down) / $assistant * 100 : 0,
             ($up + $down) ? $up / ($up + $down) * 100 : 0,
             ($up + $down) ? $down / ($up + $down) * 100 : 0,

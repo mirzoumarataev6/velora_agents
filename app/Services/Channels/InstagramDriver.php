@@ -10,34 +10,21 @@ use Illuminate\Support\Facades\Log;
 use RuntimeException;
 use Throwable;
 
-/**
- * Instagram Messaging API driver (Meta). Webhook payload format:
- * https://developers.facebook.com/docs/messenger-platform/instagram/webhook-events-for-instagram-messaging
- *
- * Setup is manual on Meta's side, same as WhatsAppDriver — connect() only
- * validates the credentials; the callback URL + verify token are pasted into
- * the Meta App Dashboard by the business owner (see Channels tab).
- */
 class InstagramDriver implements ChannelDriverInterface
 {
     use ChecksMessagingWindow, DescribesImagesWithConfidence, HasNoMessageFeedback, SplitsLongMessages, VerifiesMetaWebhook;
 
     protected const API_VERSION = 'v21.0';
 
-    // Instagram Messaging enforces the same 2000-character text limit as Messenger.
     protected const MAX_MESSAGE_LENGTH = 2000;
 
+    // Создаёт драйвер Instagram с сервисом LLM и markdown-конвертацией
     public function __construct(
         protected LlmProviderInterface $llm,
         protected OutboundMarkdown $markdown = new OutboundMarkdown,
     ) {}
 
-    /**
-     * One payload per messaging event in the batch. Non-message events (reads,
-     * delivery receipts, reactions) are kept rather than filtered here —
-     * parseIncomingMessage() already returns null for them, and dropping them
-     * in two places would mean two definitions of "a message".
-     */
+    // Выделяет из пейлоада вебхука отдельные доставки сообщений Instagram
     public function splitDeliveries(array $payload): array
     {
         $deliveries = [];
@@ -54,21 +41,18 @@ class InstagramDriver implements ChannelDriverInterface
         return $deliveries;
     }
 
+    // Преобразует пейлоад Instagram во внутреннее представление входящего сообщения
     public function parseIncomingMessage(array $payload, Channel $channel): ?IncomingMessage
     {
         $messaging = $payload['entry'][0]['messaging'][0] ?? null;
 
         if (! is_array($messaging) || empty($messaging['message'])) {
-            // No "message" key means this is a read/delivery/reaction event, or a
-            // "changes" (comments/mentions) entry — not a direct message, ignore.
             return null;
         }
 
         $message = $messaging['message'];
 
         if (! empty($message['is_echo'])) {
-            // The business's own outgoing message, echoed back by Meta — not a
-            // customer message, ignore to avoid replying to ourselves.
             return null;
         }
 
@@ -87,10 +71,6 @@ class InstagramDriver implements ChannelDriverInterface
                 return new IncomingMessage((string) $externalMessageId, (string) $externalUserId, null, $text, 'text');
             }
 
-            // An attachment we cannot read — a video, a voice clip, a shared
-            // reel or a story mention — with nothing written alongside it. The
-            // customer gets told we can only handle text and photos rather than
-            // getting silence, which is what returning null gave them.
             if (! empty($message['attachments'])) {
                 return new IncomingMessage(
                     (string) $externalMessageId,
@@ -101,8 +81,6 @@ class InstagramDriver implements ChannelDriverInterface
                 );
             }
 
-            // No text and no attachment: a reaction, an unsend, or an event
-            // shape we do not handle. Nothing was asked, so nothing is said.
             return null;
         }
 
@@ -145,16 +123,11 @@ class InstagramDriver implements ChannelDriverInterface
         );
     }
 
-    /**
-     * @return array{confident: bool, description: ?string}
-     */
     protected function describeMedia(string $imageUrl): array
     {
         $unclear = ['confident' => false, 'description' => null];
 
         try {
-            // Attachment URLs from Meta are pre-signed, temporary CDN links —
-            // no bearer token needed, unlike WhatsApp's media endpoint.
             $response = Http::timeout(15)->get($imageUrl);
 
             if ($response->failed()) {
@@ -169,23 +142,14 @@ class InstagramDriver implements ChannelDriverInterface
         }
     }
 
+    // Отправляет текстовое сообщение пользователю Instagram, разбивая длинный текст на части
     public function sendMessage(Channel $channel, string $externalUserId, string $text): void
     {
-        // Instagram enforces the same 24-hour rule as WhatsApp — outside it a
-        // free-form DM is rejected, and only a HUMAN_AGENT-tagged message (a
-        // permission the app has to be granted) would go through. Checked here
-        // for the same reason: a refusal the operator can see beats a silent
-        // 400 they cannot.
         $this->assertWithinMessagingWindow($channel, $externalUserId);
 
         $accountId = $this->accountId($channel);
         $token = $this->accessToken($channel);
 
-        // Instagram DMs render no formatting whatsoever, so the markers are not
-        // converted, they are removed — anything left behind is punctuation the
-        // customer reads as a mistake.
-        // Same reasoning as the other drivers: formatting is cosmetic, delivery
-        // is not.
         try {
             $body = $this->markdown->toPlainText($text);
         } catch (Throwable $e) {
@@ -205,6 +169,7 @@ class InstagramDriver implements ChannelDriverInterface
         }
     }
 
+    // Отправляет индикатор набора текста пользователю Instagram
     public function sendTypingIndicator(Channel $channel, string $externalUserId): void
     {
         try {
@@ -213,10 +178,10 @@ class InstagramDriver implements ChannelDriverInterface
                 'sender_action' => 'typing_on',
             ]);
         } catch (Throwable) {
-            // Best-effort only.
         }
     }
 
+    // Проверяет учётные данные и возвращает профиль Instagram-аккаунта при подключении
     public function connect(Channel $channel): array
     {
         $accountId = $this->accountId($channel);
@@ -237,10 +202,9 @@ class InstagramDriver implements ChannelDriverInterface
         ];
     }
 
+    // Отключает канал Instagram (дополнительных действий не требуется)
     public function disconnect(Channel $channel): void
     {
-        // No API to programmatically unsubscribe — done manually in the Meta
-        // App Dashboard, same as WhatsAppDriver::disconnect().
     }
 
     protected function accountId(Channel $channel): string
@@ -265,14 +229,6 @@ class InstagramDriver implements ChannelDriverInterface
         return $value;
     }
 
-    /**
-     * IGAA-prefixed tokens ("Instagram API with Instagram Login", Meta's newer
-     * flow) are Instagram User Access Tokens and are only valid against
-     * graph.instagram.com. graph.facebook.com rejects them with "Cannot parse
-     * access token" even though the token itself is fine. Legacy EAA-prefixed
-     * Facebook Page tokens (the older "Messenger" connect flow) still go
-     * through graph.facebook.com as before.
-     */
     protected function apiUrl(string $token, string $path): string
     {
         $host = str_starts_with($token, 'IGAA') ? 'graph.instagram.com' : 'graph.facebook.com';
@@ -280,9 +236,6 @@ class InstagramDriver implements ChannelDriverInterface
         return "https://{$host}/".self::API_VERSION.'/'.$path;
     }
 
-    /**
-     * @return array<string, mixed>
-     */
     protected function call(string $token, string $accountId, array $payload): array
     {
         try {
@@ -293,8 +246,6 @@ class InstagramDriver implements ChannelDriverInterface
             throw new RuntimeException("Instagram API connection failed: {$e->getMessage()}");
         }
 
-        // 4xx as well as 5xx — see the same fix in WhatsAppDriver. A rejected
-        // DM used to be indistinguishable from a delivered one.
         if ($response->failed()) {
             $error = $response->json('error.message') ?? $response->body();
             $code = $response->json('error.code');

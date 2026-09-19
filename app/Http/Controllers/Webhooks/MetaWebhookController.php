@@ -9,13 +9,9 @@ use App\Services\Channels\ChannelDriverManager;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
-/**
- * Shared webhook entry point for both Meta channel types (WhatsApp, Instagram)
- * — they use the identical GET verification handshake and POST envelope
- * shape, differing only in driver-specific payload parsing.
- */
 class MetaWebhookController extends Controller
 {
+    // Подтверждает вебхук Meta (WhatsApp/Instagram) для указанного канала
     public function verify(Request $request, Channel $channel, ChannelDriverManager $drivers, string $type): Response
     {
         $this->assertChannelType($channel, $type);
@@ -25,6 +21,7 @@ class MetaWebhookController extends Controller
         return $driver->verifyWebhook($request, $channel) ?? response('Not Found', 404);
     }
 
+    // Принимает вебхук Meta и ставит в очередь обработку входящих сообщений
     public function handle(Request $request, Channel $channel, ChannelDriverManager $drivers, string $type): Response
     {
         $this->assertChannelType($channel, $type);
@@ -35,15 +32,6 @@ class MetaWebhookController extends Controller
             abort(403);
         }
 
-        // Meta retries aggressively on slow/non-200 responses — all real
-        // processing (parsing, RAG, sending the reply) happens in the queued
-        // job so this handler can return 200 immediately.
-        //
-        // ONE JOB PER MESSAGE, not per delivery. Meta batches: entry, changes
-        // and messages are all arrays, and several messages arriving close
-        // together are posted together. The drivers can only parse one message
-        // per payload, so a batched delivery used to be answered once and the
-        // rest thrown away.
         foreach ($driver->splitDeliveries($request->all()) as $delivery) {
             HandleIncomingMessageJob::dispatch($channel, $delivery);
         }

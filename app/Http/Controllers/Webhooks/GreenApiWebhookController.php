@@ -11,6 +11,7 @@ use Symfony\Component\HttpFoundation\Response;
 
 class GreenApiWebhookController extends Controller
 {
+    // Подтверждает вебхук Green API для указанного канала
     public function verify(Request $request, Channel $channel, ChannelDriverManager $drivers): Response
     {
         $this->assertGreenApi($channel);
@@ -18,6 +19,7 @@ class GreenApiWebhookController extends Controller
         return $drivers->for($channel)->verifyWebhook($request, $channel) ?? response('OK', 200);
     }
 
+    // Принимает вебхук Green API и ставит в очередь обработку входящих сообщений
     public function handle(Request $request, Channel $channel, ChannelDriverManager $drivers): Response
     {
         $this->assertGreenApi($channel);
@@ -28,8 +30,6 @@ class GreenApiWebhookController extends Controller
             abort(403);
         }
 
-        // Validate and enqueue only, so Green API gets its 200 immediately.
-        // Non-message notifications (statuses, state changes) split to nothing.
         foreach ($driver->splitDeliveries($request->all()) as $delivery) {
             HandleIncomingMessageJob::dispatch($channel, $delivery);
         }

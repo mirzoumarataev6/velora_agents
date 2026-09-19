@@ -10,14 +10,6 @@ use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
-/**
- * Pushes a freshly captured lead to the business owner's linked Telegram chat.
- *
- * The in-app bell is driven by the lead row itself (an unseen lead bumps the
- * badge), so this job is purely the optional Telegram fan-out: it no-ops
- * quietly when the owner hasn't linked a chat or the agent has no connected
- * Telegram bot to send through.
- */
 class SendLeadNotificationJob implements ShouldQueue
 {
     use Queueable;
@@ -26,8 +18,10 @@ class SendLeadNotificationJob implements ShouldQueue
 
     public int $tries = 2;
 
+    // Создаёт задачу уведомления владельца о новом лиде
     public function __construct(public Lead $lead) {}
 
+    // Отправляет владельцу в Telegram уведомление о новом лиде или запросе цены
     public function handle(ChannelDriverManager $drivers): void
     {
         $agent = $this->lead->agent;
@@ -36,14 +30,10 @@ class SendLeadNotificationJob implements ShouldQueue
             return;
         }
 
-        // The owner can mute lead alerts account-wide from Settings without
-        // having to unlink every agent's chat one by one.
         if ($agent->user && ! $agent->user->lead_notifications_enabled) {
             return;
         }
 
-        // We reuse the agent's own customer-facing Telegram bot to deliver the
-        // notification — the owner "started" it during linking, so it may DM them.
         $channel = $agent->channels()
             ->where('type', 'telegram')
             ->where('status', 'connected')
@@ -95,14 +85,6 @@ class SendLeadNotificationJob implements ShouldQueue
         return implode("\n", $lines);
     }
 
-    /**
-     * A price the customer asked for that the assistant was not allowed to give.
-     *
-     * Shaped differently from an order on purpose: this one is a DECISION the
-     * owner has to make, and a customer is waiting on it in a live chat. The
-     * numbers come first, and the link goes straight to the pending list rather
-     * than to the whole inbox.
-     */
     protected function priceRequestMessage(string $agentName): string
     {
         $lines = ["💬 Запрос цены · {$agentName}"];

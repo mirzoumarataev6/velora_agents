@@ -6,30 +6,13 @@ use PhpOffice\PhpSpreadsheet\IOFactory as SpreadsheetIOFactory;
 use RuntimeException;
 use SplFileObject;
 
-/**
- * Reads an uploaded .xlsx/.csv catalog into a header row plus data rows.
- *
- * Knows nothing about products or mapping — it only turns a file into
- * `array{headers: string[], rows: array<int, string[]>}`, with every cell a
- * trimmed string. Interpreting those cells is DatasetImporter's job.
- *
- * CSV robustness matters more than it looks: the files owners actually upload
- * come out of 1C and Excel exports, so they arrive semicolon-delimited, in
- * windows-1251, and with a UTF-8 BOM glued to the first header — each of which
- * silently ruins the header row if it isn't handled.
- */
 class DatasetFileReader
 {
-    /** Delimiters tried when sniffing a CSV, best-guess first. */
     protected const DELIMITERS = [';', ',', "\t", '|'];
 
-    /** How much of a CSV to sniff for delimiter and encoding. */
     protected const SNIFF_BYTES = 8192;
 
-    /**
-     * @param  int|null  $limit  Stop after this many DATA rows (header excluded).
-     * @return array{headers: string[], rows: array<int, array<int, string>>, truncated: bool}
-     */
+    // Читает CSV или табличный файл и возвращает заголовки и строки данных
     public function read(string $absolutePath, ?int $limit = null): array
     {
         if (! is_readable($absolutePath)) {
@@ -48,8 +31,6 @@ class DatasetFileReader
 
         $headers = $this->normalizeHeaders(array_shift($raw['rows']));
 
-        // A file with a header and nothing else is a real (and confusing)
-        // upload; say so rather than importing an empty catalog.
         if ($raw['rows'] === []) {
             throw new RuntimeException('The file has a header row but no data rows.');
         }
@@ -61,14 +42,6 @@ class DatasetFileReader
         ];
     }
 
-    /**
-     * Header cells, trimmed and de-blanked. Empty headers become "Column N" so
-     * every column stays addressable in the mapping UI, and duplicates are
-     * suffixed so a mapping keyed by header name can't collide.
-     *
-     * @param  array<int, string>  $cells
-     * @return string[]
-     */
     protected function normalizeHeaders(array $cells): array
     {
         $headers = [];
@@ -94,9 +67,6 @@ class DatasetFileReader
         return $headers;
     }
 
-    /**
-     * @return array{rows: array<int, array<int, string>>, truncated: bool}
-     */
     protected function readSpreadsheet(string $path, ?int $limit): array
     {
         try {
@@ -105,22 +75,19 @@ class DatasetFileReader
             throw new RuntimeException('This file could not be opened as a spreadsheet.', 0, $e);
         }
 
-        // Formatting and charts are irrelevant to a catalog and are what makes
-        // loading a big export expensive.
         $reader->setReadDataOnly(true);
 
         $sheet = $reader->load($path)->getActiveSheet();
 
-        // +1 for the header row, which the caller shifts off.
         $lastRow = $sheet->getHighestDataRow();
         $capped = $limit !== null ? min($lastRow, $limit + 1) : $lastRow;
 
         $rows = $sheet->rangeToArray(
             'A1:'.$sheet->getHighestDataColumn().$capped,
             null,
-            true,   // calculate formulas — a price cell is often =B2*1.2
-            false,  // no formatting
-            false,  // numeric keys
+            true,
+            false,
+            false,
         );
 
         return [
@@ -129,9 +96,6 @@ class DatasetFileReader
         ];
     }
 
-    /**
-     * @return array{rows: array<int, array<int, string>>, truncated: bool}
-     */
     protected function readCsv(string $path, ?int $limit): array
     {
         $encoding = $this->detectCsvEncoding($path);
@@ -162,19 +126,12 @@ class DatasetFileReader
         }
 
         if ($rows !== []) {
-            // The BOM lands inside the first header cell, where it turns an
-            // exact header match ("Название") into a near-miss no alias catches.
             $rows[0][0] = preg_replace('/^\x{FEFF}/u', '', (string) ($rows[0][0] ?? '')) ?? '';
         }
 
         return ['rows' => $rows, 'truncated' => $truncated];
     }
 
-    /**
-     * The delimiter that splits the first non-empty line into the most columns.
-     * Ties go to the earlier entry in DELIMITERS, which puts ';' (the Excel-RU
-     * export default) ahead of ',' for a single-column file where neither wins.
-     */
     protected function detectDelimiter(string $path, string $encoding): string
     {
         $head = (string) file_get_contents($path, false, null, 0, self::SNIFF_BYTES);
@@ -201,10 +158,6 @@ class DatasetFileReader
         return $best;
     }
 
-    /**
-     * UTF-8 unless the bytes say otherwise — windows-1251 being the one other
-     * encoding CIS spreadsheet exports realistically produce.
-     */
     protected function detectCsvEncoding(string $path): string
     {
         $head = (string) file_get_contents($path, false, null, 0, self::SNIFF_BYTES);
@@ -216,11 +169,6 @@ class DatasetFileReader
         return mb_check_encoding($head, 'WINDOWS-1251') ? 'WINDOWS-1251' : 'UTF-8';
     }
 
-    /**
-     * One cell as a trimmed string. Non-breaking spaces (rife in prices copied
-     * out of a browser) are folded to ordinary ones here so every later
-     * consumer — number parsing included — sees plain whitespace.
-     */
     protected function cell(mixed $value): string
     {
         if ($value === null || is_bool($value)) {
