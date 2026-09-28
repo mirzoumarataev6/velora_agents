@@ -41,6 +41,7 @@ class MessageFeedbackRecorder
         return $recorded;
     }
 
+    // Находит сообщение ассистента, к которому относится обратная связь, в рамках диалога с этим клиентом
     protected function resolve(Channel $channel, MessageFeedback $feedback): ?Message
     {
         return Message::query()
@@ -52,6 +53,7 @@ class MessageFeedbackRecorder
             ->first();
     }
 
+    // Возвращает локализованный текст подтверждения обратной связи для клиента
     protected function say(Channel $channel, MessageFeedback $feedback, string $key): string
     {
         $conversation = $channel->conversations()

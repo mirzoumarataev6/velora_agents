@@ -58,6 +58,7 @@ class FollowUpDetector
         return false;
     }
 
+    // Нормализует сообщение (нижний регистр, без пунктуации) для сравнения с эталонными фразами
     protected function fold(string $message): string
     {
         $text = mb_strtolower(trim($message));

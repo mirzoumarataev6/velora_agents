@@ -110,6 +110,58 @@ document.addEventListener('DOMContentLoaded', () => {
         document.dispatchEvent(new CustomEvent('theme:changed', { detail: { theme } }));
     });
 
+    /**
+     * Stage mode — the presentation setting.
+     *
+     * The attribute is applied pre-paint by partials/stage-mode.blade.php, so
+     * all this does is flip it and record the choice. Everything it changes
+     * (root font size, muted text, border weight, shadows, transparency) is a
+     * token swap in tokens.css; nothing here knows any of those values.
+     *
+     * localStorage rather than the account, deliberately: stage mode is a
+     * property of the room, not of the person. The same owner wants it on for
+     * the projector and off at their desk half an hour later, so following
+     * them between devices would be exactly wrong.
+     */
+    const stageToggle = document.getElementById('stage-toggle');
+
+    stageToggle?.addEventListener('click', () => {
+        const root = document.documentElement;
+        const on = root.getAttribute('data-mode') !== 'stage';
+
+        if (on) {
+            root.setAttribute('data-mode', 'stage');
+        } else {
+            root.removeAttribute('data-mode');
+        }
+
+        // The label has to say what the button will DO next, not what the state
+        // is — and it is the accessible name, so it cannot be left stale.
+        stageToggle.setAttribute('aria-pressed', String(on));
+        stageToggle.setAttribute(
+            'aria-label',
+            (on ? stageToggle.dataset.labelOn : stageToggle.dataset.labelOff) ?? ''
+        );
+
+        try {
+            localStorage.setItem('mode', on ? 'stage' : 'normal');
+        } catch (e) {
+            /* private mode — the choice just won't outlive the tab */
+        }
+
+        // Charts read their colours from CSS custom properties, so anything
+        // already drawn has to be told to re-read them.
+        document.dispatchEvent(new CustomEvent('mode:changed', { detail: { stage: on } }));
+    });
+
+    // The button renders with the "off" label server-side, because the server
+    // cannot know what localStorage holds. If the pre-paint script switched
+    // stage mode on, correct the state here.
+    if (stageToggle && document.documentElement.getAttribute('data-mode') === 'stage') {
+        stageToggle.setAttribute('aria-pressed', 'true');
+        stageToggle.setAttribute('aria-label', stageToggle.dataset.labelOn ?? '');
+    }
+
     document.querySelectorAll('a[data-transition]').forEach((link) => {
         link.addEventListener('click', (event) => {
             const href = link.getAttribute('href');

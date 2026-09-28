@@ -4,6 +4,7 @@ namespace App\Services\Dataset;
 
 trait PresentsProducts
 {
+    // Формирует представление товара для ответа, включая только заполненные поля
     protected function presentRow(array $fields): array
     {
         $row = ['name' => (string) ($fields['name'] ?? '')];
@@ -41,6 +42,7 @@ trait PresentsProducts
         return $row;
     }
 
+    // Форматирует цену, убирая лишние нули после запятой
     protected function formatPrice(mixed $price): string
     {
         if (! is_numeric($price)) {

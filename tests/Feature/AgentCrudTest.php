@@ -6,6 +6,7 @@ use App\Models\Agent;
 use App\Models\KnowledgeSource;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Inertia\Testing\AssertableInertia;
 use Tests\TestCase;
 
 class AgentCrudTest extends TestCase
@@ -197,7 +198,10 @@ class AgentCrudTest extends TestCase
         $this->actingAs($user)
             ->get(route('agents.index'))
             ->assertOk()
-            ->assertSee('Пока нет ни одного агента');
+            // An empty list is what the page renders its empty state from.
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->component('Agents/Index')
+                ->count('agents', 0));
     }
 
     /**
@@ -209,21 +213,26 @@ class AgentCrudTest extends TestCase
     {
         $user = User::factory()->create();
 
-        $response = $this->actingAs($user)->get(route('agents.create'));
+        $this->actingAs($user)->get(route('agents.create'))
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->component('Agents/Form')
+                // Null is what puts the form in "create" mode.
+                ->where('agent', null));
 
-        $response->assertOk()->assertSee('Характер и стиль агента');
+        // The field belongs to step 2 — between the instructions heading and
+        // the reply-settings one. Asserted at the source, since which step a
+        // field renders on is now decided in the component.
+        $form = file_get_contents(resource_path('js/Pages/Agents/Form.vue'));
 
-        // It must render inside the step-2 panel, after step 2 begins and
-        // before step 3 does.
-        $html = $response->getContent();
-        $step2Start = strpos($html, 'Шаг 2');
-        $step3Start = strpos($html, 'Шаг 3');
-        $fieldPos = strpos($html, 'id="custom_system_prompt"');
-
-        $this->assertNotFalse($step2Start);
-        $this->assertNotFalse($step3Start);
-        $this->assertGreaterThan($step2Start, $fieldPos);
-        $this->assertLessThan($step3Start, $fieldPos);
+        $this->assertGreaterThan(
+            strpos($form, 'step2_heading'),
+            strpos($form, 'id="custom_system_prompt"'),
+        );
+        $this->assertLessThan(
+            strpos($form, 'step3_heading'),
+            strpos($form, 'id="custom_system_prompt"'),
+        );
     }
 
     public function test_validation_error_on_custom_system_prompt_is_reported(): void

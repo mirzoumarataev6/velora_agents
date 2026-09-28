@@ -7,6 +7,7 @@ use App\Models\Agent;
 use App\Models\Channel;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Inertia\Testing\AssertableInertia;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
@@ -31,10 +32,16 @@ class SettingsPageTest extends TestCase
     {
         $response = $this->actingAs($this->user)->get('/settings');
 
-        $response->assertOk();
-        foreach (['profile', 'security', 'preferences', 'account'] as $tab) {
-            $response->assertSee('data-i18n="settings.tabs.'.$tab.'"', false);
-        }
+        $response->assertOk()->assertInertia(function (AssertableInertia $page) {
+            $page->component('Settings/Index');
+
+            // The page builds its four tabs from these labels, so all four
+            // have to reach it. They are genuinely different KINDS of change,
+            // which is why they are tabs rather than one long form.
+            foreach (['profile', 'security', 'preferences', 'account'] as $tab) {
+                $page->has("translations.settings.tabs.{$tab}");
+            }
+        });
     }
 
     /**
@@ -49,12 +56,13 @@ class SettingsPageTest extends TestCase
 
         $response = $this->actingAs($this->user)->get('/settings');
 
-        $response->assertOk();
-        $response->assertSee('Shop bot');
-        $response->assertSee('Clinic bot');
-        $response->assertSee('leadNotify({', false);
-        // The shared component is defined once no matter how many cards use it.
-        $this->assertSame(1, substr_count($response->getContent(), 'function leadNotify('));
+        // One card per agent, because the link is made through that agent's
+        // own bot — there is no product-wide Telegram connection to hang it on.
+        $response->assertOk()->assertInertia(fn (AssertableInertia $page) => $page
+            ->count('agents', 2)
+            ->where('agents.0.name', 'Clinic bot')
+            ->where('agents.1.name', 'Shop bot')
+            ->where('agents.1.linked', false));
     }
 
     public function test_only_the_signed_in_users_agents_are_offered(): void
@@ -74,24 +82,31 @@ class SettingsPageTest extends TestCase
         $response = $this->actingAs($this->user)->get('/settings');
 
         $response->assertOk();
-        // route() builds absolute URLs here (APP_URL is the tunnel host), so
-        // assert on the generated link rather than a hand-written path.
-        $response->assertSee('href="'.route('settings.index').'"', false);
+
+        // The rail builds every link from a named route through Ziggy, so what
+        // the server owes is the route being in the list it ships.
+        $this->assertStringContainsString(
+            "route: 'settings.index'",
+            file_get_contents(resource_path('js/Components/AppSidebar.vue')),
+        );
         // The placeholder badge is gone from the chrome entirely.
-        $response->assertDontSee('data-i18n="agents.nav.soon"', false);
+        $this->assertStringNotContainsString(
+            'agents.nav.soon',
+            file_get_contents(resource_path('js/Components/AppSidebar.vue')),
+        );
     }
 
     public function test_the_page_embeds_every_locale_for_the_instant_switch(): void
     {
         $response = $this->actingAs($this->user)->get('/settings');
 
-        $response->assertOk();
-        foreach (SetLocale::SUPPORTED_LOCALES as $locale) {
-            $response->assertSee('"'.$locale.'":{', false);
-        }
-        // The settings namespace specifically — the chrome's namespaces would
-        // otherwise satisfy the assertion above on their own.
-        $response->assertSee('"settings":{', false);
+        // ONE locale now, not three. Switching is an Inertia visit that
+        // replaces the translations prop, so embedding every locale in every
+        // page — which is what the Blade bundle did — has no purpose left.
+        $response->assertOk()->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('locale.supported', SetLocale::SUPPORTED_LOCALES)
+            ->has('translations.settings.tabs')
+            ->where('translations.settings.index.heading', __('settings.index.heading')));
     }
 
     /**

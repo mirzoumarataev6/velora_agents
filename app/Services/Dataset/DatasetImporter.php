@@ -144,6 +144,7 @@ class DatasetImporter
         return $clean;
     }
 
+    // Проверяет, что все ячейки строки пусты
     protected function isBlankRow(array $row): bool
     {
         foreach ($row as $cell) {

@@ -45,6 +45,7 @@ class HaggleDecisionRelay
         return $this->relay($lead, $this->declineText($lead, $counterPrice));
     }
 
+    // Сохраняет решение по торгу как сообщение и отправляет его клиенту через канал
     protected function relay(Lead $lead, string $text): Message
     {
         $conversation = $lead->conversation;
@@ -79,6 +80,7 @@ class HaggleDecisionRelay
         return $message;
     }
 
+    // Формирует текст сообщения об одобрении цены на языке клиента
     protected function approvalText(Lead $lead, float $granted): string
     {
         $language = $this->languageFor($lead);
@@ -108,6 +110,7 @@ class HaggleDecisionRelay
         };
     }
 
+    // Формирует текст сообщения об отказе (с встречным предложением или без) на языке клиента
     protected function declineText(Lead $lead, ?float $counterPrice): string
     {
         $language = $this->languageFor($lead);
@@ -135,6 +138,7 @@ class HaggleDecisionRelay
         };
     }
 
+    // Определяет язык клиента по последним сообщениям диалога
     protected function languageFor(Lead $lead): string
     {
         $conversation = $lead->conversation;

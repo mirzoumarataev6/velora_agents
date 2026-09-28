@@ -1,0 +1,625 @@
+/* ===========================================================================
+   VELORA MIDNIGHT — the design system.
+   THIS FILE IS THE SINGLE PLACE ANY COLOUR IS EVER TYPED.
+
+   Replaces the previous "warm daylight" terracotta scheme and the
+   tailwind.config.js → build-palette.mjs round trip that carried it. Tailwind
+   v4 is CSS-first, so the system is authored here as CSS and nowhere else.
+
+   ---------------------------------------------------------------------------
+   THE TWO LAYERS
+
+   1. RAW values live as custom properties on :root, and are re-declared on
+      :root.dark and [data-mode="stage"]. A raw token is a swatch: --v-blue-500.
+
+   2. SEMANTIC tokens map roles onto those swatches inside `@theme inline`:
+      --color-surface, --color-muted, --color-primary.
+
+   `inline` is the load-bearing word. It makes the generated utility emit
+   `var(--v-…)` rather than baking the value in at build time, which is what
+   lets a single `.dark` block re-point every surface in the product without a
+   `dark:` utility being written anywhere. COMPONENTS USE ONLY SEMANTIC TOKENS.
+   Never a raw --v-* token, and never a hex.
+
+   ---------------------------------------------------------------------------
+   THE RULES THIS PALETTE ENCODES (see docs/DESIGN.md for the full version)
+
+   This product is judged on a projector in a lit hall, so contrast is a
+   constraint rather than a preference: body text ≥ 12:1, secondary ≥ 7:1,
+   non-text UI (icons, input borders, chart lines, focus rings) ≥ 3:1. Surfaces
+   are separated by a 1px border, never by a subtle background shade alone.
+   Colour is never the only signal — status is colour + icon + text.
+   =========================================================================== */
+
+:root {
+    /* --- Neutral: SLATE-NAVY ------------------------------------------------
+       Cool, slightly blue-cast greys. A neutral grey beside this primary reads
+       muddy; the blue cast makes the two look like one family. 950 is the
+       sidebar, and the same value is the darkest ink — the chrome and the type
+       share a colour, which is most of why the UI reads as one object. */
+    --v-slate-50: #f4f6fb; /* canvas — the page itself */
+    --v-slate-100: #ebeff6; /* sunk — table headers, wells, track fills */
+    --v-slate-200: #d5dce8; /* THE hairline border */
+    --v-slate-300: #b4bfd2; /* stronger divider; stage-mode border */
+    --v-slate-400: #7c8aa0; /* input border (3.24:1 on canvas — clears non-text) */
+    --v-slate-500: #5b6882; /* placeholder (5.60:1 on surface) */
+    --v-slate-600: #4a5670; /* the specified step — see --v-slate-650 */
+    /* NOT in the specified 11-step scale, and here for a measured reason.
+       The brief names #4A5670 as muted text AND sets a 7:1 floor on secondary
+       text. Those two do not hold together on this canvas: #4A5670 measures
+       6.80:1 on #F4F6FB and 6.38:1 on the sunk surface — it only clears 7:1 on
+       pure white, which is the one light ground muted text rarely sits on.
+       The rule outranks the swatch, so the muted ROLE points here instead:
+       7.93:1 / 8.57:1 / 7.43:1 across canvas, surface and sunk. #4A5670 stays
+       in the scale above, unaltered, for non-text use. */
+    --v-slate-650: #414c66;
+    --v-slate-700: #33405a; /* stage-mode muted text (9.61:1 on canvas) */
+    --v-slate-800: #1e2a44;
+    --v-slate-900: #0e1a33; /* ink — primary body text (16.00:1 on canvas) */
+    --v-slate-950: #0b1636; /* sidebar ground */
+
+    /* --- Primary: ELECTRIC BLUE --------------------------------------------
+       500 is the identity. The scale splits by job, and the split is a contrast
+       requirement rather than a taste:
+         100      tint — selected rows, badge fills, soft washes
+         400      dark-mode primary (reads on a navy ground; 500 does not)
+         500      THE PRIMARY — fills, active nav, focus rings, icon strokes
+         600–700  TEXT + hover/pressed. #1E5EFF as text measures 5.12:1 on
+                  white and 4.74:1 on the canvas — over the 4.5 body floor but
+                  under this product's 7:1 bar, so link text and button labels
+                  use 600 (7.41:1 on white, 6.85:1 on canvas). */
+    --v-blue-50: #f0f5ff;
+    --v-blue-100: #e8efff; /* the approved tint */
+    --v-blue-200: #cfddff;
+    --v-blue-300: #a9c2ff;
+    --v-blue-400: #5b8cff; /* dark-mode primary */
+    --v-blue-500: #1e5eff; /* THE PRIMARY */
+    --v-blue-600: #1748cc; /* hover; primary text on light (7.41:1 on white) */
+    --v-blue-700: #123aa8; /* pressed */
+    --v-blue-800: #0e2e85;
+    --v-blue-900: #0b2263;
+    --v-blue-950: #0b1636;
+
+    /* --- Sidebar -------------------------------------------------------------
+       Its own named tokens rather than reaching into the scales: the sidebar is
+       dark in BOTH themes, so it must not follow the surface swap below. */
+    --v-sidebar-bg: #0b1636;
+    --v-sidebar-hover: #16244a;
+    --v-sidebar-active: #1e5eff;
+    --v-sidebar-text: #a9b8d6; /* 8.89:1 on the sidebar ground */
+    --v-sidebar-text-strong: #eef2fa;
+    --v-sidebar-border: #1e2a4d;
+
+    /* --- The AI accent: SPARKLE ---------------------------------------------
+       #38BDF8 is RESERVED. It marks AI moments and nothing else — agent
+       suggestions, AI insight titles, the sparkle mark. Using it for an
+       ordinary control is what would make the AI signal meaningless.
+
+       As a FILL or an icon on a dark ground it is #38BDF8. As TEXT on a light
+       ground it must be --v-sparkle-ink (#0369A1, 5.93:1); #38BDF8 measures
+       1.86:1 on the canvas and is unreadable there. */
+    --v-sparkle: #38bdf8;
+    --v-sparkle-ink: #0369a1;
+    --v-sparkle-tint: #e0f4fe;
+
+    /* --- Status ------------------------------------------------------------
+       Each has a TEXT cut (contrast-checked as type) and a FILL cut (a solid
+       area, where the text sits on top instead). Never used as the only signal. */
+    --v-success-text: #0a7f5a; /* 5.00:1 on white */
+    --v-success-fill: #12b886;
+    --v-success-tint: #d9f5ec;
+    --v-warning-text: #b45309; /* 5.02:1 on white */
+    --v-warning-fill: #f59e0b;
+    --v-warning-tint: #fef3d7;
+    --v-danger-text: #d92d20; /* 4.83:1 on white */
+    --v-danger-fill: #d92d20;
+    --v-danger-tint: #fde8e6;
+
+    /* --- Surfaces (light) ---------------------------------------------------
+       Overridden wholesale in the .dark block below. */
+    --v-canvas: var(--v-slate-50);
+    --v-surface: #ffffff;
+    --v-surface-2: var(--v-slate-100);
+    --v-border: var(--v-slate-200);
+    --v-border-strong: var(--v-slate-300);
+    --v-input-border: var(--v-slate-400);
+    --v-text: var(--v-slate-900);
+    --v-text-muted: var(--v-slate-650);
+    --v-text-placeholder: var(--v-slate-500);
+    --v-primary: var(--v-blue-500);
+    --v-primary-hover: var(--v-blue-600);
+    --v-primary-pressed: var(--v-blue-700);
+    --v-primary-tint: var(--v-blue-100);
+    --v-primary-text: var(--v-blue-600);
+    --v-on-primary: #ffffff;
+
+    /* Status, resolved per theme (the -text/-fill cuts above are fixed). */
+    --v-success: var(--v-success-text);
+    --v-warning: var(--v-warning-text);
+    --v-danger: var(--v-danger-text);
+
+    /* --- Elevation ----------------------------------------------------------
+       Deliberately shallow. On a projector a soft shadow is invisible, so depth
+       is carried by the 1px border and these only add a hint of lift on a
+       laptop. Stage mode switches them off entirely. */
+    --v-shadow-1: 0 1px 2px rgb(14 26 51 / 0.08);
+    --v-shadow-2: 0 1px 2px rgb(14 26 51 / 0.06), 0 4px 12px -4px rgb(14 26 51 / 0.1);
+    --v-shadow-3: 0 2px 4px rgb(14 26 51 / 0.06), 0 12px 28px -12px rgb(14 26 51 / 0.16);
+    --v-shadow-4: 0 2px 8px rgb(14 26 51 / 0.08), 0 24px 48px -24px rgb(14 26 51 / 0.22);
+
+    /* --- Chart series -------------------------------------------------------
+       Okabe-Ito derived: distinguishable under the three common forms of colour
+       blindness AND under a projector's crushed gamma. Capped at six because a
+       seventh series cannot be told apart by anyone. Charts read these at
+       render time and re-read them on a theme change. Income/expense is
+       green/orange, NEVER red/green. */
+    --v-chart-1: #1e5eff;
+    --v-chart-2: #009e73;
+    --v-chart-3: #d55e00;
+    --v-chart-4: #b86e00;
+    --v-chart-5: #cc79a7;
+    --v-chart-total: #0e1a33;
+    --v-chart-previous: #7c8aa0; /* the comparison series — always dashed too */
+    --v-chart-grid: #d5dce8;
+    --v-chart-axis: #4a5670;
+
+    /* Channel colours are FIXED product-wide: a customer learns that Telegram
+       is blue once, and it must not shift between two screens. */
+    --v-channel-telegram: #1e5eff;
+    --v-channel-whatsapp: #009e73;
+    --v-channel-instagram: #cc79a7;
+
+    /* --- Border width -------------------------------------------------------
+       A token, because stage mode doubles it. */
+    --v-border-width: 1px;
+}
+
+/* ===========================================================================
+   DARK
+   Never a pure-black ground and never pure-white type: #0A1226 and #EEF2FA.
+   Pure black on a projector loses all surface separation; pure white glares.
+   =========================================================================== */
+/* `.dark`, not `:root.dark`. <html> still carries the class, so the global
+   behaviour is unchanged — but dropping the :root anchor also lets a NESTED
+   element open a theme island: `<div class="dark">` re-declares every swatch
+   for its subtree. That is what makes the /design-system gallery able to show
+   one component in light, dark and stage side by side on a single page, which
+   is the only way to review them against each other. */
+.dark {
+    --v-canvas: #0a1226;
+    --v-surface: #111c36;
+    --v-surface-2: #172445;
+    --v-border: #2a3a5e;
+    --v-border-strong: #3a4c74;
+    /* NOT the card border: an input is an interactive target and owes the 3:1
+       non-text floor, which the #2A3A5E divider (1.50:1 on a card) cannot pay.
+       This measures 3.50:1 on the card, 3.86:1 on the canvas, 3.17:1 on the
+       raised surface — clear on all three. */
+    --v-input-border: #5f7299;
+    --v-text: #eef2fa;
+    --v-text-muted: #aab6ce;
+    --v-text-placeholder: #8494b2;
+
+    --v-primary: #5b8cff;
+    --v-primary-hover: #7ca3ff;
+    --v-primary-pressed: #a9c2ff;
+    --v-primary-tint: #16244a;
+    --v-primary-text: #5b8cff;
+    --v-on-primary: #08122b;
+
+    --v-success: #34d399;
+    --v-warning: #fbbf24;
+    --v-danger: #f87171;
+    --v-success-tint: #0c2e26;
+    --v-warning-tint: #33270a;
+    --v-danger-tint: #3a1614;
+
+    --v-sparkle-ink: #7dd3fc;
+    --v-sparkle-tint: #0b2b3d;
+
+    /* Shadows go nearly opaque rather than darker-grey: on a dark ground a
+       tinted shadow is invisible, so elevation is carried by --v-surface-2 and
+       the border instead. */
+    --v-shadow-1: 0 1px 2px rgb(0 0 0 / 0.4);
+    --v-shadow-2: 0 1px 2px rgb(0 0 0 / 0.4), 0 4px 12px -4px rgb(0 0 0 / 0.6);
+    --v-shadow-3: 0 2px 4px rgb(0 0 0 / 0.4), 0 12px 28px -12px rgb(0 0 0 / 0.7);
+    --v-shadow-4: 0 2px 8px rgb(0 0 0 / 0.5), 0 24px 48px -24px rgb(0 0 0 / 0.8);
+
+    --v-chart-1: #6b93ff;
+    --v-chart-2: #34c79a;
+    --v-chart-3: #f07a2a;
+    --v-chart-4: #e69f00;
+    --v-chart-5: #e08fc0;
+    --v-chart-total: #eef2fa;
+    --v-chart-previous: #8494b2;
+    --v-chart-grid: #2a3a5e;
+    --v-chart-axis: #aab6ce;
+
+    --v-channel-telegram: #6b93ff;
+    --v-channel-whatsapp: #34c79a;
+    --v-channel-instagram: #e08fc0;
+}
+
+/* ===========================================================================
+   STAGE MODE — `<html data-mode="stage">`
+
+   For the projector in a lit hall. Not a zoom: it trades the finish that reads
+   on a laptop for the contrast and weight that survive a washed-out projection.
+     · root font-size to 112.5% (everything in rem grows with it)
+     · muted text darkened a full step — 7.16:1 becomes 10.2:1
+     · borders darkened AND doubled to 2px, since a 1px hairline disappears
+     · shadows and transparency off — both turn to grey mush on a projector
+   Applies over either theme; the dark overrides above still win where set.
+   =========================================================================== */
+/* Likewise unanchored, so a preview pane can be put into stage mode on its
+   own. On <html> the font-size is 112.5% of the browser default; on a nested
+   island it is 112.5% of whatever it inherits, which is the right relative
+   behaviour for a preview. */
+[data-mode='stage'] {
+    font-size: 112.5%;
+
+    --v-text-muted: var(--v-slate-700);
+    --v-text-placeholder: var(--v-slate-600);
+    --v-border: var(--v-slate-300);
+    --v-border-strong: var(--v-slate-400);
+    --v-input-border: var(--v-slate-500);
+    --v-border-width: 2px;
+
+    --v-shadow-1: none;
+    --v-shadow-2: none;
+    --v-shadow-3: none;
+    --v-shadow-4: none;
+}
+
+.dark[data-mode='stage'] {
+    --v-text-muted: #c6d0e4;
+    --v-text-placeholder: #aab6ce;
+    --v-border: #44598a;
+    --v-border-strong: #5a719f;
+    --v-input-border: #8494b2;
+}
+
+/* ===========================================================================
+   SEMANTIC TOKENS — the only names a component may use.
+   =========================================================================== */
+@theme inline {
+    /* --- Type --------------------------------------------------------------
+       InterNum is listed FIRST and covers only numerals (see partials/fonts):
+       figures come from Inter, every letter falls through to Onest. That is how
+       a KPI gets tabular figures without a second family in the body copy.
+
+       No weight below 400 is ever used — a thin weight is the first thing a
+       projector destroys. */
+    --font-sans:
+        'InterNum', 'Onest', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif,
+        'Apple Color Emoji', 'Segoe UI Emoji';
+    --font-display: 'Onest', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    --font-num: 'InterNum', 'Onest', ui-sans-serif, system-ui, sans-serif;
+    /* `serif` is retained only so a stray `font-serif` in a not-yet-migrated
+       view does not fall back to Times. The system has no serif voice. */
+    --font-serif: 'Onest', ui-sans-serif, system-ui, sans-serif;
+
+    /* --- Surfaces ---------------------------------------------------------- */
+    --color-canvas: var(--v-canvas);
+    --color-surface: var(--v-surface);
+    --color-surface-2: var(--v-surface-2);
+    --color-border: var(--v-border);
+    --color-border-strong: var(--v-border-strong);
+    --color-input-border: var(--v-input-border);
+
+    /* --- Text -------------------------------------------------------------- */
+    --color-text: var(--v-text);
+    --color-muted: var(--v-text-muted);
+    --color-placeholder: var(--v-text-placeholder);
+
+    /* --- Primary ----------------------------------------------------------- */
+    --color-primary: var(--v-primary);
+    --color-primary-hover: var(--v-primary-hover);
+    --color-primary-pressed: var(--v-primary-pressed);
+    --color-primary-tint: var(--v-primary-tint);
+    --color-primary-text: var(--v-primary-text);
+    --color-on-primary: var(--v-on-primary);
+
+    /* --- Sidebar (dark in both themes) ------------------------------------- */
+    --color-sidebar: var(--v-sidebar-bg);
+    --color-sidebar-hover: var(--v-sidebar-hover);
+    --color-sidebar-active: var(--v-sidebar-active);
+    --color-sidebar-text: var(--v-sidebar-text);
+    --color-sidebar-text-strong: var(--v-sidebar-text-strong);
+    --color-sidebar-border: var(--v-sidebar-border);
+
+    /* --- AI accent --------------------------------------------------------- */
+    --color-sparkle: var(--v-sparkle);
+    --color-sparkle-ink: var(--v-sparkle-ink);
+    --color-sparkle-tint: var(--v-sparkle-tint);
+
+    /* --- Status ------------------------------------------------------------ */
+    --color-success: var(--v-success);
+    --color-success-fill: var(--v-success-fill);
+    --color-success-tint: var(--v-success-tint);
+    --color-warning: var(--v-warning);
+    --color-warning-fill: var(--v-warning-fill);
+    --color-warning-tint: var(--v-warning-tint);
+    --color-danger: var(--v-danger);
+    --color-danger-fill: var(--v-danger-fill);
+    --color-danger-tint: var(--v-danger-tint);
+
+    /* --- Charts ------------------------------------------------------------ */
+    --color-chart-1: var(--v-chart-1);
+    --color-chart-2: var(--v-chart-2);
+    --color-chart-3: var(--v-chart-3);
+    --color-chart-4: var(--v-chart-4);
+    --color-chart-5: var(--v-chart-5);
+    --color-chart-total: var(--v-chart-total);
+    --color-chart-previous: var(--v-chart-previous);
+    --color-chart-grid: var(--v-chart-grid);
+    --color-chart-axis: var(--v-chart-axis);
+    --color-channel-telegram: var(--v-channel-telegram);
+    --color-channel-whatsapp: var(--v-channel-whatsapp);
+    --color-channel-instagram: var(--v-channel-instagram);
+
+    /* --- Raw scales, for the rare case a component needs a specific step --- */
+    --color-slate-50: var(--v-slate-50);
+    --color-slate-100: var(--v-slate-100);
+    --color-slate-200: var(--v-slate-200);
+    --color-slate-300: var(--v-slate-300);
+    --color-slate-400: var(--v-slate-400);
+    --color-slate-500: var(--v-slate-500);
+    --color-slate-600: var(--v-slate-600);
+    --color-slate-700: var(--v-slate-700);
+    --color-slate-800: var(--v-slate-800);
+    --color-slate-900: var(--v-slate-900);
+    --color-slate-950: var(--v-slate-950);
+    --color-blue-50: var(--v-blue-50);
+    --color-blue-100: var(--v-blue-100);
+    --color-blue-200: var(--v-blue-200);
+    --color-blue-300: var(--v-blue-300);
+    --color-blue-400: var(--v-blue-400);
+    --color-blue-500: var(--v-blue-500);
+    --color-blue-600: var(--v-blue-600);
+    --color-blue-700: var(--v-blue-700);
+    --color-blue-800: var(--v-blue-800);
+    --color-blue-900: var(--v-blue-900);
+    --color-blue-950: var(--v-blue-950);
+
+    /* ===================================================================
+       LEGACY ALIASES — the terracotta-era names, re-pointed at Velora
+       Midnight so all 53 Blade views re-skin without being touched.
+
+       This is what makes the migration incremental: a view still asking for
+       `bg-brand` gets the new primary, and is rewritten to `bg-primary` when
+       its page moves to Vue. THIS BLOCK IS DELETED IN PHASE (f), when the
+       last Blade view goes. Do not use these names in new markup.
+
+       The `night-*` family stays FIXED dark in both themes on purpose: those
+       tokens are only ever written behind a `dark:` variant, so they must not
+       follow the surface swap above.
+       =================================================================== */
+    --color-brand: var(--v-blue-500);
+    --color-brand-ring: var(--v-blue-500);
+    --color-brand-hover: var(--v-blue-600);
+    --color-brand-strong: var(--v-blue-600);
+    --color-brand-deep: var(--v-blue-700);
+    --color-brand-light: var(--v-blue-400);
+    --color-grad-from: var(--v-blue-400);
+    --color-grad-via: var(--v-blue-500);
+    --color-grad-to: var(--v-blue-600);
+    --color-on-accent: #ffffff;
+    --color-logo-from: #4e7eff;
+    --color-logo-to: #14239b;
+
+    --color-paper: var(--v-canvas);
+    --color-sunk: var(--v-surface-2);
+    --color-hairline: var(--v-border);
+    --color-hairline-strong: var(--v-border-strong);
+    --color-ink: var(--v-text);
+    --color-ink-soft: var(--v-slate-700);
+    --color-faint: var(--v-slate-500);
+
+    --color-night: #0a1226;
+    --color-night-soft: #0e1730;
+    --color-night-card: #111c36;
+    --color-night-raised: #172445;
+    --color-night-ink: #eef2fa;
+    --color-night-muted: #aab6ce;
+    --color-field-dark: #0e1730;
+
+    --color-success-light: #34d399;
+    --color-danger-deep: #a81d13;
+    --color-danger-light: #f87171;
+    --color-warning-light: #fbbf24;
+    --color-info: var(--v-sparkle-ink);
+    --color-info-light: #7dd3fc;
+
+    /* The old ember/sand/cream/charcoal scales, flattened onto the new ones. */
+    --color-ember-50: var(--v-blue-50);
+    --color-ember-100: var(--v-blue-100);
+    --color-ember-200: var(--v-blue-200);
+    --color-ember-300: var(--v-blue-300);
+    --color-ember-400: var(--v-blue-400);
+    --color-ember-500: var(--v-blue-500);
+    --color-ember-600: var(--v-blue-600);
+    --color-ember-700: var(--v-blue-700);
+    --color-ember-800: var(--v-blue-800);
+    --color-ember-900: var(--v-blue-900);
+    --color-ember-950: var(--v-blue-950);
+    --color-orange-50: var(--v-blue-50);
+    --color-orange-100: var(--v-blue-100);
+    --color-orange-200: var(--v-blue-200);
+    --color-orange-300: var(--v-blue-300);
+    --color-orange-400: var(--v-blue-400);
+    --color-orange-500: var(--v-blue-500);
+    --color-orange-600: var(--v-blue-600);
+    --color-orange-700: var(--v-blue-700);
+    --color-orange-800: var(--v-blue-800);
+    --color-orange-900: var(--v-blue-900);
+    --color-orange-950: var(--v-blue-950);
+    --color-sand-0: #ffffff;
+    --color-sand-50: var(--v-slate-50);
+    --color-sand-100: var(--v-slate-100);
+    --color-sand-200: var(--v-slate-200);
+    --color-sand-300: var(--v-slate-300);
+    --color-sand-400: var(--v-slate-300);
+    --color-sand-500: var(--v-slate-500);
+    --color-sand-600: var(--v-slate-600);
+    --color-sand-700: var(--v-slate-700);
+    --color-sand-800: var(--v-slate-800);
+    --color-sand-900: var(--v-slate-900);
+    --color-sand-950: var(--v-slate-950);
+    --color-cream-50: #ffffff;
+    --color-cream-100: var(--v-slate-50);
+    --color-cream-200: var(--v-slate-50);
+    --color-cream-300: var(--v-slate-100);
+    --color-cream-400: var(--v-slate-200);
+    --color-cream-500: var(--v-slate-300);
+    --color-charcoal-50: #eef2fa;
+    --color-charcoal-100: var(--v-slate-200);
+    --color-charcoal-300: #aab6ce;
+    --color-charcoal-500: var(--v-slate-600);
+    --color-charcoal-700: #172445;
+    --color-charcoal-800: #0e1730;
+    --color-charcoal-900: var(--v-slate-900);
+    --color-charcoal-950: #0a1226;
+
+    /* --- Type scale --------------------------------------------------------
+       Floors are set by the hall, not by taste: body 15–16px, no label under
+       13px, KPI numbers 32–44px, page title 24–28px. Tracking tightens as size
+       grows. Weights are 400 body / 500 label / 600–800 heading; nothing
+       lighter exists in the system. */
+    --text-overline: 0.8125rem; /* 13px — THE FLOOR. Nothing smaller ships. */
+    --text-overline--line-height: 1.2;
+    --text-overline--letter-spacing: 0.06em;
+    --text-overline--font-weight: 600;
+    --text-caption: 0.8125rem;
+    --text-caption--line-height: 1.45;
+    --text-caption--font-weight: 500;
+    --text-body-sm: 0.875rem; /* 14px — dense tables only */
+    --text-body-sm--line-height: 1.5;
+    --text-body: 0.9375rem; /* 15px */
+    --text-body--line-height: 1.6;
+    --text-body-lg: 1rem; /* 16px */
+    --text-body-lg--line-height: 1.6;
+    --text-lead: 1.125rem;
+    --text-lead--line-height: 1.55;
+
+    --text-h4: 1rem;
+    --text-h4--line-height: 1.4;
+    --text-h4--letter-spacing: -0.006em;
+    --text-h4--font-weight: 600;
+    --text-h3: 1.125rem;
+    --text-h3--line-height: 1.35;
+    --text-h3--letter-spacing: -0.01em;
+    --text-h3--font-weight: 600;
+    --text-h2: 1.375rem;
+    --text-h2--line-height: 1.3;
+    --text-h2--letter-spacing: -0.012em;
+    --text-h2--font-weight: 600;
+    --text-h1: 1.625rem; /* 26px — page title, mid of the 24–28px band */
+    --text-h1--line-height: 1.25;
+    --text-h1--letter-spacing: -0.016em;
+    --text-h1--font-weight: 700;
+
+    /* KPI figures. 32–44px, tabular, 700–800 — the number is the loudest thing
+       on a dashboard and has to read from the back of the room. */
+    --text-kpi-sm: 2rem;
+    --text-kpi-sm--line-height: 1.1;
+    --text-kpi-sm--letter-spacing: -0.02em;
+    --text-kpi-sm--font-weight: 700;
+    --text-kpi: 2.5rem;
+    --text-kpi--line-height: 1.05;
+    --text-kpi--letter-spacing: -0.024em;
+    --text-kpi--font-weight: 700;
+    --text-kpi-lg: 2.75rem;
+    --text-kpi-lg--line-height: 1;
+    --text-kpi-lg--letter-spacing: -0.028em;
+    --text-kpi-lg--font-weight: 800;
+
+    /* The landing keeps a genuine display range. */
+    --text-display-sm: clamp(2rem, 1.5rem + 2.2vw, 3rem);
+    --text-display-sm--line-height: 1.12;
+    --text-display-sm--letter-spacing: -0.022em;
+    --text-display-sm--font-weight: 700;
+    --text-display: clamp(2.5rem, 1.7rem + 3.6vw, 4rem);
+    --text-display--line-height: 1.06;
+    --text-display--letter-spacing: -0.026em;
+    --text-display--font-weight: 800;
+    --text-display-lg: clamp(2.75rem, 1.5rem + 5.4vw, 4.75rem);
+    --text-display-lg--line-height: 1.02;
+    --text-display-lg--letter-spacing: -0.03em;
+    --text-display-lg--font-weight: 800;
+
+    /* --- Radii -------------------------------------------------------------
+       Cards sit at 12px per the spec. Controls one step below so a button
+       inside a card never looks rounder than the card holding it. */
+    --radius-xs: 0.25rem;
+    --radius-sm: 0.375rem;
+    --radius-md: 0.5rem;
+    --radius-lg: 0.625rem;
+    --radius-xl: 0.75rem; /* 12px — THE CARD RADIUS */
+    --radius-2xl: 1rem;
+    --radius-3xl: 1.25rem;
+    --radius-4xl: 1.5rem;
+    --radius-pill: 999px;
+
+    /* --- Elevation ---------------------------------------------------------- */
+    --shadow-e1: var(--v-shadow-1);
+    --shadow-e2: var(--v-shadow-2);
+    --shadow-e3: var(--v-shadow-3);
+    --shadow-e4: var(--v-shadow-4);
+    --shadow-e5: var(--v-shadow-4);
+
+    /* --- Spacing rhythm -----------------------------------------------------
+       An 8px grid. Card padding 16–20px, 24px between blocks, table rows
+       44–48px — Tabler's density, opened up one notch for projection. */
+    --spacing-card: 1.25rem;
+    --spacing-card-sm: 1rem;
+    --spacing-block: 1.5rem;
+    --spacing-row: 2.75rem;
+    --spacing-row-lg: 3rem;
+
+    /* --- Motion -------------------------------------------------------------
+       150–200ms. Anything slower reads as lag on a projector, where the frame
+       rate is already against you. All of it is switched off under
+       prefers-reduced-motion (see app.css). */
+    --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+    --ease-inout: cubic-bezier(0.65, 0, 0.35, 1);
+    --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+    --duration-instant: 90ms;
+    --duration-fast: 150ms;
+    --duration-base: 200ms;
+    --duration-slow: 320ms;
+    --duration-slower: 520ms;
+}
+
+/* ===========================================================================
+   MOTION UTILITIES
+
+   Tailwind v4 has an `--ease-*` theme namespace (so `ease-out` above resolves
+   to our curve) but NO `--duration-*` one: `duration-*` accepts a bare number
+   or an arbitrary value and nothing else. Declaring --duration-fast in @theme
+   therefore produced a token that every component referenced and that generated
+   no CSS at all — the classes were silently inert and every transition fell
+   back to the default 150ms.
+
+   These are the real utilities, so the named durations mean what they say.
+   =========================================================================== */
+@utility duration-instant {
+    transition-duration: var(--duration-instant);
+}
+@utility duration-fast {
+    transition-duration: var(--duration-fast);
+}
+@utility duration-base {
+    transition-duration: var(--duration-base);
+}
+@utility duration-slow {
+    transition-duration: var(--duration-slow);
+}
+@utility duration-slower {
+    transition-duration: var(--duration-slower);
+}
+
+/* The stage variant, so a component can opt a single declaration into stage
+   mode: `stage:border-2`. Most of the time the token swap above is enough and
+   nothing needs this. */
+@custom-variant stage (&:where([data-mode='stage'], [data-mode='stage'] *));

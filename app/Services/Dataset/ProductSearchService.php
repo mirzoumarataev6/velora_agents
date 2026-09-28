@@ -224,6 +224,7 @@ class ProductSearchService
         return $result;
     }
 
+    // Приводит и валидирует сырые аргументы инструмента поиска в набор фильтров
     protected function filters(array $args): array
     {
         $filters = [];
@@ -269,6 +270,7 @@ class ProductSearchService
         return $filters;
     }
 
+    // Приводит переданный список исключений к нормализованному массиву терминов
     protected function exclusions(mixed $value): array
     {
         $items = is_string($value) ? explode(',', $value) : (is_array($value) ? $value : []);
@@ -285,6 +287,7 @@ class ProductSearchService
         return array_slice(array_values(array_unique($clean)), 0, self::MAX_EXCLUSIONS);
     }
 
+    // Получает товары из источника и отфильтровывает исключённые клиентом варианты
     protected function fetch(ProductSource $source, array $filters, int $limit): array
     {
         $exclude = $filters['exclude'] ?? [];
@@ -301,6 +304,7 @@ class ProductSearchService
         return array_slice(array_values($rows), 0, $limit);
     }
 
+    // Проверяет, содержит ли товар одно из исключённых слов
     protected function isExcluded(array $row, array $exclude): bool
     {
         $haystack = $this->skeleton(implode(' ', array_map(
@@ -319,6 +323,7 @@ class ProductSearchService
         return false;
     }
 
+    // Сводит текст к грубому "скелету" из латинских букв для нечувствительного к опечаткам сравнения
     protected function skeleton(string $text): string
     {
         $text = strtr(mb_strtolower($text), self::CYRILLIC_TO_LATIN);
@@ -328,6 +333,7 @@ class ProductSearchService
         return (string) preg_replace('/(.)\1+/', '$1', $text);
     }
 
+    // Приводит запрошенный лимит к допустимому диапазону, подставляя значение по умолчанию
     protected function limit(mixed $requested): int
     {
         if (! is_numeric($requested)) {
@@ -343,6 +349,7 @@ class ProductSearchService
         return min($limit, self::MAX_LIMIT);
     }
 
+    // Приводит значение к очищенной строке заданной максимальной длины
     protected function string(mixed $value, int $limit): ?string
     {
         if (! is_string($value)) {
@@ -354,6 +361,7 @@ class ProductSearchService
         return $value === '' ? null : mb_substr($value, 0, $limit);
     }
 
+    // Убирает фильтр наличия, если источник товаров не отслеживает остатки
     protected function dropUnanswerableFilters(Agent $agent, ?ProductSource $source, array &$filters): array
     {
         if (empty($filters['in_stock_only']) || $source === null || $source->tracksStock()) {
@@ -373,6 +381,7 @@ class ProductSearchService
             .'need to know, offer to check.'];
     }
 
+    // Подбирает ближайшие альтернативы, постепенно ослабляя фильтры, если точных совпадений нет
     protected function nearest(?ProductSource $source, array $filters): array
     {
         $none = ['products' => [], 'note' => null, 'relaxed' => null];
@@ -427,6 +436,7 @@ class ProductSearchService
         return $none;
     }
 
+    // Ищет ближайшие по цене товары ниже и выше заданного диапазона
     protected function nearestByPrice(ProductSource $source, array $wider, array $filters): array
     {
         $min = $filters['min_price'] ?? null;
@@ -456,6 +466,7 @@ class ProductSearchService
         return array_slice($candidates, 0, self::NEAREST_LIMIT);
     }
 
+    // Добавляет к товару информацию о том, насколько его цена выходит за рамки бюджета
     protected function withBudgetGap(array $row, ?float $min, ?float $max): array
     {
         $price = is_numeric($row['price'] ?? null)
@@ -475,6 +486,7 @@ class ProductSearchService
         return $row;
     }
 
+    // Округляет разницу цены, отбрасывая дробную часть, если она равна нулю
     protected function gap(float $amount): int|float
     {
         $amount = round($amount, 2);
@@ -482,6 +494,7 @@ class ProductSearchService
         return $amount == floor($amount) ? (int) $amount : $amount;
     }
 
+    // Формирует для LLM пояснение о том, почему поиск не дал результатов
     protected function emptyResultNote(array $filters, array $nearest): string
     {
         $note = $filters === []
@@ -503,6 +516,7 @@ class ProductSearchService
             .'again reads as a broken bot rather than a person. Vary the wording every time.';
     }
 
+    // Описывает применённые фильтры человекочитаемой фразой на английском для подсказки LLM
     protected function describeFilters(array $filters): string
     {
         $parts = [];
@@ -534,11 +548,13 @@ class ProductSearchService
         return $parts === [] ? 'these filters' : implode(', ', $parts);
     }
 
+    // Форматирует денежную сумму, убирая лишние нули после запятой
     protected function amount(float $value): string
     {
         return rtrim(rtrim(number_format($value, 2, '.', ''), '0'), '.') ?: '0';
     }
 
+    // Приводит значение к неотрицательному числу с плавающей точкой или null
     protected function money(mixed $value): ?float
     {
         if (! is_numeric($value)) {

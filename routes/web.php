@@ -44,6 +44,12 @@ Route::middleware(['auth', 'auth.session'])->group(function () {
     // without touching the handful of places that name that route.
     Route::redirect('/home', '/dashboard')->name('home');
     Route::get('/dashboard', DashboardController::class)->name('dashboard');
+
+    // The design-system showcase. A stub in phase (b), where its job is to give
+    // the Vue app shell a real consumer; phase (c) fills it with the component
+    // gallery. Behind auth deliberately — it is a working document for whoever
+    // is building the product, not a public page.
+    Route::inertia('/design-system', 'DesignSystem')->name('design-system');
     Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
 
     // The only onboarding endpoint. Step progress is derived from the account's
@@ -192,9 +198,12 @@ Route::prefix('{locale}')->group(function () {
     Route::view('/', 'showcase')->name('welcome')
         ->middleware('cache.headers:public;max_age=300;etag');
 
+    // MIGRATED TO INERTIA (phase b). Route::inertia, not a closure, so
+    // `route:cache` still works — these pages pull everything they need from
+    // shared props and need no controller of their own.
     Route::middleware('guest')->group(function () {
-        Route::view('/login', 'auth.login')->name('login');
-        Route::view('/register', 'auth.register')->name('register');
+        Route::inertia('/login', 'Auth/Login')->name('login');
+        Route::inertia('/register', 'Auth/Register')->name('register');
         Route::get('/forgot-password', [PasswordResetController::class, 'request'])->name('password.request');
         Route::get('/reset-password/{token}', [PasswordResetController::class, 'reset'])->name('password.reset');
     });

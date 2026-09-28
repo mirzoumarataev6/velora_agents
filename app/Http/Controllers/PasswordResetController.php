@@ -3,13 +3,14 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
-use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use Inertia\Inertia;
+use Inertia\Response;
 
 /**
  * Password reset built on Laravel's Password broker. Mail delivery uses the
@@ -18,9 +19,9 @@ use Illuminate\Validation\ValidationException;
  */
 class PasswordResetController extends Controller
 {
-    public function request(): View
+    public function request(): Response
     {
-        return view('auth.forgot-password');
+        return Inertia::render('Auth/ForgotPassword');
     }
 
     public function email(Request $request): RedirectResponse
@@ -39,10 +40,25 @@ class PasswordResetController extends Controller
         return back()->with('status', __('auth.forgot.sent'));
     }
 
-    public function reset(Request $request, string $token): View
+    /**
+     * The form behind the emailed reset link.
+     *
+     * The token is read by NAME off the route rather than taken as a method
+     * argument, and that is load-bearing. This route lives inside the
+     * `{locale}` prefix group, so it has two route parameters — and Laravel
+     * binds scalar controller arguments POSITIONALLY, not by name. A
+     * `string $token` parameter therefore received the LOCALE ("ru"), which
+     * the form then posted back as the reset token, so every reset from an
+     * emailed link failed with "invalid token".
+     *
+     * It went unnoticed because the page still rendered perfectly: nothing on
+     * screen shows what is in a hidden field, and the tests asserted the page
+     * rendered rather than what it carried.
+     */
+    public function reset(Request $request, string $token): Response
     {
-        return view('auth.reset-password', [
-            'token' => $token,
+        return Inertia::render('Auth/ResetPassword', [
+            'token' => $request->route('token'),
             'email' => $request->query('email', ''),
         ]);
     }

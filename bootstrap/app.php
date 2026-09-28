@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\CompressResponse;
+use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\RestrictToLocalhost;
 use App\Http\Middleware\ServeBuiltAssetsToRemoteClients;
 use App\Http\Middleware\SetLocale;
@@ -47,6 +48,21 @@ return Application::configure(basePath: dirname(__DIR__))
         // mod_deflate rules only apply under Apache — so HTML went over the
         // tunnel uncompressed. Appended last so it wraps the finished response.
         $middleware->web(append: [CompressResponse::class]);
+
+        // Inertia's middleware sets the asset version, shares the props every
+        // page needs, and turns a redirect-after-PUT/DELETE into a 303 so the
+        // browser re-issues it as a GET.
+        //
+        // Appended LAST, which makes it the innermost of the group — and that
+        // position is load-bearing in both directions. On the way IN it must
+        // run after SetLocale, or the translations it shares would be built in
+        // the default locale rather than the resolved one. On the way OUT it
+        // must run BEFORE CompressResponse, because Inertia SETS `Vary:
+        // X-Inertia` rather than appending to it: running it last on the
+        // response wiped the `Accept-Encoding` that CompressResponse had just
+        // added, which would have let a proxy serve a gzipped body to a client
+        // that never asked for one. Innermost, both are preserved.
+        $middleware->web(append: [HandleInertiaRequests::class]);
 
         // SetLocale isn't in Laravel's default priority list, so without this
         // it can get sorted to run AFTER the 'auth' middleware on protected

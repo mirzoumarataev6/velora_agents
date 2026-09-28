@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Agent;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Inertia\Testing\AssertableInertia;
 use Tests\TestCase;
 
 class LocaleTest extends TestCase
@@ -22,17 +23,32 @@ class LocaleTest extends TestCase
         $this->get('/tg')->assertOk()->assertSee('Маҳсулот');
     }
 
-    public function test_locale_switcher_preserves_current_path(): void
+    /**
+     * Every locale-prefixed auth URL resolves, and renders in that locale.
+     *
+     * This used to assert the switcher's own anchors — href="/en/login" and the
+     * rest — straight out of the HTML. The auth pages are Inertia now, so the
+     * server sends props rather than markup and those anchors are built in the
+     * browser from window.location (see Components/LocaleSwitcher.vue).
+     *
+     * What is still worth pinning here is the half that IS the server's: that
+     * the URLs the switcher constructs are real, and that each one comes back
+     * in the language its prefix asks for. A switcher that built a dead URL
+     * would fail this just as loudly as the old assertion did.
+     */
+    public function test_every_locale_prefixed_auth_path_resolves_in_its_own_locale(): void
     {
-        $this->get('/ru/login')
-            ->assertOk()
-            ->assertSee('href="/en/login"', false)
-            ->assertSee('href="/tg/login"', false);
-
-        $this->get('/en/register')
-            ->assertOk()
-            ->assertSee('href="/ru/register"', false)
-            ->assertSee('href="/tg/register"', false);
+        foreach (['ru', 'tg', 'en'] as $locale) {
+            foreach (['login' => 'Auth/Login', 'register' => 'Auth/Register'] as $path => $component) {
+                $this->get("/{$locale}/{$path}")
+                    ->assertOk()
+                    ->assertInertia(
+                        fn (AssertableInertia $page) => $page
+                            ->component($component)
+                            ->where('locale.current', $locale)
+                    );
+            }
+        }
     }
 
     public function test_unsupported_locale_redirects_to_default(): void
@@ -61,7 +77,7 @@ class LocaleTest extends TestCase
         $user = User::factory()->create(['locale' => 'ru']);
         Agent::factory()->for($user)->create();
 
-        $response = $this->actingAs($user)->get('/agents?lang=en');
+        $response = $this->actingAs($user)->get('/conversations?lang=en');
 
         $response->assertOk();
         // The response being switched — not the one after it — is the whole point.
@@ -77,7 +93,7 @@ class LocaleTest extends TestCase
         // Each switch is a single request from whatever the previous locale was,
         // including tg → en and back to ru, so no pair is quietly special-cased.
         foreach (['tg', 'en', 'ru', 'en', 'tg'] as $locale) {
-            $this->actingAs($user)->get('/agents?lang='.$locale)
+            $this->actingAs($user)->get('/conversations?lang='.$locale)
                 ->assertOk()
                 ->assertSee('<html lang="'.$locale.'">', false);
         }
@@ -88,12 +104,12 @@ class LocaleTest extends TestCase
         $user = User::factory()->create(['locale' => 'ru']);
         Agent::factory()->for($user)->create();
 
-        $this->actingAs($user)->get('/agents?lang=tg')->assertOk();
+        $this->actingAs($user)->get('/conversations?lang=tg')->assertOk();
 
         $this->assertSame('tg', $user->fresh()->locale);
 
         // The clean URL the address bar is rewritten to must stay in tg.
-        $this->actingAs($user)->get('/agents')
+        $this->actingAs($user)->get('/conversations')
             ->assertOk()
             ->assertSee('<html lang="tg">', false);
     }

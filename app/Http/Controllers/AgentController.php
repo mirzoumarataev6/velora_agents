@@ -9,6 +9,8 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
+use Inertia\Inertia;
+use Inertia\Response;
 
 class AgentController extends Controller
 {
@@ -22,7 +24,7 @@ class AgentController extends Controller
      */
     public const TABS = ['knowledge', 'catalog', 'database', 'channels', 'playground', 'conversations', 'settings'];
 
-    public function index(Request $request, OnboardingService $onboarding): View
+    public function index(Request $request, OnboardingService $onboarding): Response
     {
         $user = $request->user();
 
@@ -43,14 +45,51 @@ class AgentController extends Controller
             $user->markOnboardingCompleted();
         }
 
-        return view('agents.index', compact('agents') + ['onboarding' => $checklist]);
+        return Inertia::render('Agents/Index', [
+            'agents' => $agents->map(fn (Agent $agent) => [
+                'id' => $agent->id,
+                'slug' => $agent->slug,
+                'name' => $agent->name,
+                'description' => $agent->description,
+                'status' => $agent->status,
+                'knowledge_sources_count' => $agent->knowledge_sources_count,
+                'channels_count' => $agent->channels_count,
+                'conversations_count' => $agent->conversations_count,
+            ])->all(),
+            'onboarding' => $checklist,
+            // The sign-up greeting, claimed HERE when there is a checklist to
+            // pin it above — which is what stops the shared layout from also
+            // toasting it. Claiming it spends the session key and stamps the
+            // account welcomed, so this page's banner replaces the welcome
+            // modal rather than appearing beside it. One greeting per arrival.
+            'banner' => $this->claimWelcomeBanner($request, $checklist['visible']),
+        ]);
     }
 
-    public function create(): View
+    /**
+     * The owner's name, if this page owes them a sign-up banner.
+     */
+    private function claimWelcomeBanner(Request $request, bool $checklistVisible): ?string
+    {
+        if (! $checklistVisible) {
+            return null;
+        }
+
+        if ($request->session()->get(AuthController::GREETING_SESSION_KEY) !== AuthController::GREETING_WELCOME) {
+            return null;
+        }
+
+        $request->session()->forget(AuthController::GREETING_SESSION_KEY);
+        $request->user()->markWelcomed();
+
+        return $request->user()->name;
+    }
+
+    public function create(): Response
     {
         $this->authorize('create', Agent::class);
 
-        return view('agents.form', ['agent' => new Agent]);
+        return Inertia::render('Agents/Form', ['agent' => null]);
     }
 
     public function store(StoreAgentRequest $request): RedirectResponse
@@ -92,11 +131,48 @@ class AgentController extends Controller
         ]);
     }
 
-    public function edit(Agent $agent): View
+    public function edit(Agent $agent): Response
     {
         $this->authorize('update', $agent);
 
-        return view('agents.form', compact('agent'));
+        return Inertia::render('Agents/Form', ['agent' => $this->formAttributes($agent)]);
+    }
+
+    /**
+     * The agent, flattened into exactly the shape the form posts back.
+     *
+     * `response_format` is a JSON column on the model but four separate fields
+     * on the form, and StoreAgentRequest reassembles it. Unpacking it here —
+     * rather than letting the form reach into a nested object — keeps the two
+     * halves of that contract next to each other.
+     *
+     * @return array<string, mixed>
+     */
+    private function formAttributes(Agent $agent): array
+    {
+        $format = $agent->response_format ?? [];
+        $behavior = $agent->behavior ?? [];
+
+        return [
+            'slug' => $agent->slug,
+            'name' => $agent->name,
+            'description' => $agent->description,
+            'tone' => $agent->tone,
+            'greeting_message' => $format['greeting_message'] ?? null,
+            'fallback_message' => $format['fallback_message'] ?? null,
+            'max_length' => $format['max_length'] ?? null,
+            'use_emojis' => (bool) ($format['use_emojis'] ?? false),
+            'custom_system_prompt' => $agent->custom_system_prompt,
+            'rules_instructions' => $agent->rules_instructions,
+            // `behavior` is the other JSON column the request reassembles.
+            'on_not_found' => $behavior['on_not_found'] ?? 'apologize',
+            'escalation' => $behavior['escalation'] ?? config('agent.escalation.default_sensitivity', 'conservative'),
+            'proactivity' => $agent->proactivity,
+            'haggling_enabled' => (bool) $agent->haggling_enabled,
+            'haggling_level' => $agent->haggling_level,
+            'haggle_min_price_percent' => $agent->haggle_min_price_percent,
+            'haggling_instructions' => $agent->haggling_instructions,
+        ];
     }
 
     public function update(StoreAgentRequest $request, Agent $agent): RedirectResponse

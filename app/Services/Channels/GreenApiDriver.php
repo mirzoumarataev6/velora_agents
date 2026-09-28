@@ -100,6 +100,7 @@ class GreenApiDriver implements ChannelDriverInterface
         };
     }
 
+    // Собирает входящее сообщение с фото, добавляя подпись и распознанное описание изображения
     protected function buildPhotoMessage(string $messageId, string $userId, ?string $userName, array $file): IncomingMessage
     {
         $caption = trim((string) ($file['caption'] ?? ''));
@@ -120,6 +121,7 @@ class GreenApiDriver implements ChannelDriverInterface
         return new IncomingMessage($messageId, $userId, $userName, "[Customer sent an image. Identified: {$vision['description']}]", 'photo');
     }
 
+    // Скачивает файл изображения по ссылке и распознаёт его содержимое
     protected function describeDownload(array $file): array
     {
         $unclear = ['confident' => false, 'description' => null];
@@ -141,6 +143,7 @@ class GreenApiDriver implements ChannelDriverInterface
         }
     }
 
+    // Скачивает голосовое сообщение и транскрибирует его в текст
     protected function handleVoice(Channel $channel, string $messageId, string $userId, ?string $userName, array $file): IncomingMessage
     {
         $message = fn (string $text, string $type) => new IncomingMessage($messageId, $userId, $userName, $text, $type);
@@ -225,9 +228,7 @@ class GreenApiDriver implements ChannelDriverInterface
     }
 
     // Отправляет индикатор набора текста (Green API его не поддерживает)
-    public function sendTypingIndicator(Channel $channel, string $externalUserId): void
-    {
-    }
+    public function sendTypingIndicator(Channel $channel, string $externalUserId): void {}
 
     // Проверяет учётные данные и регистрирует вебхук при подключении канала
     public function connect(Channel $channel): array
@@ -276,6 +277,7 @@ class GreenApiDriver implements ChannelDriverInterface
         $this->call($channel, 'post', 'setSettings', ['webhookUrl' => '', 'webhookUrlToken' => '']);
     }
 
+    // Выполняет HTTP-запрос к API Green API для инстанса канала
     protected function call(Channel $channel, string $method, string $apiMethod, array $payload = []): ClientResponse
     {
         $url = sprintf(
@@ -295,11 +297,13 @@ class GreenApiDriver implements ChannelDriverInterface
         }
     }
 
+    // Возвращает базовый URL API Green API для канала
     protected function apiUrl(Channel $channel): string
     {
         return rtrim(($channel->credentials['api_url'] ?? null) ?: self::DEFAULT_API_URL, '/');
     }
 
+    // Возвращает учётные данные канала по ключу или бросает исключение, если их нет
     protected function credential(Channel $channel, string $key): string
     {
         $value = $channel->credentials[$key] ?? null;
@@ -311,6 +315,7 @@ class GreenApiDriver implements ChannelDriverInterface
         return (string) $value;
     }
 
+    // Извлекает текст ошибки из ответа Green API
     protected function errorOf(ClientResponse $response): string
     {
         return (string) ($response->json('message') ?? Str::limit($response->body(), 200));

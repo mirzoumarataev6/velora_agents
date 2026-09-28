@@ -8,11 +8,22 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 /**
- * The main sidebar can be collapsed to an icon rail during normal use, and the
- * choice sticks across pages.
+ * The main sidebar can be collapsed to an icon rail, and the choice sticks.
  *
- * The state has two inputs — the owner's toggle and the inbox asking for space
- * — so these pin the contract between them as well as the markup.
+ * REWRITTEN FOR THE VUE RAIL. The previous version asserted the Alpine
+ * implementation literally — `toggleRail()`, `railCollapsed ? 'lg:w-[4.75rem]'
+ * : 'lg:w-64'`, `:aria-expanded="(! railCollapsed).toString()"`. Every one of
+ * those strings was the implementation rather than the behaviour, and none of
+ * them exists now that the rail is Components/AppSidebar.vue.
+ *
+ * What survives is the contract, and it is worth keeping because two halves of
+ * it live in different files and only agree by convention:
+ *
+ *   · the collapsed state is applied BEFORE first paint, from the document
+ *     shell, so a collapsed rail does not flash open on every navigation
+ *   · the component reads its initial state back from that class rather than
+ *     from storage, so the two cannot disagree on the first frame
+ *   · collapsing hides labels without removing their accessible names
  */
 class SidebarRailTest extends TestCase
 {
@@ -27,121 +38,78 @@ class SidebarRailTest extends TestCase
         Agent::factory()->for($this->user)->create();
     }
 
-    protected function page(string $route = 'agents.index')
+    private function sidebar(): string
     {
-        return $this->actingAs($this->user)->get(route($route));
-    }
-
-    public function test_the_toggle_is_rendered_on_every_dashboard_page(): void
-    {
-        foreach (['agents.index', 'leads.index', 'conversations.index', 'settings.index'] as $route) {
-            $response = $this->page($route);
-
-            $response->assertOk();
-            $response->assertSee('toggleRail()', false);
-            $response->assertSee(__('agents.nav.collapse_sidebar'), false);
-        }
-    }
-
-    public function test_the_toggle_is_keyboard_accessible_and_reports_its_state(): void
-    {
-        $response = $this->page();
-
-        $response->assertOk();
-        // A real <button>, so it is focusable and works on Enter/Space.
-        $response->assertSee('type="button" @click="toggleRail()"', false);
-        $response->assertSee(':aria-expanded="(! railCollapsed).toString()"', false);
-        // Both labels ship, so the control renames itself in either state.
-        $response->assertSee(__('agents.nav.expand_sidebar'), false);
+        return file_get_contents(resource_path('js/Components/AppSidebar.vue'));
     }
 
     /**
-     * Collapsed is icon-only, not hidden: the icons stay, the labels go.
+     * The shell applies the saved state before Vue exists.
+     *
+     * This is the half that cannot be done in the component: everything the
+     * rail changes is layout, so applying it after first paint means the rail
+     * visibly snaps shut on every page load.
      */
-    public function test_collapsing_hides_labels_but_keeps_icons_and_accessible_names(): void
+    public function test_the_saved_state_is_applied_before_first_paint(): void
     {
-        $response = $this->page();
+        $html = $this->actingAs($this->user)->get(route('agents.index'))->assertOk()->getContent();
 
-        $response->assertOk();
-        $response->assertSee("railCollapsed ? 'lg:w-[4.75rem]' : 'lg:w-64'", false);
-        $response->assertSee('railCollapsed && \'lg:hidden\'', false);
-        // Every nav item carries an accessible name, so the icon-only rail is
-        // still navigable once the label text is hidden.
-        foreach (['agents', 'conversations', 'leads', 'settings'] as $item) {
-            $response->assertSee('aria-label="'.__('agents.nav.'.$item).'"', false);
-        }
+        $this->assertStringContainsString("localStorage.getItem('sidebar:collapsed')", $html);
+        $this->assertStringContainsString("classList.add('rail-collapsed')", $html);
     }
 
     /**
-     * The names above are aria-label rather than title on purpose: `title`
-     * renders a native tooltip, which in the expanded rail merely repeated the
-     * label already sitting beside the cursor.
+     * And the CSS that class drives has something to select.
+     *
+     * `.rail-collapsed [data-sidebar]` is what sizes the rail until Vue mounts.
+     * If the attribute were dropped from the component the pre-paint would
+     * silently stop working — the page would still render perfectly, and the
+     * rail would just flash open every time.
      */
-    public function test_nav_items_do_not_render_hover_tooltips(): void
+    public function test_the_pre_paint_css_hook_is_present_on_both_sides(): void
     {
-        $response = $this->page();
+        $this->assertStringContainsString('data-sidebar', $this->sidebar());
+        $this->assertStringContainsString(
+            '.rail-collapsed [data-sidebar]',
+            file_get_contents(resource_path('css/app.css')),
+        );
+    }
 
-        $response->assertOk();
+    /** The component takes its first value from the class, not from storage. */
+    public function test_the_component_reads_its_initial_state_from_the_pre_paint_class(): void
+    {
+        $this->assertStringContainsString(
+            "classList.contains('rail-collapsed')",
+            $this->sidebar(),
+            'Re-reading localStorage here would let the class and the component disagree on frame one.',
+        );
 
-        foreach (['agents', 'conversations', 'leads', 'settings', 'logout'] as $item) {
-            $response->assertDontSee('title="'.__('agents.nav.'.$item).'"', false);
-        }
-
-        // The owner's own name sat on the profile link as a tooltip too.
-        $response->assertDontSee('title="'.$this->user->name.'"', false);
+        $this->assertStringContainsString("localStorage.setItem('sidebar:collapsed'", $this->sidebar());
     }
 
     /**
-     * The one control that keeps its tooltip: it is icon-only in BOTH states,
-     * so unlike the nav items there is no visible label for it to duplicate.
+     * Collapsing hides the labels, it does not remove them.
+     *
+     * `v-show`, not `v-if`: a collapsed rail is icons only, and an icon with no
+     * accessible name is unusable with a screen reader. Every item also carries
+     * an explicit aria-label for the same reason.
      */
-    public function test_the_rail_toggle_keeps_its_tooltip(): void
+    public function test_collapsing_keeps_the_accessible_names(): void
     {
-        $response = $this->page();
+        $source = $this->sidebar();
 
-        $response->assertOk();
-        $response->assertSee(':title="railCollapsed ?', false);
+        $this->assertStringContainsString('v-show="!collapsed"', $source);
+        $this->assertStringNotContainsString('v-if="!collapsed"', $source);
+        $this->assertStringContainsString(':aria-label="$t(item.label)"', $source);
     }
 
-    /**
-     * Persistence is applied before first paint, or a collapsed rail would
-     * flash open on every navigation.
-     */
-    public function test_the_saved_state_is_applied_before_paint(): void
+    /** The toggle reports its state, and says what it will do next. */
+    public function test_the_toggle_reports_its_state(): void
     {
-        $response = $this->page();
+        $source = $this->sidebar();
 
-        $response->assertOk();
-        $response->assertSee("localStorage.getItem('sidebar:collapsed')", false);
-        $response->assertSee("classList.add('rail-collapsed')", false);
-        // And Alpine reads its initial state back out of that same class.
-        $response->assertSee("classList.contains('rail-collapsed')", false);
-        $response->assertSee("localStorage.setItem('sidebar:collapsed'", false);
-    }
-
-    /**
-     * The inbox may collapse the rail while a conversation is open, but closing
-     * it must return to the owner's preference rather than forcing it open.
-     */
-    public function test_the_inbox_cannot_override_a_pinned_preference(): void
-    {
-        $response = $this->page('conversations.index');
-
-        $response->assertOk();
-        $response->assertSee('railCollapsed = $event.detail.collapsed || railPinned', false);
-    }
-
-    /**
-     * Mobile keeps the drawer: a 4.75rem off-canvas panel would be unusable.
-     */
-    public function test_the_rail_is_desktop_only(): void
-    {
-        $response = $this->page();
-
-        $response->assertOk();
-        // The toggle itself only appears from lg up...
-        $response->assertSee('dark:hover:bg-white/10 lg:flex', false);
-        // ...and every collapse rule is lg-prefixed.
-        $response->assertDontSee("railCollapsed ? 'w-[4.75rem]'", false);
+        $this->assertStringContainsString(':aria-expanded="!collapsed"', $source);
+        $this->assertStringContainsString('agents.nav.expand_sidebar', $source);
+        $this->assertStringContainsString('agents.nav.collapse_sidebar', $source);
     }
 }

@@ -58,6 +58,7 @@ class SendLeadNotificationJob implements ShouldQueue
         }
     }
 
+    // Формирует текст уведомления о новом лиде для отправки владельцу
     protected function message(string $agentName): string
     {
         if ($this->lead->isHaggle()) {
@@ -85,6 +86,7 @@ class SendLeadNotificationJob implements ShouldQueue
         return implode("\n", $lines);
     }
 
+    // Формирует текст уведомления о запросе цены (торге) для отправки владельцу
     protected function priceRequestMessage(string $agentName): string
     {
         $lines = ["💬 Запрос цены · {$agentName}"];

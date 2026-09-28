@@ -28,6 +28,7 @@ class HumanReplySplitter
         return $this->pack($units, $glue, min($maxMessages, count($units)));
     }
 
+    // Разбивает текст на смысловые части по абзацам, строкам или предложениям
     protected function units(string $text): array
     {
         foreach (self::BOUNDARIES as $boundary) {
@@ -42,6 +43,7 @@ class HumanReplySplitter
         return [[$text], ' '];
     }
 
+    // Собирает части текста в заданное число сообщений примерно равной длины
     protected function pack(array $units, string $glue, int $count): array
     {
         $remaining = array_sum(array_map('mb_strlen', $units));

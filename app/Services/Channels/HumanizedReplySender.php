@@ -55,6 +55,7 @@ class HumanizedReplySender
         );
     }
 
+    // Вычисляет задержку перед отправкой сообщения в зависимости от его длины
     protected function delayMsFor(string $message): int
     {
         $min = (int) config('agent.humanize.min_delay_ms', 800);

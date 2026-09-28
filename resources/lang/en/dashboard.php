@@ -17,7 +17,19 @@ return [
     ],
     'no_data' => 'Your numbers will appear here once there are enough conversations.',
 
+    'live' => [
+        'online' => 'Agent online · 24/7',
+        'active' => ':count active conversations',
+    ],
+    'live_conversation' => [
+        'title' => 'Live conversations',
+        'description' => 'What the assistant is answering right now',
+        'open' => 'All conversations',
+        'unread' => 'new',
+        'empty' => 'No conversations yet',
+    ],
     'summary' => [
+        'trend_half' => 'vs the previous half of the period',
         'active_conversations' => 'Active conversations',
         'active_conversations_hint' => 'Not closed, and active in the last 24 hours',
         'leads_today' => 'Leads today',
@@ -59,6 +71,7 @@ return [
     ],
 
     'messages_chart' => [
+        'insight' => ':channel drove :percent% of messages',
         'title' => 'Messages',
         'range_7' => '7 days',
         'range_30' => '30 days',

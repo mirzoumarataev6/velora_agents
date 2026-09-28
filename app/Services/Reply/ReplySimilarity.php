@@ -57,6 +57,7 @@ class ReplySimilarity
             || $this->repeatsListing($candidate, $previous, $ignore);
     }
 
+    // Извлекает из текста числа длиной от 3 цифр (цены, объёмы и т.п.)
     protected function figures(string $text): array
     {
         return array_values(array_unique(array_filter(
@@ -65,6 +66,7 @@ class ReplySimilarity
         )));
     }
 
+    // Разбивает текст на слова длиной от 2 символов для сравнения
     protected function words(string $text): array
     {
         $text = mb_strtolower($text);

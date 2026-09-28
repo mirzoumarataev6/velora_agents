@@ -175,6 +175,7 @@ class HandleIncomingMessageJob implements ShouldQueue
         }
     }
 
+    // Отправляет клиенту сообщение об извинении после окончательного сбоя
     protected function apologiseToCustomer(): void
     {
         $driver = app(ChannelDriverManager::class)->for($this->channel);
@@ -200,6 +201,7 @@ class HandleIncomingMessageJob implements ShouldQueue
         );
     }
 
+    // Уведомляет владельца агента в Telegram о том, что сообщение осталось без ответа
     protected function alertOwner(?Throwable $e): void
     {
         $agent = $this->channel->agent;
@@ -225,6 +227,7 @@ class HandleIncomingMessageJob implements ShouldQueue
         );
     }
 
+    // Атомарно помечает вебхук как обработанный, отсеивая повторные доставки
     protected function claimUpdate(): bool
     {
         $updateId = $this->payload['update_id']
@@ -246,6 +249,7 @@ class HandleIncomingMessageJob implements ShouldQueue
         return false;
     }
 
+    // Проверяет, что на это сообщение уже был отправлен ответ
     protected function alreadyAnswered(?string $externalMessageId): bool
     {
         if ($externalMessageId === null) {
@@ -268,6 +272,7 @@ class HandleIncomingMessageJob implements ShouldQueue
             ->exists();
     }
 
+    // Формирует ключ кэша для дедупликации извинения по конкретному обновлению
     protected function apologyKey(string $externalUserId): string
     {
         $updateId = $this->payload['update_id'] ?? md5(json_encode($this->payload));
@@ -275,6 +280,7 @@ class HandleIncomingMessageJob implements ShouldQueue
         return "webhook-apology:{$this->channel->id}:{$externalUserId}:{$updateId}";
     }
 
+    // Обрабатывает команду привязки Telegram владельца для получения уведомлений о заявках
     protected function handleNotifyLink(IncomingMessage $incoming, ChannelDriverInterface $driver, TelegramNotifyLinker $linker): bool
     {
         if ($incoming->type !== 'text') {
@@ -307,6 +313,7 @@ class HandleIncomingMessageJob implements ShouldQueue
         return true;
     }
 
+    // Находит существующий диалог с клиентом или создаёт новый
     protected function findOrCreateConversation(Agent $agent, IncomingMessage $incoming): Conversation
     {
         try {
@@ -322,6 +329,7 @@ class HandleIncomingMessageJob implements ShouldQueue
         }
     }
 
+    // Сохраняет сообщение клиента, атомарно защищаясь от повторной записи
     protected function claimUserMessage(Conversation $conversation, IncomingMessage $incoming): ?Message
     {
         try {

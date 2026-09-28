@@ -40,6 +40,7 @@ class FeedbackCadence
         $reply->forceFill(['meta' => [...$reply->meta ?? [], 'feedback_requested' => true]])->save();
     }
 
+    // Проверяет, что ответ не является отказом, эскалацией или приветствием, чтобы имело смысл его оценивать
     protected function isWorthRating(Message $reply): bool
     {
         $meta = $reply->meta ?? [];
@@ -49,6 +50,7 @@ class FeedbackCadence
             && ! ($meta['greeting'] ?? false);
     }
 
+    // Проверяет, завершил ли ответ что-то значимое (лид или запрос на одобрение цены)
     protected function closedSomething(Message $reply): bool
     {
         $meta = $reply->meta ?? [];
@@ -56,6 +58,7 @@ class FeedbackCadence
         return ($meta['lead_captured'] ?? false) || ($meta['price_approval_requested'] ?? false);
     }
 
+    // Проверяет, похоже ли последнее сообщение клиента на завершение разговора
     protected function customerIsWrappingUp(Conversation $conversation, Message $reply, ?Message $customerMessage): bool
     {
         $text = $customerMessage?->content ?? $conversation->messages()
@@ -67,6 +70,7 @@ class FeedbackCadence
         return $this->closings->matches((string) $text);
     }
 
+    // Считает число ответов ассистента с момента последнего запроса оценки или самой оценки
     protected function turnsSinceLastPromptOrRating(Conversation $conversation, Message $reply): int
     {
         $marker = $conversation->messages()

@@ -110,6 +110,7 @@ class HagglingService
         ], $this->styleLines($this->levelFor($agent)), $this->ownerGuidanceLines($agent)));
     }
 
+    // Добавляет к системной инструкции собственные правила торга владельца агента, если они заданы
     protected function ownerGuidanceLines(Agent $agent): array
     {
         $instructions = trim((string) ($agent->haggling_instructions ?? ''));
@@ -135,6 +136,7 @@ class HagglingService
         ];
     }
 
+    // Возвращает описание стиля переговоров для заданного уровня жёсткости торга
     protected function styleLines(string $level): array
     {
         return match ($level) {
@@ -243,6 +245,7 @@ class HagglingService
             ?? 'Хорошо, я уточню у менеджера, дадут ли такую цену, и вернусь к вам.';
     }
 
+    // Ищет номер телефона клиента в истории сообщений диалога
     protected function phoneFromHistory(?Conversation $conversation): ?string
     {
         if ($conversation === null) {
@@ -254,6 +257,7 @@ class HagglingService
         );
     }
 
+    // Приводит значение к положительному числу с плавающей точкой или null
     protected function money(mixed $value): ?float
     {
         if (is_int($value) || is_float($value)) {
@@ -269,6 +273,7 @@ class HagglingService
         return null;
     }
 
+    // Приводит значение к обрезанной строке или null
     protected function clean(mixed $value): ?string
     {
         if (! is_string($value)) {

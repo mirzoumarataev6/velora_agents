@@ -89,9 +89,7 @@ class InstagrapiDriver implements ChannelDriverInterface
     }
 
     // Отправляет индикатор набора текста (instagrapi его не поддерживает)
-    public function sendTypingIndicator(Channel $channel, string $externalUserId): void
-    {
-    }
+    public function sendTypingIndicator(Channel $channel, string $externalUserId): void {}
 
     // Сообщает, поддерживает ли instagrapi голосовые сообщения
     public function supportsVoiceMessages(): bool
@@ -139,6 +137,7 @@ class InstagrapiDriver implements ChannelDriverInterface
         $this->call('/disconnect', ['channel_uuid' => $channel->uuid]);
     }
 
+    // Возвращает учётные данные канала по ключу или бросает исключение, если их нет
     protected function credential(Channel $channel, string $key): string
     {
         $value = $channel->credentials[$key] ?? null;
@@ -150,6 +149,7 @@ class InstagrapiDriver implements ChannelDriverInterface
         return (string) $value;
     }
 
+    // Выполняет POST-запрос к Python-сервису instagrapi
     protected function call(string $path, array $payload, int $timeout = 15): \Illuminate\Http\Client\Response
     {
         try {
@@ -159,6 +159,7 @@ class InstagrapiDriver implements ChannelDriverInterface
         }
     }
 
+    // Строит полный URL сервиса instagrapi для указанного пути
     protected function serviceUrl(string $path): string
     {
         return rtrim((string) config('agent.instagram_service.url'), '/').$path;

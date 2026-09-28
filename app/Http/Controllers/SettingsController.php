@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Middleware\SetLocale;
+use App\Models\Agent;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -13,7 +14,8 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
-use Illuminate\View\View;
+use Inertia\Inertia;
+use Inertia\Response;
 
 /**
  * The account settings area: profile, security, preferences and the account
@@ -28,22 +30,34 @@ class SettingsController extends Controller
     /** Themes the preference accepts. `system` is stored as null — see update(). */
     protected const THEMES = ['system', 'light', 'dark'];
 
-    public function index(Request $request): View
+    public function index(Request $request): Response
     {
         $user = $request->user();
 
-        return view('settings.index', [
-            'i18nExtraNamespaces' => ['settings'],
-            // Saving here is a small, local confirmation, so the flash is shown
-            // as a self-dismissing toast instead of the layout's banner — which
-            // would push the whole form down on every save.
-            'statusAsToast' => true,
-            'user' => $user,
+        return Inertia::render('Settings/Index', [
+            'user' => [
+                'name' => $user->name,
+                'email' => $user->email,
+                'initials' => $user->initials(),
+                'email_verified' => $user->email_verified_at !== null,
+                'has_password' => $user->password !== null,
+                'google_connected' => $user->google_id !== null,
+                'locale' => $user->locale,
+                'theme' => $user->theme,
+                'lead_alerts' => $user->lead_notifications_enabled,
+            ],
             // Drives the Telegram lead-alert cards: one per agent, because the
             // link is made through that agent's own bot.
             'agents' => $user->agents()
                 ->orderBy('name')
-                ->get(['id', 'name', 'slug', 'notify_telegram_username', 'notify_telegram_chat_id', 'notify_telegram_linked_at']),
+                ->get(['id', 'name', 'slug', 'notify_telegram_username', 'notify_telegram_chat_id', 'notify_telegram_linked_at'])
+                ->map(fn (Agent $agent) => [
+                    'id' => $agent->id,
+                    'slug' => $agent->slug,
+                    'name' => $agent->name,
+                    'linked' => $agent->notifiesOwnerViaTelegram(),
+                    'username' => $agent->notify_telegram_username,
+                ])->all(),
             'sessions' => $this->sessions($request),
             'sessionsSupported' => $this->sessionsAreListable(),
         ]);

@@ -99,6 +99,7 @@ class ValueParser
                 : null;
     }
 
+    // Разбирает строку в число с плавающей точкой, учитывая знак и разделители
     protected function number(?string $raw): ?float
     {
         $value = $this->clean($raw);
@@ -126,6 +127,7 @@ class ValueParser
         return $negative ? -(float) $value : (float) $value;
     }
 
+    // Определяет, какой из разделителей (запятая или точка) десятичный, а какой — разряды тысяч
     protected function normalizeSeparators(string $value): string
     {
         $lastComma = strrpos($value, ',');
@@ -159,6 +161,7 @@ class ValueParser
         return $head.'.'.$tail;
     }
 
+    // Очищает значение от неразрывных пробелов и распознаёт признаки "пусто"
     protected function clean(?string $raw): ?string
     {
         if ($raw === null) {

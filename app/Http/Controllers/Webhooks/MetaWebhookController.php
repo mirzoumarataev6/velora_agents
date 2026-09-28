@@ -39,6 +39,7 @@ class MetaWebhookController extends Controller
         return response('OK', 200);
     }
 
+    // Проверяет, что тип канала соответствует ожидаемому
     protected function assertChannelType(Channel $channel, string $type): void
     {
         if ($channel->type !== $type) {

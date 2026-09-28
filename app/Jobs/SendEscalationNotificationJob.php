@@ -59,6 +59,7 @@ class SendEscalationNotificationJob implements ShouldQueue
         }
     }
 
+    // Формирует текст уведомления об эскалации для отправки владельцу
     protected function message(string $agentName, ?string $locale): string
     {
         $locale = $locale ?: config('app.locale');

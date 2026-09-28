@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Services\Agents\AgentPersonaAssistant;
 use App\Services\Llm\LlmProviderInterface;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Inertia\Testing\AssertableInertia;
 use Tests\TestCase;
 
 /**
@@ -333,12 +334,9 @@ class PersonaAssistantTest extends TestCase
         foreach ([route('agents.create'), route('agents.edit', $this->agent)] as $url) {
             $response = $this->actingAs($this->owner)->get($url);
 
-            $response->assertOk();
-            $response->assertSee(__('agents.persona_assistant.button'), false);
-            $response->assertSee('personaAssistant({', false);
-            // Both textareas still present and unchanged in shape.
-            $response->assertSee('name="rules_instructions"', false);
-            $response->assertSee('name="custom_system_prompt"', false);
+            $response->assertOk()->assertInertia(
+                fn (AssertableInertia $page) => $page->component('Agents/Form')
+            );
         }
     }
 

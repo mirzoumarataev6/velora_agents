@@ -9,6 +9,7 @@ trait ChecksMessagingWindow
 {
     protected const CUSTOMER_SERVICE_WINDOW_HOURS = 24;
 
+    // Бросает исключение, если окно обслуживания клиента закрыто
     protected function assertWithinMessagingWindow(Channel $channel, string $externalUserId): void
     {
         if ($this->isWithinCustomerServiceWindow($channel, $externalUserId)) {
@@ -22,6 +23,7 @@ trait ChecksMessagingWindow
         ));
     }
 
+    // Проверяет, укладывается ли последнее входящее сообщение клиента в окно обслуживания
     protected function isWithinCustomerServiceWindow(Channel $channel, string $externalUserId): bool
     {
         $lastInbound = Conversation::where('channel_id', $channel->id)

@@ -45,6 +45,7 @@ class DatasetProductSource implements ProductSource
             ->all();
     }
 
+    // Строит запрос к товарам датасета с учётом фильтров поиска, категории, цены и сортировки
     protected function query(array $filters): Builder
     {
         $query = DatasetProduct::query()->where('agent_id', $this->agent->id);
@@ -86,6 +87,7 @@ class DatasetProductSource implements ProductSource
         };
     }
 
+    // Преобразует модель товара датасета в представление для ответа
     protected function present(DatasetProduct $product): array
     {
         return $this->presentRow([

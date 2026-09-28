@@ -4,7 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Services\Analytics\DashboardMetrics;
 use Illuminate\Http\Request;
-use Illuminate\View\View;
+use Inertia\Inertia;
+use Inertia\Response;
 
 /**
  * The owner panel's front page: what the agents actually did.
@@ -16,7 +17,7 @@ use Illuminate\View\View;
  */
 class DashboardController extends Controller
 {
-    public function __invoke(Request $request): View
+    public function __invoke(Request $request): Response
     {
         $range = (int) $request->query('range', DashboardMetrics::RANGES[0]);
         $agents = $request->user()->agents()->orderBy('name')->get(['id', 'name']);
@@ -34,10 +35,14 @@ class DashboardController extends Controller
         // to scope them to.
         $metrics = new DashboardMetrics($request->user());
 
-        return view('dashboard.index', [
+        // MIGRATED TO INERTIA (phase d). The metrics array is already a plain,
+        // JSON-serialisable structure, so it crosses to Vue unchanged — no
+        // resource, no transformer, and nothing for the two shapes to drift
+        // between. `i18nExtraNamespaces` is gone with the Blade bundle: the
+        // Inertia middleware shares every namespace for the active locale.
+        return Inertia::render('Dashboard', [
             'metrics' => $metrics->forRange($range, $agentId),
             'agents' => $agents,
-            'i18nExtraNamespaces' => ['dashboard'],
         ]);
     }
 }

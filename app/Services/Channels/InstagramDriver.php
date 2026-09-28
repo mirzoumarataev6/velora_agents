@@ -87,6 +87,7 @@ class InstagramDriver implements ChannelDriverInterface
         return $this->buildPhotoMessage((string) $externalMessageId, (string) $externalUserId, $imageUrl, $text);
     }
 
+    // Возвращает URL первого вложения-изображения среди вложений сообщения
     protected function firstImageAttachmentUrl(array $attachments): ?string
     {
         foreach ($attachments as $attachment) {
@@ -98,6 +99,7 @@ class InstagramDriver implements ChannelDriverInterface
         return null;
     }
 
+    // Собирает входящее сообщение с фото, добавляя подпись и распознанное описание изображения
     protected function buildPhotoMessage(string $externalMessageId, string $externalUserId, string $imageUrl, string $caption): IncomingMessage
     {
         $vision = $this->describeMedia($imageUrl);
@@ -123,6 +125,7 @@ class InstagramDriver implements ChannelDriverInterface
         );
     }
 
+    // Скачивает изображение по URL и распознаёт его содержимое
     protected function describeMedia(string $imageUrl): array
     {
         $unclear = ['confident' => false, 'description' => null];
@@ -203,10 +206,9 @@ class InstagramDriver implements ChannelDriverInterface
     }
 
     // Отключает канал Instagram (дополнительных действий не требуется)
-    public function disconnect(Channel $channel): void
-    {
-    }
+    public function disconnect(Channel $channel): void {}
 
+    // Возвращает ID Instagram-аккаунта канала или бросает исключение, если он не настроен
     protected function accountId(Channel $channel): string
     {
         $value = $channel->credentials['ig_business_account_id'] ?? null;
@@ -218,6 +220,7 @@ class InstagramDriver implements ChannelDriverInterface
         return $value;
     }
 
+    // Возвращает токен доступа страницы или бросает исключение, если он не настроен
     protected function accessToken(Channel $channel): string
     {
         $value = $channel->credentials['page_access_token'] ?? null;
@@ -229,6 +232,7 @@ class InstagramDriver implements ChannelDriverInterface
         return $value;
     }
 
+    // Строит URL Graph API, выбирая хост в зависимости от типа токена
     protected function apiUrl(string $token, string $path): string
     {
         $host = str_starts_with($token, 'IGAA') ? 'graph.instagram.com' : 'graph.facebook.com';
@@ -236,6 +240,7 @@ class InstagramDriver implements ChannelDriverInterface
         return "https://{$host}/".self::API_VERSION.'/'.$path;
     }
 
+    // Выполняет POST-запрос к Graph API для отправки сообщения или действия
     protected function call(string $token, string $accountId, array $payload): array
     {
         try {

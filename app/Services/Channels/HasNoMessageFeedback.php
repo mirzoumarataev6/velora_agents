@@ -25,7 +25,5 @@ trait HasNoMessageFeedback
     }
 
     // Подтверждает обратную связь — ничего не делает, так как канал её не поддерживает
-    public function confirmFeedback(Channel $channel, MessageFeedback $feedback, string $confirmation): void
-    {
-    }
+    public function confirmFeedback(Channel $channel, MessageFeedback $feedback, string $confirmation): void {}
 }

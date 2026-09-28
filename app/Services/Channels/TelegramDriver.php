@@ -115,6 +115,7 @@ class TelegramDriver implements ChannelDriverInterface
         return null;
     }
 
+    // Скачивает голосовое сообщение Telegram и транскрибирует его в текст
     protected function handleVoice(
         Channel $channel,
         array $voice,
@@ -170,6 +171,7 @@ class TelegramDriver implements ChannelDriverInterface
         }
     }
 
+    // Получает и скачивает файл голосового сообщения через Telegram Bot API
     protected function downloadVoice(Channel $channel, string $fileId, int $maxBytes): string
     {
         if ($fileId === '') {
@@ -217,6 +219,7 @@ class TelegramDriver implements ChannelDriverInterface
         return $tempPath;
     }
 
+    // Скачивает самое крупное фото сообщения через Telegram Bot API и распознаёт его содержимое
     protected function describePhoto(Channel $channel, array $message): array
     {
         $unclear = ['confident' => false, 'description' => null];
@@ -408,6 +411,7 @@ class TelegramDriver implements ChannelDriverInterface
         }
     }
 
+    // Строит inline-клавиатуру с кнопками лайк/дизлайк для указанного сообщения
     protected function feedbackKeyboard(int $messageId): array
     {
         return [
@@ -418,6 +422,7 @@ class TelegramDriver implements ChannelDriverInterface
         ];
     }
 
+    // Разбирает callback_data клавиатуры обратной связи на id сообщения и оценку
     protected function parseCallbackData(string $data): ?array
     {
         if (! preg_match('/^'.self::FEEDBACK_PREFIX.':(up|down):(\d+)$/', $data, $matches)) {
@@ -485,6 +490,7 @@ class TelegramDriver implements ChannelDriverInterface
         return $this->call($this->token($channel), 'getWebhookInfo')['result'] ?? [];
     }
 
+    // Регистрирует URL и секрет вебхука в Telegram Bot API
     protected function registerWebhook(string $token, string $url, string $secret): void
     {
         $setWebhook = $this->call($token, 'setWebhook', [
@@ -507,6 +513,7 @@ class TelegramDriver implements ChannelDriverInterface
         $this->call($token, 'deleteWebhook');
     }
 
+    // Возвращает токен бота канала или бросает исключение, если он не настроен
     protected function token(Channel $channel): string
     {
         $token = $channel->credentials['bot_token'] ?? null;
@@ -518,6 +525,7 @@ class TelegramDriver implements ChannelDriverInterface
         return $token;
     }
 
+    // Выполняет запрос к методу Telegram Bot API
     protected function call(string $token, string $method, array $params = []): array
     {
         try {

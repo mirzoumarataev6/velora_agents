@@ -102,6 +102,7 @@ class WhatsAppDriver implements ChannelDriverInterface
         );
     }
 
+    // Собирает входящее сообщение с фото, добавляя подпись и распознанное описание изображения
     protected function buildPhotoMessage(
         Channel $channel,
         string $externalMessageId,
@@ -135,6 +136,7 @@ class WhatsAppDriver implements ChannelDriverInterface
         );
     }
 
+    // Скачивает медиафайл по его ID через Graph API и распознаёт изображение
     protected function describeMedia(Channel $channel, string $mediaId, ?string $mimeType): array
     {
         $unclear = ['confident' => false, 'description' => null];
@@ -196,9 +198,7 @@ class WhatsAppDriver implements ChannelDriverInterface
     }
 
     // Отправляет индикатор набора текста (WhatsApp Cloud API его не поддерживает)
-    public function sendTypingIndicator(Channel $channel, string $externalUserId): void
-    {
-    }
+    public function sendTypingIndicator(Channel $channel, string $externalUserId): void {}
 
     // Проверяет учётные данные и возвращает данные аккаунта при подключении канала
     public function connect(Channel $channel): array
@@ -222,10 +222,9 @@ class WhatsAppDriver implements ChannelDriverInterface
     }
 
     // Отключает канал WhatsApp (дополнительных действий не требуется)
-    public function disconnect(Channel $channel): void
-    {
-    }
+    public function disconnect(Channel $channel): void {}
 
+    // Возвращает ID номера телефона канала или бросает исключение, если он не настроен
     protected function phoneNumberId(Channel $channel): string
     {
         $value = $channel->credentials['phone_number_id'] ?? null;
@@ -237,6 +236,7 @@ class WhatsAppDriver implements ChannelDriverInterface
         return $value;
     }
 
+    // Возвращает токен доступа канала или бросает исключение, если он не настроен
     protected function accessToken(Channel $channel): string
     {
         $value = $channel->credentials['access_token'] ?? null;
@@ -248,11 +248,13 @@ class WhatsAppDriver implements ChannelDriverInterface
         return $value;
     }
 
+    // Строит URL Graph API для указанного пути
     protected function apiUrl(string $path): string
     {
         return 'https://graph.facebook.com/'.self::API_VERSION.'/'.$path;
     }
 
+    // Выполняет POST-запрос к Graph API для отправки сообщения
     protected function call(string $token, string $phoneNumberId, array $payload): array
     {
         try {

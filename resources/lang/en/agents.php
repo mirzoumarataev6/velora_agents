@@ -10,6 +10,8 @@ return [
         'logout' => 'Log out',
         'open_menu' => 'Open menu',
         'toggle_theme' => 'Toggle theme',
+        'stage_on' => 'Turn on stage mode',
+        'stage_off' => 'Turn off stage mode',
         'collapse_sidebar' => 'Collapse menu',
         'expand_sidebar' => 'Expand menu',
     ],

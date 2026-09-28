@@ -9,7 +9,6 @@ use App\Models\Message;
 use App\Models\User;
 use App\Services\Haggling\HagglingService;
 use Carbon\CarbonImmutable;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -61,6 +60,7 @@ class DashboardMetrics
         return $this->conversations()->exists();
     }
 
+    // Собирает верхнеуровневые сводные показатели: активные диалоги, лиды, конверсия
     protected function summary(): array
     {
         $now = CarbonImmutable::now();
@@ -90,6 +90,7 @@ class DashboardMetrics
         ];
     }
 
+    // Вычисляет среднее время ответа ассистента в миллисекундах
     protected function averageResponseMs(): ?float
     {
         $value = $this->messages()
@@ -100,6 +101,7 @@ class DashboardMetrics
         return $value === null ? null : round((float) $value, 0);
     }
 
+    // Собирает временную шкалу сообщений с каналом для каждой записи
     protected function messageTimeline(CarbonImmutable $since): Collection
     {
         return $this->messages()
@@ -113,6 +115,7 @@ class DashboardMetrics
             ]);
     }
 
+    // Группирует временную шкалу по дням для построения графика сообщений
     protected function series(Collection $timeline, CarbonImmutable $since, int $days): array
     {
         $byDay = $timeline->groupBy(fn ($row) => $row->at->toDateString());
@@ -135,6 +138,7 @@ class DashboardMetrics
         return $series;
     }
 
+    // Строит тепловую карту активности по дням недели и часам
     protected function heatmap(Collection $timeline): array
     {
         $grid = array_fill(0, 7, array_fill(0, 24, 0));
@@ -150,6 +154,7 @@ class DashboardMetrics
         ];
     }
 
+    // Считает долю сообщений и лидов, пришедших в нерабочее время
     protected function afterHours(Collection $timeline, CarbonImmutable $since): array
     {
         $messages = $timeline->filter(fn ($row) => $this->isAfterHours($row->at))->count();
@@ -185,11 +190,13 @@ class DashboardMetrics
         return $hour >= $from || $hour < $to;
     }
 
+    // Переводит момент времени в часовой пояс аналитики
     protected function local(CarbonImmutable $at): CarbonImmutable
     {
         return $at->setTimezone(config('agent.analytics.timezone') ?: config('app.timezone'));
     }
 
+    // Строит воронку от диалогов к лидам и подтверждённым сделкам
     protected function funnel(): array
     {
         $conversations = $this->conversations()->count();
@@ -214,6 +221,7 @@ class DashboardMetrics
         return $stages;
     }
 
+    // Считает открытые заказы и заявки на согласование цены, ожидающие владельца
     protected function pending(): array
     {
         return [
@@ -228,6 +236,7 @@ class DashboardMetrics
         ];
     }
 
+    // Группирует вопросы без ответа, чтобы показать самые частые пробелы в знаниях
     protected function unanswered(CarbonImmutable $since): array
     {
         $rows = $this->messages()
@@ -256,6 +265,7 @@ class DashboardMetrics
             ->all();
     }
 
+    // Считает, о каких товарах чаще всего спрашивали и как часто поиск не находил их
     protected function askedProducts(CarbonImmutable $since): array
     {
         $rows = $this->messages()
@@ -294,6 +304,7 @@ class DashboardMetrics
             ->all();
     }
 
+    // Собирает статистику оценок ответов (лайки/дизлайки) и худшие по оценке ответы
     protected function ratings(CarbonImmutable $since, int $days): array
     {
         $rows = $this->messages()
@@ -340,6 +351,7 @@ class DashboardMetrics
         ];
     }
 
+    // Строит динамику среднего времени ответа по дням
     protected function responseTrend(CarbonImmutable $since, int $days): array
     {
         $rows = $this->messages()
@@ -377,6 +389,7 @@ class DashboardMetrics
         ];
     }
 
+    // Считает количество и долю лидов по каждому статусу
     protected function leadsByStatus(): array
     {
         $counts = $this->leads()
@@ -397,6 +410,7 @@ class DashboardMetrics
         ];
     }
 
+    // Сравнивает агентов пользователя по числу сообщений и лидов (если агентов больше одного)
     protected function agentComparison(CarbonImmutable $since): array
     {
         if ($this->agentId !== null) {
@@ -439,6 +453,7 @@ class DashboardMetrics
             ->all();
     }
 
+    // Выбирает самый важный сигнал для баннера дашборда по приоритету
     protected function highlight(array $unanswered, array $products, array $ratings): ?array
     {
         $pending = $this->pending();
@@ -472,16 +487,19 @@ class DashboardMetrics
         return null;
     }
 
+    // Возвращает диалоги, доступные пользователю (с учётом фильтра по агенту)
     protected function conversations()
     {
         return Conversation::query()->whereIn('conversations.agent_id', $this->agentIds());
     }
 
+    // Возвращает лиды, доступные пользователю (с учётом фильтра по агенту)
     protected function leads()
     {
         return Lead::query()->whereIn('leads.agent_id', $this->agentIds());
     }
 
+    // Возвращает сообщения, доступные пользователю (с учётом фильтра по агенту)
     protected function messages()
     {
         return Message::query()
@@ -489,6 +507,7 @@ class DashboardMetrics
             ->whereIn('conversations.agent_id', $this->agentIds());
     }
 
+    // Возвращает идентификаторы агентов пользователя, отфильтрованные по выбранному агенту
     protected function agentIds()
     {
         return $this->user->agents()

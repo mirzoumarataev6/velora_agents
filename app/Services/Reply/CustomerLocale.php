@@ -27,6 +27,7 @@ class CustomerLocale
             ?? config('app.locale');
     }
 
+    // Определяет язык клиента по последним текстовым сообщениям диалога, исключая команды
     protected function detected(Conversation $conversation): ?string
     {
         return $this->languages->forConversation(
@@ -40,6 +41,7 @@ class CustomerLocale
         );
     }
 
+    // Преобразует код языка, определённый LanguageDetector, в код локали приложения
     protected function toLocale(?string $language): ?string
     {
         return match ($language) {

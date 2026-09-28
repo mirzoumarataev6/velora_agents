@@ -8,6 +8,7 @@ trait DescribesImagesWithConfidence
 {
     protected const VISION_UNKNOWN_SENTINEL = 'UNKNOWN';
 
+    // Распознаёт товар на фото через LLM-зрение, возвращая описание только при уверенном результате
     protected function describeImageBytes(string $bytes, string $mimeType): array
     {
         $unclear = ['confident' => false, 'description' => null];

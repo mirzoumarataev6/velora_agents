@@ -37,6 +37,7 @@ class GreenApiWebhookController extends Controller
         return response('OK', 200);
     }
 
+    // Проверяет, что канал действительно относится к Green API
     protected function assertGreenApi(Channel $channel): void
     {
         if ($channel->type !== 'greenapi') {

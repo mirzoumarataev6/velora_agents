@@ -38,6 +38,7 @@
         root.classList.add('js');
     })();
 </script>
+@include('partials.stage-mode')
 <title>{{ __('landing.meta.title') }}</title>
 @include('partials.seo-meta', [
     'seoTitle' => __('landing.meta.title'),

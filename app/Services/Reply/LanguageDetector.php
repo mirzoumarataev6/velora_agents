@@ -127,6 +127,7 @@ class LanguageDetector
         return null;
     }
 
+    // Считает токены, оканчивающиеся на характерное таджикское окончание
     protected function countSuffixMatches(array $tokens): int
     {
         $matched = 0;
@@ -148,6 +149,7 @@ class LanguageDetector
         return $matched;
     }
 
+    // Считает уникальные токены, совпавшие со словарём или его характерными префиксами
     protected function countMatches(array $tokens, array $words, array $prefixes): int
     {
         $matched = [];
@@ -171,6 +173,7 @@ class LanguageDetector
         return count($matched);
     }
 
+    // Разбивает текст на слова-токены, отбрасывая пунктуацию
     protected function tokens(string $text): array
     {
         $text = (string) preg_replace('/[^\p{L}\p{N}]+/u', ' ', $text);

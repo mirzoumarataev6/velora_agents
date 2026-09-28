@@ -93,17 +93,18 @@ class AssetDeliveryTest extends TestCase
     public static function pageShells(): array
     {
         return [
-            'auth layout' => ['layouts/auth.blade.php'],
+            // The Inertia shell, and the Blade layout still serving the pages
+            // that have not migrated yet.
+            'inertia shell' => ['app.blade.php'],
             'dashboard layout' => ['layouts/dashboard.blade.php'],
             'landing' => ['showcase.blade.php'],
-            'retired landing' => ['welcome.blade.php'],
         ];
     }
 
     /**
      * Every document shell: the mobile viewport, a colour-scheme declaration
-     * (without it Samsung Internet's dark mode recolours the terracotta to a
-     * dark red), and no CDN stylesheet.
+     * (without it Samsung Internet's dark mode force-darkens the light theme,
+     * repainting the palette on those phones only), and no CDN stylesheet.
      */
     #[DataProvider('pageShells')]
     public function test_every_page_shell_declares_viewport_and_colour_scheme_and_loads_no_cdn(string $view): void
