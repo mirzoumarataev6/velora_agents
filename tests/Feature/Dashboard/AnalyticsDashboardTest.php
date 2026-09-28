@@ -11,7 +11,6 @@ use App\Services\Analytics\DashboardMetrics;
 use App\Services\Haggling\HagglingService;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Inertia\Testing\AssertableInertia;
 use Tests\TestCase;
 
 /**
@@ -94,44 +93,30 @@ class AnalyticsDashboardTest extends TestCase
      */
     public function test_an_account_with_no_conversations_sees_the_empty_state(): void
     {
-        $this->actingAs($this->owner)
-            ->get(route('dashboard'))
-            ->assertOk()
-            ->assertInertia(
-                fn (AssertableInertia $page) => $page
-                    ->component('Dashboard')
-                    // `has_history` is the single switch the page renders the
-                    // empty state from, so asserting it is asserting the state.
-                    ->where('metrics.has_history', false)
-            );
+        $response = $this->actingAs($this->owner)->get(route('dashboard'));
+
+        $response->assertOk();
+        $response->assertSee(__('dashboard.empty.title'), false);
+        $response->assertSee(__('dashboard.empty.description'), false);
+        $response->assertDontSee(__('dashboard.funnel.title'), false);
     }
 
     public function test_the_widgets_appear_once_there_is_history(): void
     {
         $this->conversationWith();
 
-        $this->actingAs($this->owner)
-            ->get(route('dashboard'))
-            ->assertOk()
-            ->assertInertia(
-                fn (AssertableInertia $page) => $page
-                    ->component('Dashboard')
-                    ->where('metrics.has_history', true)
-                    // Every widget's data reaches the page. The widgets
-                    // themselves render client-side now, so what is assertable
-                    // — and what actually matters — is that none of them is
-                    // left without its numbers.
-                    ->has('metrics.summary')
-                    ->has('metrics.series')
-                    ->has('metrics.funnel')
-                    ->has('metrics.ratings')
-                    ->has('metrics.response_trend')
-                    ->has('metrics.leads_by_status')
-                    ->has('metrics.heatmap')
-                    ->has('metrics.products')
-                    ->has('metrics.unanswered')
-                    ->has('metrics.pending')
-            );
+        $response = $this->actingAs($this->owner)->get(route('dashboard'));
+
+        $response->assertOk();
+        $response->assertSee(__('dashboard.highlight.eyebrow'), false);
+        $response->assertSee(__('dashboard.funnel.title'), false);
+        $response->assertSee(__('dashboard.ratings.title'), false);
+        $response->assertSee(__('dashboard.response_trend.title'), false);
+        $response->assertSee(__('dashboard.leads_status.title'), false);
+        $response->assertSee(__('dashboard.heatmap.title'), false);
+        $response->assertSee(__('dashboard.products.title'), false);
+        $response->assertSee(__('dashboard.unanswered.title'), false);
+        $response->assertDontSee(__('dashboard.empty.title'), false);
     }
 
     public function test_the_range_toggle_is_honoured_and_falls_back_when_invalid(): void
@@ -211,16 +196,13 @@ class AnalyticsDashboardTest extends TestCase
         $strangerAgent = Agent::factory()->create();
         $this->conversationWith();
 
-        $this->actingAs($this->owner)
+        $response = $this->actingAs($this->owner)
             ->get(route('dashboard', ['agent_id' => $strangerAgent->id]))
-            ->assertOk()
-            ->assertInertia(
-                fn (AssertableInertia $page) => $page
-                    // The bad id was DROPPED, not honoured and not treated as
-                    // "show nothing" — the owner still sees their own data.
-                    ->where('metrics.agent_id', null)
-                    ->where('metrics.summary.conversations_total', 1)
-            );
+            ->assertOk();
+
+        // Still sees their own conversation — the bad id was dropped, not
+        // treated as "show nothing".
+        $response->assertSee(__('dashboard.funnel.title'), false);
     }
 
     /** Pointless with one agent — same rule the "Нагрузка по агентам" card uses. */
@@ -230,7 +212,7 @@ class AnalyticsDashboardTest extends TestCase
 
         $this->actingAs($this->owner)->get(route('dashboard'))
             ->assertOk()
-            ->assertInertia(fn (AssertableInertia $page) => $page->count('agents', 1));
+            ->assertDontSee('dashboard_agent_filter', false);
     }
 
     public function test_the_agent_selector_lists_every_agent_when_there_is_more_than_one(): void
@@ -240,11 +222,8 @@ class AnalyticsDashboardTest extends TestCase
 
         $this->actingAs($this->owner)->get(route('dashboard'))
             ->assertOk()
-            ->assertInertia(
-                fn (AssertableInertia $page) => $page
-                    ->count('agents', 2)
-                    ->where('agents.1.name', 'Второй агент')
-            );
+            ->assertSee('dashboard_agent_filter', false)
+            ->assertSee('Второй агент', false);
     }
 
     // -----------------------------------------------------------------
@@ -335,19 +314,32 @@ class AnalyticsDashboardTest extends TestCase
         $this->assertSame(2000.0, $this->metrics()['summary']['avg_response_ms']);
     }
 
-    /*
-     * REMOVED WITH THE BLADE STAT PARTIAL: the two number-formatting tests.
-     *
-     * They rendered `dashboard.partials.stat` directly and asserted that 1238
-     * printed as "1 238" while a non-integer ("5.2 с") was passed through
-     * untouched. That partial is gone; the same rule now lives in
-     * Components/ui/StatCard.vue's formatValue(), which uses a non-breaking
-     * space so the figure cannot wrap across its own separator.
-     *
-     * It is not re-asserted here because it is now browser-side formatting that
-     * a PHP request cannot observe — the server sends the raw integer, which is
-     * what `test_leads_today_and_this_week_are_counted_separately` already pins.
+    // -----------------------------------------------------------------
+    // Number formatting
+    // -----------------------------------------------------------------
+
+    /**
+     * A space thousands separator (1 238, not 1238), and the count-up
+     * animation still gets a bare, parseable integer — see app.js's
+     * countUpNumbers(), which reads data-countup with Number() and restores
+     * this exact formatted string once the animation ends.
      */
+    public function test_a_stat_cards_large_number_gets_a_thousands_separator(): void
+    {
+        $html = view('dashboard.partials.stat', ['label' => 'Test', 'value' => 1238])->render();
+
+        $this->assertStringContainsString('1 238', $html);
+        $this->assertStringContainsString('data-countup="1238"', $html);
+    }
+
+    /** A value that isn't a plain int (a dash, a percentage) is shown as-is. */
+    public function test_a_non_integer_stat_value_is_not_reformatted(): void
+    {
+        $html = view('dashboard.partials.stat', ['label' => 'Test', 'value' => '5.2 с'])->render();
+
+        $this->assertStringContainsString('5.2 с', $html);
+        $this->assertStringNotContainsString('data-countup', $html);
+    }
 
     // -----------------------------------------------------------------
     // Working while you sleep
@@ -396,25 +388,110 @@ class AnalyticsDashboardTest extends TestCase
         $this->assertSame(2, $series[6]['total']);
     }
 
-    /*
-     * REMOVED WITH THE BLADE CHART: three tests that asserted rendered bar
-     * geometry — `test_days_with_messages_render_bars_with_a_real_height`,
-     * `test_a_barely_used_day_is_not_rounded_away`, and the DOMXPath helpers
-     * that read each bar's height in rem.
+    /**
+     * The bars have to be visible, not merely present.
      *
-     * They existed for a real bug: the bars were sized with a percentage height
-     * inside a flex item that had been left content-sized, so a percentage
-     * against an indefinite height resolved to auto and every bar rendered at
-     * zero while the total above it read 168. Asserting absolute rem was the
-     * fix that caught it.
-     *
-     * None of that can happen now. The chart is ApexCharts drawing into an SVG
-     * with an explicit pixel height, so there is no percentage-against-auto to
-     * collapse — and the heights are computed in the browser, which a PHP test
-     * cannot see. What the bars are DRAWN FROM is still fully covered by
-     * `test_the_series_includes_every_day_in_the_range` below, which is the
-     * assertion that would actually fail if the data went wrong.
+     * The first version sized them with a percentage height inside a flex item
+     * that `items-end` had left content-sized — a percentage against an
+     * indefinite height resolves to auto, so every bar rendered at zero and the
+     * chart looked empty while the total above it read 168. This asserts the
+     * rendered geometry rather than the numbers behind it: a day with messages
+     * gets a bar with a real, absolute height, the busiest day fills the track,
+     * and a silent day stays flat.
      */
+    public function test_days_with_messages_render_bars_with_a_real_height(): void
+    {
+        $today = CarbonImmutable::now()->startOfDay()->addHours(12);
+
+        $this->conversationWith(8, at: $today);
+        $this->conversationWith(2, at: $today->subDays(2));
+
+        $bars = $this->renderedBars();
+
+        $this->assertSame(0.0, $bars[$today->subDays(6)->format('d.m')], 'A day with no messages should be flat.');
+        $this->assertGreaterThan(0, $bars[$today->subDays(2)->format('d.m')], 'A day with messages must render a visible bar.');
+
+        // Two messages against a peak of eight is a quarter of the track.
+        $track = $bars['__track__'];
+        $this->assertEqualsWithDelta($track, $bars[$today->format('d.m')], 0.001, 'The busiest day should fill the track.');
+        $this->assertEqualsWithDelta($track / 4, $bars[$today->subDays(2)->format('d.m')], 0.001);
+    }
+
+    /** A single message against a busy peak still has to be seeable. */
+    public function test_a_barely_used_day_is_not_rounded_away(): void
+    {
+        $today = CarbonImmutable::now()->startOfDay()->addHours(12);
+
+        $this->conversationWith(200, at: $today);
+        $this->conversationWith(1, at: $today->subDays(1));
+
+        $bars = $this->renderedBars();
+
+        $this->assertGreaterThanOrEqual(0.25, $bars[$today->subDays(1)->format('d.m')]);
+    }
+
+    /**
+     * Every rendered bar height in rem, keyed by the day label the chart prints,
+     * plus `__track__` for the height of the fixed track they are measured
+     * against.
+     *
+     * Heights are read in absolute units on purpose. Asserting on a percentage
+     * would have passed against the broken markup — the percentages were all
+     * there, they just had nothing to resolve against.
+     *
+     * @return array<string, float>
+     */
+    protected function renderedBars(): array
+    {
+        $html = $this->actingAs($this->owner)->get(route('dashboard'))->assertOk()->getContent();
+
+        $document = new \DOMDocument;
+        libxml_use_internal_errors(true);
+        $document->loadHTML('<?xml encoding="utf-8"?>'.$html);
+        libxml_clear_errors();
+
+        $xpath = new \DOMXPath($document);
+        $columns = $xpath->query("//div[@title and contains(@class, 'group') and contains(@class, 'flex-col')]");
+
+        $this->assertNotNull($columns);
+        $this->assertGreaterThan(0, $columns->length, 'The chart rendered no columns at all.');
+
+        $heights = [];
+
+        foreach ($columns as $column) {
+            /** @var \DOMElement $column */
+            [$label] = explode(' — ', $column->getAttribute('title'));
+
+            $track = $xpath->query('./div', $column)->item(0);
+            $bar = $xpath->query('./div', $track)->item(0);
+
+            $trackHeight = $this->remHeight($track);
+            $this->assertGreaterThan(0, $trackHeight, 'The track must have a definite height for bars to be a fraction of.');
+
+            $heights['__track__'] = $trackHeight;
+            $heights[$label] = $this->remHeight($bar);
+        }
+
+        return $heights;
+    }
+
+    /** The `height` of one element, in rem — and never in percent. */
+    protected function remHeight(?\DOMNode $node): float
+    {
+        $this->assertInstanceOf(\DOMElement::class, $node);
+
+        $style = $node->getAttribute('style');
+
+        $this->assertMatchesRegularExpression(
+            '/height:\s*[\d.]+rem/',
+            $style,
+            "Expected an absolute height, got: {$style}",
+        );
+
+        preg_match('/height:\s*([\d.]+)rem/', $style, $matches);
+
+        return (float) $matches[1];
+    }
 
     public function test_the_channel_breakdown_only_lists_connected_channels(): void
     {
@@ -459,14 +536,7 @@ class AnalyticsDashboardTest extends TestCase
 
         $this->actingAs($this->owner)->get(route('dashboard'))
             ->assertOk()
-            ->assertInertia(
-                fn (AssertableInertia $page) => $page
-                    ->has('metrics.heatmap.grid')
-                    // The label the card prints comes from the shared
-                    // translations, so this is what "the owner is told which
-                    // clock it is drawn on" reduces to server-side.
-                    ->where('translations.dashboard.heatmap.timezone_label', __('dashboard.heatmap.timezone_label'))
-            );
+            ->assertSee(__('dashboard.heatmap.timezone_label'), false);
     }
 
     /** 18:00 UTC is 23:00 in Khujand — the customer wrote at night. */
@@ -533,15 +603,10 @@ class AnalyticsDashboardTest extends TestCase
         $this->actingAs($this->owner)
             ->get(route('dashboard'))
             ->assertOk()
-            ->assertInertia(
-                fn (AssertableInertia $page) => $page
-                    // The hrefs are built in the browser from these counts by
-                    // Components/dashboard/PendingCard.vue, which links each to
-                    // the leads screen FILTERED to exactly those leads. The
-                    // server-side half of that promise is the counts.
-                    ->where('metrics.pending.open_orders', 1)
-                    ->where('metrics.pending.price_approvals', 0)
-            );
+            // Escaped, because Blade escapes the & in a query string when it
+            // writes the href.
+            ->assertSee(route('leads.index', ['status' => 'new']))
+            ->assertSee(route('leads.index', ['view' => 'haggle', 'status' => HagglingService::STATUS_PENDING]));
     }
 
     // -----------------------------------------------------------------
@@ -624,14 +689,7 @@ class AnalyticsDashboardTest extends TestCase
             $this->actingAs($this->owner)
                 ->get(route('dashboard'))
                 ->assertOk()
-                ->assertInertia(
-                    fn (AssertableInertia $page) => $page
-                        ->where('locale.current', $locale)
-                        ->where(
-                            'translations.dashboard.highlight.eyebrow',
-                            __('dashboard.highlight.eyebrow', [], $locale)
-                        )
-                );
+                ->assertSee(__('dashboard.highlight.eyebrow', [], $locale), false);
         }
     }
 }

@@ -5,7 +5,6 @@ namespace Tests\Feature;
 use App\Models\Agent;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Inertia\Testing\AssertableInertia;
 use Tests\TestCase;
 
 /**
@@ -78,35 +77,19 @@ class I18nBundleTest extends TestCase
         $response->assertSee("register('/sw.js')", false);
     }
 
-    /**
-     * The auth pages ship ONE locale, not three — and that is the improvement,
-     * not a regression.
-     *
-     * They are Inertia now. Switching language is a visit that replaces the
-     * `translations` prop and patches the component tree, so there is no reason
-     * to embed every locale's strings in the document and no [data-i18n] walker
-     * to feed. This asserts the replacement is actually in place: the current
-     * locale's strings are present, and the other two are NOT — which is what
-     * would silently creep back if someone re-added the Blade bundle partial to
-     * the Inertia root template.
-     *
-     * The three-locale bundle remains correct for the Blade pages, and the
-     * dashboard test below still pins it.
-     */
-    public function test_auth_pages_ship_only_the_active_locale(): void
+    public function test_auth_pages_embed_the_bundle_and_intercept_the_switcher(): void
     {
-        $this->get('/en/login')
-            ->assertOk()
-            ->assertInertia(
-                fn (AssertableInertia $page) => $page
-                    ->component('Auth/Login')
-                    ->where('locale.current', 'en')
-                    ->where('translations.auth.login.title', __('auth.login.title', [], 'en'))
-                    ->where('locale.supported', ['ru', 'tg', 'en'])
-            )
-            // The retired machinery must not come back by way of the root template.
-            ->assertDontSee('window.__i18n', false)
-            ->assertDontSee('data-i18n=', false);
+        $response = $this->get('/en/login');
+
+        $response->assertOk();
+        $response->assertSee('window.__i18n', false);
+        // The switcher opts into the client-side swap.
+        $response->assertSee('data-locale="ru"', false);
+        // All locales' auth namespace embedded (keys are JSON, values are
+        // \u-escaped, so assert on the structure rather than the Cyrillic text).
+        $response->assertSee('"ru":{"auth":', false);
+        $response->assertSee('"tg":{"auth":', false);
+        $response->assertSee('"en":{"auth":', false);
     }
 
     public function test_dashboard_embeds_the_bundle_and_tags_chrome(): void
@@ -114,8 +97,7 @@ class I18nBundleTest extends TestCase
         $user = User::factory()->create();
         Agent::factory()->for($user)->create();
 
-        // A page that is still Blade — the bundle is the Blade mechanism.
-        $response = $this->actingAs($user)->get('/conversations');
+        $response = $this->actingAs($user)->get('/agents');
 
         $response->assertOk();
         $response->assertSee('window.__i18n', false);

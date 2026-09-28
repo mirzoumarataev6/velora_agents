@@ -5,8 +5,6 @@ return [
     'loading' => 'Loading…',
     'learn_more' => 'Learn more',
     'back_home' => 'Back home',
-    'close' => 'Close',
-    'language' => 'Language',
     'toggle_theme' => 'Toggle theme',
     'skip_to_content' => 'Skip to content',
     'js_required' => 'Please enable JavaScript in your browser to use this page.',

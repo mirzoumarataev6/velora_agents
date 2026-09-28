@@ -10,8 +10,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
-use Inertia\Inertia;
-use Inertia\Response;
+use Illuminate\View\View;
 
 class LeadController extends Controller
 {
@@ -39,7 +38,7 @@ class LeadController extends Controller
         'haggle' => [HagglingService::STATUS_PENDING, 'in_progress', 'done'],
     ];
 
-    public function index(Request $request): Response
+    public function index(Request $request): View
     {
         $view = in_array($request->query('view'), self::VIEWS, true) ? $request->query('view') : self::VIEWS[0];
         $status = $request->query('status');
@@ -70,73 +69,34 @@ class LeadController extends Controller
             // browser to a bare, chrome-less block of HTML.
             ->appends(Arr::except($request->query(), ['fragment', 'page']));
 
-        // Reviewing the list is the natural moment to clear the unread bell.
-        //
-        // Skipped on a partial reload — the live search asks Inertia for the
-        // `leads` prop alone, and re-marking on every keystroke would be a
-        // write per character. `partial` is Inertia's own header, so this
-        // cannot drift from what the client actually requested.
-        if (! $request->hasHeader('X-Inertia-Partial-Data')) {
-            $this->markAllSeen($request);
-        }
-
-        return Inertia::render('Leads/Index', [
-            'leads' => [
-                'data' => collect($leads->items())->map(fn (Lead $lead) => $this->present($lead))->all(),
-                'current_page' => $leads->currentPage(),
-                'last_page' => $leads->lastPage(),
-                'total' => $leads->total(),
-            ],
+        $shared = [
+            'leads' => $leads,
             'activeView' => $view,
             'activeStatus' => in_array($status, $statuses, true) ? $status : null,
             'activeAgent' => $agentId,
             'activeSearch' => $term,
             'statusOptions' => $statuses,
+        ];
+
+        // The live search asks for just the result block, rendered from the same
+        // partial the full page uses. It deliberately skips both the seen-marking
+        // below (already done when the page loaded — re-running it on every
+        // keystroke would be a write per character) and the agent list, which the
+        // fragment does not contain.
+        if ($request->boolean('fragment')) {
+            return view('leads.partials.results', $shared);
+        }
+
+        // Reviewing the list is the natural moment to clear the unread bell.
+        $this->markAllSeen($request);
+
+        return view('leads.index', $shared + [
             'agents' => $request->user()->agents()->orderBy('name')->get(['id', 'name']),
             // Drives the badge on the Торг tab. Unfiltered on purpose: a
             // pending decision the current filter hides is still a customer
             // waiting, and hiding the count would be how it gets missed.
             'pendingHaggleCount' => $this->pendingHaggleQuery($request)->count(),
         ]);
-    }
-
-    /**
-     * One lead, flattened for the client.
-     *
-     * The model's own predicates — awaitsPriceApproval(), isChatOnly(),
-     * isHaggle() — are resolved HERE rather than re-implemented in JavaScript.
-     * A second copy of "what counts as chat-only" is exactly the kind of rule
-     * that drifts silently once the two are edited a month apart.
-     *
-     * @return array<string, mixed>
-     */
-    private function present(Lead $lead): array
-    {
-        return [
-            'id' => $lead->id,
-            'customer_name' => $lead->customer_name,
-            'phone' => $lead->phone,
-            'contact' => $lead->contact,
-            'items' => $lead->items,
-            'note' => $lead->note,
-            'status' => $lead->status,
-            'source' => $lead->source,
-            'created_at_human' => $lead->created_at?->diffForHumans(),
-            'agent' => $lead->agent === null ? null : [
-                'name' => $lead->agent->name,
-                'slug' => $lead->agent->slug,
-            ],
-
-            'is_chat_only' => $lead->isChatOnly(),
-            'is_haggle' => $lead->isHaggle(),
-            'awaits_price_approval' => $lead->awaitsPriceApproval(),
-
-            'requested_price' => Lead::formatPrice($lead->requested_price),
-            'listed_price' => Lead::formatPrice($lead->listed_price),
-            'approved_price' => Lead::formatPrice($lead->approved_price),
-            'discount_percent' => $lead->requestedDiscountPercent(),
-            'negotiation_summary' => $lead->negotiation_summary,
-        ];
     }
 
     /**

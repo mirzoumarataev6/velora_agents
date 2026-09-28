@@ -1,38 +1,26 @@
 <?php
 
 /**
- * Renders every web-ready brand asset from the vector master,
- * resources/brand/velora-mark.svg.
+ * Derives every web-ready brand asset from the master Velora art in
+ * public/images/brand/ (velora-logo-{light,dark}.png — full lockup with
+ * wordmark; velora-mark-{light,dark}.png — icon-only V mark).
  *
- * WHAT CHANGED, AND WHY IT MATTERS
- * --------------------------------
- * This script used to derive its output from two opaque PNG masters by
- * "un-blending" them — recovering an alpha channel from art composited over
- * flat black and flat white. That worked, but every asset was a resample of a
- * raster, so a 16px favicon was a downsample of a downsample and the mark went
- * soft at small sizes.
- *
- * The master is now a real vector, traced from the source art and verified
- * against it at 99.4% pixel agreement. Every size below is rendered FROM THE
- * GEOMETRY at its own resolution, so a 16px favicon is as crisp as the 512px
- * app icon.
- *
- * It renders the SVG itself rather than shelling out to Inkscape or rsvg:
- * neither is installed here, and the master deliberately uses only absolute
- * move/line/close segments and linear gradients — the exact subset this needs
- * to understand. If the master ever gains a curve, this will say so and stop
- * rather than silently dropping it.
+ * The masters are opaque (white or black background), so this script first
+ * recovers a transparent version by "un-blending": for art composited over
+ * pure black, alpha = max(R,G,B)/255 and the true colour is pixel/alpha; over
+ * pure white the mirror formula applies. That yields clean anti-aliased edges
+ * without any hand masking.
  *
  * Outputs (all regenerated, safe to re-run):
- *   public/images/brand/velora-mark.svg           the vector, served as-is
- *   public/images/brand/velora-mark-navy.svg      flat #0B1636, for small sizes
- *   public/images/brand/velora-mark-white.svg     flat white, for dark grounds
- *   public/images/brand/gen/mark.png              512px, transparent
+ *   public/images/brand/gen/mark.png            512px transparent V mark
+ *   public/images/brand/gen/lockup-light.png    lockup for LIGHT backgrounds (dark text)
+ *   public/images/brand/gen/lockup-dark.png     lockup for DARK backgrounds (white text)
  *   public/images/brand/gen/favicon-{16,32,48}.png
- *   public/images/brand/gen/apple-touch-icon.png  180px on the light canvas
- *   public/images/brand/gen/icon-{192,512}.png    PWA icons
+ *   public/images/brand/gen/apple-touch-icon.png  180px, warm paper background
+ *   public/images/brand/gen/icon-{192,512}.png    PWA icons (transparent, padded)
  *   public/images/brand/gen/og-image.png          1200x630 social preview
- *   public/favicon.ico                            16+32+48
+ *   public/favicon.ico                            16+32+48 (PNG-encoded entries)
+ *   public/site.webmanifest
  *
  * Run:  php scripts/generate-brand-assets.php
  */
@@ -42,206 +30,133 @@ if (! extension_loaded('gd')) {
 }
 
 $root = dirname(__DIR__);
-$master = $root.'/resources/brand/velora-mark.svg';
 $brandDir = $root.'/public/images/brand';
 $genDir = $brandDir.'/gen';
 
-foreach ([$brandDir, $genDir] as $dir) {
-    if (! is_dir($dir) && ! mkdir($dir, 0775, true)) {
-        fwrite(STDERR, "Cannot create {$dir}\n");
-        exit(1);
-    }
-}
-
-/* ---------------------------------------------------------------------------
- * Parse the master.
- * ------------------------------------------------------------------------- */
-
-$svg = file_get_contents($master);
-
-if (! preg_match('/viewBox="0 0 ([\d.]+) ([\d.]+)"/', $svg, $vb)) {
-    fwrite(STDERR, "No viewBox in the master.\n");
+if (! is_dir($genDir) && ! mkdir($genDir, 0775, true)) {
+    fwrite(STDERR, "Cannot create {$genDir}\n");
     exit(1);
-}
-[$artW, $artH] = [(float) $vb[1], (float) $vb[2]];
-
-/** Gradient definitions, keyed by id. */
-$gradients = [];
-preg_match_all(
-    '#<linearGradient id="([^"]+)"[^>]*x1="([-\d.]+)" y1="([-\d.]+)" x2="([-\d.]+)" y2="([-\d.]+)"[^>]*>(.*?)</linearGradient>#s',
-    $svg,
-    $gradBlocks,
-    PREG_SET_ORDER
-);
-foreach ($gradBlocks as $g) {
-    preg_match_all('/<stop offset="([\d.]*)" stop-color="#([0-9A-Fa-f]{6})"/', $g[6], $stops, PREG_SET_ORDER);
-    $gradients[$g[1]] = [
-        'axis' => [(float) $g[2], (float) $g[3], (float) $g[4], (float) $g[5]],
-        'stops' => array_map(fn ($s) => [(float) ($s[1] === '' ? 0 : $s[1]), hexdec($s[2])], $stops),
-    ];
-}
-
-/** Paths, in document order — which is also paint order. */
-$paths = [];
-preg_match_all('#<path fill="([^"]+)" d="([^"]+)"#', $svg, $pathBlocks, PREG_SET_ORDER);
-foreach ($pathBlocks as $p) {
-    if (preg_match('/[CcSsQqTtAaHhVvLlMm]/', str_replace(['M', 'L', 'Z'], '', $p[2]))) {
-        fwrite(STDERR, "The master uses path commands this renderer does not support.\n");
-        exit(1);
-    }
-    $points = [];
-    preg_match_all('/([ML])\s*([-\d.]+)\s+([-\d.]+)/', $p[2], $segs, PREG_SET_ORDER);
-    foreach ($segs as $s) {
-        $points[] = [(float) $s[2], (float) $s[3]];
-    }
-    $fill = $p[1];
-    $paths[] = [
-        'points' => $points,
-        'gradient' => preg_match('/url\(#([^)]+)\)/', $fill, $m) ? $m[1] : null,
-        'solid' => str_starts_with($fill, '#') ? hexdec(ltrim($fill, '#')) : null,
-    ];
-}
-
-if ($paths === []) {
-    fwrite(STDERR, "No paths found in the master.\n");
-    exit(1);
-}
-
-/* ---------------------------------------------------------------------------
- * Rendering.
- * ------------------------------------------------------------------------- */
-
-function gradientColour(array $stops, float $t): array
-{
-    $t = max(0.0, min(1.0, $t));
-
-    for ($i = 0; $i < count($stops) - 1; $i++) {
-        [$o1, $c1] = $stops[$i];
-        [$o2, $c2] = $stops[$i + 1];
-
-        if ($t >= $o1 && $t <= $o2) {
-            $u = ($o2 - $o1) > 0 ? ($t - $o1) / ($o2 - $o1) : 0.0;
-
-            return [
-                (int) ((($c1 >> 16) & 255) + ((($c2 >> 16) & 255) - (($c1 >> 16) & 255)) * $u),
-                (int) ((($c1 >> 8) & 255) + ((($c2 >> 8) & 255) - (($c1 >> 8) & 255)) * $u),
-                (int) (($c1 & 255) + (($c2 & 255) - ($c1 & 255)) * $u),
-            ];
-        }
-    }
-
-    $c = $stops[count($stops) - 1][1];
-
-    return [($c >> 16) & 255, ($c >> 8) & 255, $c & 255];
 }
 
 /**
- * Draw the mark into a transparent canvas of the given width.
+ * Recover a transparent image from art composited over a uniform background.
  *
- * Supersampled 3x and then resampled down, which is what gives the small sizes
- * their antialiased edges — GD's polygon fill has none of its own.
- *
- * @param  ?int  $flat  null for the full gradient art, or an RGB int for a flat
- *                      single-colour version
+ * @param  'black'|'white'  $background
  */
-function renderMark(int $width, array $paths, array $gradients, float $artW, float $artH, ?int $flat = null): GdImage
+function unblend(GdImage $src, string $background): GdImage
 {
-    $ss = 3;
-    $height = (int) round($width * $artH / $artW);
-    $bigW = $width * $ss;
-    $bigH = $height * $ss;
-    $scale = $bigW / $artW;
-
-    $big = imagecreatetruecolor($bigW, $bigH);
-    imagealphablending($big, false);
-    imagesavealpha($big, true);
-    imagefill($big, 0, 0, imagecolorallocatealpha($big, 0, 0, 0, 127));
-
-    foreach ($paths as $path) {
-        $poly = [];
-        foreach ($path['points'] as [$x, $y]) {
-            $poly[] = (int) round($x * $scale);
-            $poly[] = (int) round($y * $scale);
-        }
-
-        // Stencil the shape, then paint colour through it. Painting directly
-        // would need one polygon fill per colour step.
-        $stencil = imagecreatetruecolor($bigW, $bigH);
-        imagefill($stencil, 0, 0, imagecolorallocate($stencil, 0, 0, 0));
-        imagefilledpolygon($stencil, $poly, imagecolorallocate($stencil, 255, 255, 255));
-
-        $solid = $flat ?? $path['solid'];
-        $grad = $flat === null && $path['gradient'] !== null ? $gradients[$path['gradient']] : null;
-
-        if ($grad !== null) {
-            [$x1, $y1, $x2, $y2] = $grad['axis'];
-            $x1 *= $scale;
-            $y1 *= $scale;
-            $x2 *= $scale;
-            $y2 *= $scale;
-            $dx = $x2 - $x1;
-            $dy = $y2 - $y1;
-            $len2 = $dx * $dx + $dy * $dy;
-        }
-
-        for ($y = 0; $y < $bigH; $y++) {
-            for ($x = 0; $x < $bigW; $x++) {
-                if ((imagecolorat($stencil, $x, $y) & 255) < 128) {
-                    continue;
-                }
-
-                if ($grad !== null) {
-                    $t = $len2 > 0 ? ((($x - $x1) * $dx + ($y - $y1) * $dy) / $len2) : 0.0;
-                    [$r, $g, $b] = gradientColour($grad['stops'], $t);
-                } else {
-                    $r = ($solid >> 16) & 255;
-                    $g = ($solid >> 8) & 255;
-                    $b = $solid & 255;
-                }
-
-                imagesetpixel($big, $x, $y, imagecolorallocatealpha($big, $r, $g, $b, 0));
-            }
-        }
-
-        imagedestroy($stencil);
-    }
-
-    $out = imagecreatetruecolor($width, $height);
+    $w = imagesx($src);
+    $h = imagesy($src);
+    $out = imagecreatetruecolor($w, $h);
     imagealphablending($out, false);
     imagesavealpha($out, true);
-    imagefill($out, 0, 0, imagecolorallocatealpha($out, 0, 0, 0, 127));
-    imagealphablending($out, true);
-    imagecopyresampled($out, $big, 0, 0, 0, 0, $width, $height, $bigW, $bigH);
-    imagesavealpha($out, true);
-    imagedestroy($big);
+    $transparent = imagecolorallocatealpha($out, 0, 0, 0, 127);
+    imagefill($out, 0, 0, $transparent);
+
+    for ($y = 0; $y < $h; $y++) {
+        for ($x = 0; $x < $w; $x++) {
+            $rgb = imagecolorat($src, $x, $y);
+            $r = ($rgb >> 16) & 0xFF;
+            $g = ($rgb >> 8) & 0xFF;
+            $b = $rgb & 0xFF;
+
+            if ($background === 'black') {
+                // c = a * colour  =>  a = max channel (white/orange art).
+                $alpha = max($r, $g, $b) / 255;
+            } else {
+                // c = a * colour + (1 - a) * 255  =>  a = 1 - min/255.
+                $alpha = 1 - (min($r, $g, $b) / 255);
+            }
+
+            // Kill compression/AI noise in the flat background.
+            if ($alpha < 0.05) {
+                continue;
+            }
+            $alpha = min(1.0, $alpha * 1.02); // snap near-solid pixels to solid
+
+            if ($background === 'black') {
+                $tr = (int) min(255, $r / $alpha);
+                $tg = (int) min(255, $g / $alpha);
+                $tb = (int) min(255, $b / $alpha);
+            } else {
+                $tr = (int) max(0, min(255, ($r - (1 - $alpha) * 255) / $alpha));
+                $tg = (int) max(0, min(255, ($g - (1 - $alpha) * 255) / $alpha));
+                $tb = (int) max(0, min(255, ($b - (1 - $alpha) * 255) / $alpha));
+            }
+
+            $gdAlpha = (int) round(127 - $alpha * 127);
+            imagesetpixel($out, $x, $y, imagecolorallocatealpha($out, $tr, $tg, $tb, $gdAlpha));
+        }
+    }
 
     return $out;
 }
 
-/** Centre the mark on a square canvas, occupying $fill of the shorter side. */
-function onCanvas(GdImage $mark, int $size, float $fill, ?array $bg = null): GdImage
+/** Crop a transparent image to its visible bounding box plus a relative margin. */
+function cropToContent(GdImage $img, float $marginRatio = 0.04): GdImage
 {
-    $mw = imagesx($mark);
-    $mh = imagesy($mark);
-    $target = $size * $fill;
-    $ratio = min($target / $mw, $target / $mh);
-    $dw = (int) round($mw * $ratio);
-    $dh = (int) round($mh * $ratio);
+    $w = imagesx($img);
+    $h = imagesy($img);
+    $minX = $w;
+    $minY = $h;
+    $maxX = -1;
+    $maxY = -1;
 
-    $out = imagecreatetruecolor($size, $size);
+    for ($y = 0; $y < $h; $y++) {
+        for ($x = 0; $x < $w; $x++) {
+            $alpha = (imagecolorat($img, $x, $y) >> 24) & 0x7F;
+            if ($alpha < 120) { // visible enough
+                if ($x < $minX) {
+                    $minX = $x;
+                }
+                if ($x > $maxX) {
+                    $maxX = $x;
+                }
+                if ($y < $minY) {
+                    $minY = $y;
+                }
+                if ($y > $maxY) {
+                    $maxY = $y;
+                }
+            }
+        }
+    }
+
+    if ($maxX < 0) {
+        return $img; // fully transparent — nothing to crop
+    }
+
+    $margin = (int) round(max($maxX - $minX, $maxY - $minY) * $marginRatio);
+    $minX = max(0, $minX - $margin);
+    $minY = max(0, $minY - $margin);
+    $maxX = min($w - 1, $maxX + $margin);
+    $maxY = min($h - 1, $maxY + $margin);
+
+    $cw = $maxX - $minX + 1;
+    $ch = $maxY - $minY + 1;
+    $out = imagecreatetruecolor($cw, $ch);
     imagealphablending($out, false);
     imagesavealpha($out, true);
-    imagefill(
-        $out,
-        0,
-        0,
-        $bg === null
-            ? imagecolorallocatealpha($out, 0, 0, 0, 127)
-            : imagecolorallocate($out, ...$bg)
-    );
-    imagealphablending($out, true);
-    imagecopyresampled($out, $mark, (int) (($size - $dw) / 2), (int) (($size - $dh) / 2), 0, 0, $dw, $dh, $mw, $mh);
+    imagefill($out, 0, 0, imagecolorallocatealpha($out, 0, 0, 0, 127));
+    imagecopy($out, $img, 0, 0, $minX, $minY, $cw, $ch);
+
+    return $out;
+}
+
+/** Resample onto a transparent canvas of the given size (fit, centered). */
+function fitOnCanvas(GdImage $img, int $canvasW, int $canvasH, float $scaleRatio = 1.0): GdImage
+{
+    $w = imagesx($img);
+    $h = imagesy($img);
+    $scale = min($canvasW / $w, $canvasH / $h) * $scaleRatio;
+    $dw = (int) round($w * $scale);
+    $dh = (int) round($h * $scale);
+
+    $out = imagecreatetruecolor($canvasW, $canvasH);
+    imagealphablending($out, false);
     imagesavealpha($out, true);
+    imagefill($out, 0, 0, imagecolorallocatealpha($out, 0, 0, 0, 127));
+    imagecopyresampled($out, $img, (int) (($canvasW - $dw) / 2), (int) (($canvasH - $dh) / 2), 0, 0, $dw, $dh, $w, $h);
 
     return $out;
 }
@@ -250,63 +165,118 @@ function savePng(GdImage $img, string $path): void
 {
     imagesavealpha($img, true);
     imagepng($img, $path, 9);
-    echo '  '.basename($path).'  '.imagesx($img).'x'.imagesy($img)."\n";
+    echo sprintf("  %-52s %6.1f KB\n", str_replace(dirname(__DIR__).'/', '', $path), filesize($path) / 1024);
 }
 
-/* ---------------------------------------------------------------------------
- * Emit.
- * ------------------------------------------------------------------------- */
-
-echo "Vector masters\n";
-foreach (['velora-mark.svg', 'velora-mark-navy.svg', 'velora-mark-white.svg'] as $name) {
-    copy($root.'/resources/brand/'.$name, $brandDir.'/'.$name);
-    echo '  '.$name."\n";
+/** WebP sibling for web delivery (PNG stays as the fallback in <picture>). */
+function saveWebp(GdImage $img, string $path): void
+{
+    imagesavealpha($img, true);
+    imagewebp($img, $path, 82);
+    echo sprintf("  %-52s %6.1f KB\n", str_replace(dirname(__DIR__).'/', '', $path), filesize($path) / 1024);
 }
 
-echo "Raster, rendered from the geometry at each size\n";
+/** Build a .ico whose entries are PNG-encoded (understood by all modern browsers). */
+function writeIco(array $pngPaths, string $icoPath): void
+{
+    $entries = '';
+    $blobs = '';
+    $offset = 6 + 16 * count($pngPaths);
 
-$mark512 = renderMark(512, $paths, $gradients, $artW, $artH);
-savePng($mark512, $genDir.'/mark.png');
+    foreach ($pngPaths as $size => $path) {
+        $data = file_get_contents($path);
+        $entries .= pack('CCCCvvVV', $size >= 256 ? 0 : $size, $size >= 256 ? 0 : $size, 0, 0, 1, 32, strlen($data), $offset);
+        $blobs .= $data;
+        $offset += strlen($data);
+    }
 
-// Small sizes render the FLAT NAVY version, not the gradient one. Below about
-// 48px the gradient's dark end and the navy ground of a browser tab converge,
-// and the mark loses its shape; a single solid colour keeps the silhouette.
-$icoFiles = [];
+    file_put_contents($icoPath, pack('vvv', 0, 1, count($pngPaths)).$entries.$blobs);
+    echo sprintf("  %-52s %6.1f KB\n", str_replace(dirname(__DIR__).'/', '', $icoPath), filesize($icoPath) / 1024);
+}
+
+echo "Deriving transparent art...\n";
+
+$markTransparent = cropToContent(unblend(imagecreatefrompng($brandDir.'/velora-mark-dark.png'), 'black'));
+$lockupForLight = cropToContent(unblend(imagecreatefrompng($brandDir.'/velora-logo-light.png'), 'white'), 0.02);
+$lockupForDark = cropToContent(unblend(imagecreatefrompng($brandDir.'/velora-logo-dark.png'), 'black'), 0.02);
+
+echo "Writing outputs...\n";
+
+// Core transparent assets.
+$markCanvas = fitOnCanvas($markTransparent, 512, 512);
+savePng($markCanvas, $genDir.'/mark.png');
+saveWebp($markCanvas, $genDir.'/mark.webp');
+
+$lockupW = 640;
+foreach (['lockup-light.png' => $lockupForLight, 'lockup-dark.png' => $lockupForDark] as $name => $img) {
+    $scaleH = (int) round(imagesy($img) * $lockupW / imagesx($img));
+    $resized = imagecreatetruecolor($lockupW, $scaleH);
+    imagealphablending($resized, false);
+    imagesavealpha($resized, true);
+    imagefill($resized, 0, 0, imagecolorallocatealpha($resized, 0, 0, 0, 127));
+    imagecopyresampled($resized, $img, 0, 0, 0, 0, $lockupW, $scaleH, imagesx($img), imagesy($img));
+    savePng($resized, $genDir.'/'.$name);
+    saveWebp($resized, $genDir.'/'.str_replace('.png', '.webp', $name));
+}
+
+// Favicons (transparent mark, slight padding so the V doesn't touch the tab edge).
+$faviconPngs = [];
 foreach ([16, 32, 48] as $size) {
-    $flat = renderMark($size * 2, $paths, $gradients, $artW, $artH, 0x0B1636);
-    $img = onCanvas($flat, $size, 0.92);
     $path = $genDir."/favicon-{$size}.png";
-    savePng($img, $path);
-    $icoFiles[$size] = $path;
+    savePng(fitOnCanvas($markTransparent, $size, $size, 0.92), $path);
+    $faviconPngs[$size] = $path;
 }
+writeIco($faviconPngs, $root.'/public/favicon.ico');
 
-// Apple touch icons are composited on an opaque ground by iOS anyway, so give
-// it the canvas colour deliberately rather than letting it pick black.
-savePng(onCanvas(renderMark(360, $paths, $gradients, $artW, $artH), 180, 0.74, [244, 246, 251]), $genDir.'/apple-touch-icon.png');
+// PWA icons.
+savePng(fitOnCanvas($markTransparent, 192, 192, 0.82), $genDir.'/icon-192.png');
+savePng(fitOnCanvas($markTransparent, 512, 512, 0.82), $genDir.'/icon-512.png');
 
-savePng(onCanvas($mark512, 192, 0.82), $genDir.'/icon-192.png');
-savePng(onCanvas($mark512, 512, 0.82), $genDir.'/icon-512.png');
+// Apple touch icon: iOS composites onto an opaque tile, so give it the warm paper bg.
+$apple = imagecreatetruecolor(180, 180);
+imagefill($apple, 0, 0, imagecolorallocate($apple, 0xFA, 0xF9, 0xF5));
+$appleMark = fitOnCanvas($markTransparent, 180, 180, 0.72);
+imagealphablending($apple, true);
+imagecopy($apple, $appleMark, 0, 0, 0, 0, 180, 180);
+savePng($apple, $genDir.'/apple-touch-icon.png');
 
-// Social preview: the mark on the product's own canvas colour.
+// OG / social preview: warm dark canvas with a soft radial glow + the dark lockup.
 $og = imagecreatetruecolor(1200, 630);
-imagefill($og, 0, 0, imagecolorallocate($og, 244, 246, 251));
-$ogMark = renderMark(420, $paths, $gradients, $artW, $artH);
+$cx = 600;
+$cy = 140;
+$maxDist = 900;
+for ($y = 0; $y < 630; $y++) {
+    for ($x = 0; $x < 1200; $x++) {
+        $t = min(1, sqrt(($x - $cx) ** 2 + ($y - $cy) ** 2) / $maxDist);
+        // night-raised #2b2620 (glow centre) -> night canvas #1a1815 (edges)
+        $r = (int) (0x2B + (0x1A - 0x2B) * $t);
+        $g = (int) (0x26 + (0x18 - 0x26) * $t);
+        $b = (int) (0x20 + (0x15 - 0x20) * $t);
+        imagesetpixel($og, $x, $y, imagecolorallocate($og, $r, $g, $b));
+    }
+}
+$ogLockup = $lockupForDark;
+$targetH = 470;
+$targetW = (int) round(imagesx($ogLockup) * $targetH / imagesy($ogLockup));
 imagealphablending($og, true);
-imagecopy($og, $ogMark, (int) ((1200 - 420) / 2), (int) ((630 - imagesy($ogMark)) / 2), 0, 0, 420, imagesy($ogMark));
+imagecopyresampled($og, $ogLockup, (int) ((1200 - $targetW) / 2), (int) ((630 - $targetH) / 2), 0, 0, $targetW, $targetH, imagesx($ogLockup), imagesy($ogLockup));
 savePng($og, $genDir.'/og-image.png');
 
-/* favicon.ico with PNG-encoded entries, which every browser in use reads. */
-$ico = pack('vvv', 0, 1, count($icoFiles));
-$offset = 6 + 16 * count($icoFiles);
-$blobs = [];
-foreach ($icoFiles as $size => $path) {
-    $blobs[$size] = file_get_contents($path);
-}
-foreach ($blobs as $size => $blob) {
-    $ico .= pack('CCCCvvVV', $size === 256 ? 0 : $size, $size === 256 ? 0 : $size, 0, 0, 1, 32, strlen($blob), $offset);
-    $offset += strlen($blob);
-}
-file_put_contents($root.'/public/favicon.ico', $ico.implode('', $blobs));
-echo '  favicon.ico  ('.count($blobs)." entries)\n";
+// Web app manifest.
+file_put_contents($root.'/public/site.webmanifest', json_encode([
+    'name' => 'Velora Agents',
+    'short_name' => 'Velora',
+    'icons' => [
+        ['src' => '/images/brand/gen/icon-192.png', 'sizes' => '192x192', 'type' => 'image/png'],
+        ['src' => '/images/brand/gen/icon-512.png', 'sizes' => '512x512', 'type' => 'image/png'],
+    ],
+    // Mirrors `brand` (ember-500) and `paper` (sand-50) in tailwind.config.js.
+    // This file had gone stale on the retired #da7756 once already — a rerun
+    // would have silently reintroduced a colour BrandConsistencyTest bans.
+    'theme_color' => '#e27551',
+    'background_color' => '#faf9f5',
+    'display' => 'standalone',
+], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)."\n");
+echo "  public/site.webmanifest\n";
 
-echo "\nDone.\n";
+echo "Done.\n";

@@ -12,7 +12,6 @@ use App\Services\OnboardingService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
-use Inertia\Testing\AssertableInertia;
 use Tests\TestCase;
 
 /**
@@ -71,12 +70,10 @@ class OnboardingTest extends TestCase
     {
         $user = $this->newcomer();
 
-        $this->actingAs($user)->get(route('agents.index'))
-            ->assertOk()
-            // `welcome` is the shared prop the modal renders from; reading it
-            // is what stamps the account, so it is also what "exactly once"
-            // is measured on.
-            ->assertInertia(fn (AssertableInertia $page) => $page->where('welcome', $user->name));
+        $response = $this->actingAs($user)->get(route('agents.index'));
+
+        $response->assertOk();
+        $response->assertSee(__('onboarding.welcome.title', ['name' => $user->name]), false);
     }
 
     /**
@@ -94,7 +91,7 @@ class OnboardingTest extends TestCase
 
         $this->actingAs($user)->get(route('agents.index'))
             ->assertOk()
-            ->assertInertia(fn (AssertableInertia $page) => $page->where('welcome', null));
+            ->assertDontSee(__('onboarding.welcome.title', ['name' => $user->name]), false);
     }
 
     /**
@@ -107,9 +104,7 @@ class OnboardingTest extends TestCase
 
         $this->actingAs($user)->get(route('settings.index'))
             ->assertOk()
-            // Any Inertia page owes it: `welcome` is a SHARED prop, so the
-            // modal follows the owner to whatever they land on first.
-            ->assertInertia(fn (AssertableInertia $page) => $page->where('welcome', $user->name));
+            ->assertSee(__('onboarding.welcome.eyebrow'), false);
 
         $this->assertNotNull($user->fresh()->welcomed_at);
     }
@@ -157,13 +152,7 @@ class OnboardingTest extends TestCase
             ->get(route('agents.index'));
 
         $response->assertOk();
-        // No checklist to pin a banner to, so the greeting falls through to
-        // the shared `flash.greeting` prop, which the layout toasts.
-        $response->assertInertia(
-            fn (AssertableInertia $page) => $page
-                ->where('banner', null)
-                ->where('flash.greeting', __('onboarding.welcome_greeting', ['name' => 'Nadia']))
-        );
+        $response->assertSee($this->toastCall(__('onboarding.welcome_greeting', ['name' => 'Nadia'])), false);
     }
 
     public function test_the_greeting_is_shown_once_and_then_spent(): void
@@ -173,47 +162,39 @@ class OnboardingTest extends TestCase
         $this->actingAs($user)
             ->withSession([AuthController::GREETING_SESSION_KEY => AuthController::GREETING_BACK])
             ->get(route('agents.index'))
-            ->assertInertia(fn (AssertableInertia $page) => $page
-                ->where('flash.greeting', __('onboarding.back', ['name' => 'Ada'])));
+            ->assertSee($this->toastCall(__('onboarding.back', ['name' => 'Ada'])), false);
 
-        // Spent by the response that carried it.
         $this->actingAs($user)->get(route('agents.index'))
-            ->assertInertia(fn (AssertableInertia $page) => $page->where('flash.greeting', null));
+            ->assertDontSee($this->toastCall(__('onboarding.back', ['name' => 'Ada'])), false);
     }
 
     /**
-     * The greeting survives the redirect chain a real sign-up walks.
-     *
-     * This used to model something more fragile: the auth forms POSTed with
-     * fetch(), which followed the redirects itself and DISCARDED the resulting
-     * HTML, so anything spent by those invisible hops was gone before the owner
-     * saw a page. The forms are Inertia visits now, and Inertia follows the
-     * chain as ordinary requests — only the final page renders, so only it can
-     * spend the greeting. The property is the same; the hazard is gone.
+     * The regression that mattered. The auth forms don't navigate — they POST
+     * with fetch(), which follows the redirect chain itself and DISCARDS the
+     * HTML, then sends the browser to the same URL as a fresh request. These
+     * two walk that exact sequence: anything spent by the invisible fetch
+     * renders nothing on the page the owner actually sees.
      */
-    public function test_the_sign_up_greeting_survives_the_redirect_chain(): void
+    public function test_the_sign_up_greeting_survives_the_fetch_that_swallows_the_redirect(): void
     {
-        // The POST answers with a redirect, which renders nothing — so it
-        // cannot spend the greeting. Only a page that actually renders can,
-        // and that is the property this pins.
+        $xhr = ['Accept' => 'application/json'];
+
         $this->post('/register', [
             'name' => 'Nadia',
             'email' => 'nadia@example.test',
             'password' => 'secret-password',
             'password_confirmation' => 'secret-password',
-        ])->assertRedirect(route('home'));
+        ], $xhr);
 
-        $this->assertSame(
-            AuthController::GREETING_WELCOME,
-            session(AuthController::GREETING_SESSION_KEY),
-            'A redirect must not consume the greeting.',
-        );
+        // The hops fetch() follows and throws away.
+        $this->get('/home', $xhr);
+        $this->get(route('agents.index'), $xhr);
 
-        // A sign-up lands with a checklist, so the first page that DOES render
-        // turns the greeting into the banner rather than a toast.
+        // The navigation the owner actually sees. Registration lands on the
+        // dashboard WITH the checklist, so the greeting is the banner.
         $this->get(route('agents.index'))
             ->assertOk()
-            ->assertInertia(fn (AssertableInertia $page) => $page->where('banner', 'Nadia'));
+            ->assertSee(__('onboarding.welcome_greeting', ['name' => 'Nadia']), false);
     }
 
     // ------------------------------------------------------- greeting banner
@@ -225,40 +206,38 @@ class OnboardingTest extends TestCase
      */
     public function test_the_sign_up_greeting_is_a_banner_on_the_checklist_and_nothing_else(): void
     {
-        $this->registerAndLand('Nadia')
-            ->assertOk()
-            ->assertInertia(fn (AssertableInertia $page) => $page
-                // The banner claims it...
-                ->where('banner', 'Nadia')
-                ->where('onboarding.visible', true)
-                // ...which leaves nothing for the toast, and nothing for the
-                // welcome modal. Both greet by name; either alongside the
-                // banner would greet the same person twice.
-                ->where('flash.greeting', null)
-                ->where('welcome', null));
+        $response = $this->registerAndLand('Nadia');
+
+        $response->assertOk();
+        $response->assertSee(__('onboarding.welcome_greeting', ['name' => 'Nadia']), false);
+        $response->assertSee(__('onboarding.checklist.title'), false);
+
+        $response->assertDontSee($this->toastCall(__('onboarding.welcome_greeting', ['name' => 'Nadia'])), false);
+        $response->assertDontSee(__('onboarding.welcome.eyebrow'), false);
     }
 
     public function test_the_banner_sits_at_the_top_of_the_checklist_and_can_be_closed(): void
     {
-        $this->registerAndLand('Nadia')
-            ->assertInertia(fn (AssertableInertia $page) => $page->where('banner', 'Nadia'));
+        $response = $this->registerAndLand('Nadia');
+        $html = $response->getContent();
 
-        // Ordering and nesting are the page's job now, so they are asserted
-        // where they are decided: the banner is a sibling ABOVE the checklist
-        // card, not a strip inside it, and its × records nothing — which is
-        // what makes the reload in the next test render the checklist again.
-        $page = file_get_contents(resource_path('js/Pages/Agents/Index.vue'));
-
-        $this->assertMatchesRegularExpression(
-            '/<WelcomeBanner[^>]*\/>\s*<OnboardingCard/s',
-            $page,
-            'The greeting must be pinned above the checklist, as its own block.',
+        $this->assertLessThan(
+            strpos($html, __('onboarding.checklist.title')),
+            strpos($html, __('onboarding.welcome_greeting', ['name' => 'Nadia'])),
+            'The greeting must be pinned above the checklist, not below it.',
         );
 
-        $this->assertStringContainsString(
-            '@click="shown = false"',
-            file_get_contents(resource_path('js/Components/onboarding/WelcomeBanner.vue')),
+        // ...and above the checklist's card element itself, not inside it: the
+        // banner is its own separate block with its own spacing.
+        $this->assertLessThan(
+            strpos($html, 'id="onboarding"'),
+            strpos($html, __('onboarding.welcome_greeting', ['name' => 'Nadia'])),
+            'The greeting must be a standalone block, not nested in the onboarding card.',
         );
+
+        // The × is client-side only: it hides the banner for this page view and
+        // records nothing, which is why the request below re-renders normally.
+        $this->assertStringContainsString('@click="shown = false"', $html);
     }
 
     public function test_the_banner_lasts_one_page_view_and_leaves_nothing_dismissed(): void
@@ -268,36 +247,54 @@ class OnboardingTest extends TestCase
         // A reload: the greeting is over, but the checklist it sat on is not.
         $this->get(route('agents.index'))
             ->assertOk()
-            ->assertInertia(fn (AssertableInertia $page) => $page
-                ->where('banner', null)
-                ->where('onboarding.visible', true));
+            ->assertDontSee(__('onboarding.welcome_greeting', ['name' => 'Nadia']), false)
+            ->assertSee(__('onboarding.checklist.title'), false);
     }
 
-    /** Register, then land on the agents screen the way a sign-up does. */
+    /**
+     * Register the way the browser does — a fetch() that swallows the redirect
+     * chain — and return the page the owner actually lands on.
+     */
     protected function registerAndLand(string $name): TestResponse
     {
+        $xhr = ['Accept' => 'application/json'];
+
         $this->post('/register', [
             'name' => $name,
             'email' => Str::slug($name).'@example.test',
             'password' => 'secret-password',
             'password_confirmation' => 'secret-password',
-        ]);
+        ], $xhr);
+
+        $this->get('/home', $xhr);
+        $this->get(route('agents.index'), $xhr);
 
         return $this->get(route('agents.index'));
     }
 
-    public function test_the_sign_in_greeting_survives_the_redirect_chain(): void
+    public function test_the_sign_in_greeting_survives_the_fetch_that_swallows_the_redirect(): void
     {
-        $user = User::factory()->create(['email' => 'ada@example.test', 'name' => 'Ada']);
+        $xhr = ['Accept' => 'application/json'];
+        User::factory()->create(['email' => 'ada@example.test', 'name' => 'Ada']);
 
-        $this->post('/login', ['email' => 'ada@example.test', 'password' => 'password']);
+        $this->post('/login', ['email' => 'ada@example.test', 'password' => 'password'], $xhr);
 
-        // An established account has no checklist, so this one is a toast.
-        $this->actingAs($user)->get(route('agents.index'))
+        $this->get('/home', $xhr);
+        $this->get(route('agents.index'), $xhr);
+
+        $this->get(route('agents.index'))
             ->assertOk()
-            ->assertInertia(fn (AssertableInertia $page) => $page
-                ->where('banner', null)
-                ->where('flash.greeting', __('onboarding.back', ['name' => 'Ada'])));
+            ->assertSee($this->toastCall(__('onboarding.back', ['name' => 'Ada'])), false);
+    }
+
+    /**
+     * The exact call the layout emits. Asserting on the call rather than on the
+     * message alone matters for the sign-up case, where the welcome modal's own
+     * title contains the same words and would satisfy a looser assertion.
+     */
+    protected function toastCall(string $message): string
+    {
+        return 'window.showToast?.('.json_encode($message, JSON_UNESCAPED_UNICODE).", 'info')";
     }
 
     public function test_an_established_account_is_never_shown_the_welcome(): void
@@ -308,7 +305,7 @@ class OnboardingTest extends TestCase
 
         $this->actingAs($user)->get(route('agents.index'))
             ->assertOk()
-            ->assertInertia(fn (AssertableInertia $page) => $page->where('welcome', null));
+            ->assertDontSee(__('onboarding.welcome.eyebrow'), false);
     }
 
     // ----------------------------------------------------------- welcome back
@@ -331,14 +328,13 @@ class OnboardingTest extends TestCase
     {
         $user = User::factory()->create(['email' => 'ada@example.test']);
 
-        $this->actingAs($user)
+        $response = $this->actingAs($user)
             ->withSession([AuthController::GREETING_SESSION_KEY => AuthController::GREETING_BACK])
-            ->get(route('agents.index'))
-            ->assertOk()
-            // A toast, not a banner: the layout raises it from this prop and
-            // ToastHost expires it on its own.
-            ->assertInertia(fn (AssertableInertia $page) => $page
-                ->where('flash.greeting', __('onboarding.back', ['name' => $user->name])));
+            ->get(route('agents.index'));
+
+        $response->assertOk();
+        // Reuses the existing toast helper, which already expires on its own.
+        $response->assertSee($this->toastCall(__('onboarding.back', ['name' => $user->name])), false);
     }
 
     public function test_no_greeting_without_a_fresh_sign_in(): void
@@ -347,7 +343,7 @@ class OnboardingTest extends TestCase
 
         $this->actingAs($user)->get(route('agents.index'))
             ->assertOk()
-            ->assertInertia(fn (AssertableInertia $page) => $page->where('flash.greeting', null));
+            ->assertDontSee(__('onboarding.back', ['name' => $user->name]), false);
     }
 
     // -------------------------------------------------------------- checklist
@@ -356,16 +352,13 @@ class OnboardingTest extends TestCase
     {
         $user = $this->newcomer();
 
-        $this->actingAsNewRegistration($user)->get(route('agents.index'))
-            ->assertOk()
-            ->assertInertia(fn (AssertableInertia $page) => $page
-                ->where('onboarding.completed', 0)
-                ->where('onboarding.total', 4)
-                // Which step carries the button is derived from `done` by
-                // OnboardingCard.vue — it gives one to the FIRST incomplete
-                // step and to no other.
-                ->where('onboarding.steps.0.done', false)
-                ->where('onboarding.steps.2.done', false));
+        $response = $this->actingAsNewRegistration($user)->get(route('agents.index'));
+
+        $response->assertOk();
+        $response->assertSee(__('onboarding.checklist.progress', ['done' => 0, 'total' => 4]), false);
+        // Only the first incomplete step offers an action.
+        $response->assertSee(__('onboarding.steps.agent.cta'), false);
+        $response->assertDontSee(__('onboarding.steps.channel.cta'), false);
     }
 
     /**
@@ -378,16 +371,12 @@ class OnboardingTest extends TestCase
         $agent = Agent::factory()->for($user)->create();
         KnowledgeSource::factory()->for($agent)->create();
 
-        $this->actingAsNewRegistration($user)->get(route('agents.index'))
-            ->assertOk()
-            ->assertInertia(fn (AssertableInertia $page) => $page
-                ->where('onboarding.completed', 2)
-                // The channel step is now the first incomplete one, so it is
-                // the one that gets the button.
-                ->where('onboarding.steps.0.done', true)
-                ->where('onboarding.steps.1.done', true)
-                ->where('onboarding.steps.2.key', 'channel')
-                ->where('onboarding.steps.2.done', false));
+        $response = $this->actingAsNewRegistration($user)->get(route('agents.index'));
+
+        $response->assertOk();
+        $response->assertSee(__('onboarding.checklist.progress', ['done' => 2, 'total' => 4]), false);
+        // The channel step is now the one with the button.
+        $response->assertSee(__('onboarding.steps.channel.cta'), false);
     }
 
     public function test_step_state_matches_the_accounts_data(): void
@@ -449,20 +438,16 @@ class OnboardingTest extends TestCase
 
         $this->actingAsNewRegistration($user)->get(route('agents.index'))
             ->assertOk()
-            ->assertInertia(fn (AssertableInertia $page) => $page
-                ->where('onboarding.celebrate', true)
-                ->where('onboarding.visible', true));
+            ->assertSee(__('onboarding.complete.title'), false);
 
         $this->assertNotNull($user->fresh()->onboarding_completed_at);
 
         // Spent — the card is gone from here on rather than congratulating the
-        // owner on every visit to their own dashboard. `visible` false is what
-        // removes it entirely, celebration and checklist alike.
+        // owner on every visit to their own dashboard.
         $this->actingAsNewRegistration($user->fresh())->get(route('agents.index'))
             ->assertOk()
-            ->assertInertia(fn (AssertableInertia $page) => $page
-                ->where('onboarding.celebrate', false)
-                ->where('onboarding.visible', false));
+            ->assertDontSee(__('onboarding.complete.title'), false)
+            ->assertDontSee(__('onboarding.checklist.title'), false);
     }
 
     /**
@@ -538,14 +523,14 @@ class OnboardingTest extends TestCase
 
         $this->assertTrue(session(AuthController::ONBOARDING_SESSION_KEY));
 
-        $this->get(route('agents.index'))
-            ->assertOk()
-            ->assertInertia(fn (AssertableInertia $page) => $page
-                ->where('banner', 'Nadia')
-                ->where('onboarding.visible', true)
-                // ...and never a second greeting, nor the returning-user one.
-                ->where('welcome', null)
-                ->where('flash.greeting', null));
+        $response = $this->get(route('agents.index'));
+
+        $response->assertOk();
+        $response->assertSee(__('onboarding.welcome_greeting', ['name' => 'Nadia']), false);
+        $response->assertSee(__('onboarding.checklist.title'), false);
+        // ...and never a second greeting, nor the returning-user one.
+        $response->assertDontSee(__('onboarding.welcome.eyebrow'), false);
+        $response->assertDontSee(__('onboarding.back', ['name' => 'Nadia']), false);
     }
 
     /**
@@ -561,12 +546,12 @@ class OnboardingTest extends TestCase
 
         $this->assertFalse(session()->has(AuthController::ONBOARDING_SESSION_KEY));
 
-        $this->get(route('agents.index'))
-            ->assertOk()
-            ->assertInertia(fn (AssertableInertia $page) => $page
-                ->where('flash.greeting', __('onboarding.back', ['name' => 'Ada']))
-                ->where('onboarding.visible', false)
-                ->where('welcome', null));
+        $response = $this->get(route('agents.index'));
+
+        $response->assertOk();
+        $response->assertSee(__('onboarding.back', ['name' => 'Ada']), false);
+        $response->assertDontSee(__('onboarding.checklist.title'), false);
+        $response->assertDontSee(__('onboarding.welcome.title', ['name' => 'Ada']), false);
     }
 
     /**
@@ -601,8 +586,7 @@ class OnboardingTest extends TestCase
             'password_confirmation' => 'secret-password',
         ])->assertRedirect(route('home'));
 
-        $this->get(route('agents.index'))
-            ->assertInertia(fn (AssertableInertia $page) => $page->where('onboarding.visible', true));
+        $this->get(route('agents.index'))->assertSee(__('onboarding.checklist.title'), false);
 
         $this->post(route('logout'))->assertRedirect('/');
 
@@ -611,11 +595,10 @@ class OnboardingTest extends TestCase
 
         $this->get(route('agents.index'))
             ->assertOk()
-            ->assertInertia(fn (AssertableInertia $page) => $page
-                ->where('onboarding.visible', false)
-                // The welcome is spent too — it was shown during registration.
-                ->where('welcome', null)
-                ->where('flash.greeting', __('onboarding.back', ['name' => 'Nadia'])));
+            ->assertDontSee(__('onboarding.checklist.title'), false)
+            // The welcome is spent too — it was shown during registration.
+            ->assertDontSee(__('onboarding.welcome.title', ['name' => 'Nadia']), false)
+            ->assertSee(__('onboarding.back', ['name' => 'Nadia']), false);
     }
 
     /**

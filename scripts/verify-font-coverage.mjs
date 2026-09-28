@@ -1,138 +1,153 @@
 /**
- * Per-glyph coverage check for the self-hosted faces in public/fonts.
+ * Per-glyph coverage check for every self-hosted face.
  *
- * WHY THIS EXISTS
- * ---------------
- * A font's declared `unicode-range` is a promise about which subset file to
- * fetch, not a guarantee that the glyph is inside it. Several faces this
- * project auditioned advertise "cyrillic-ext" and then render Tajik as tofu.
- * The only trustworthy check is opening the actual woff2 that ships and asking
- * its cmap, which is what this does.
- *
- * It is also the specific check that settled a wrong call in this repo. Onest
- * was rejected here once, on evidence that it had no Tajik glyphs at all. That
- * evidence was real but was measured against BUNNY'S subsets of Onest — the
- * upstream release at github.com/simpals/onest carries all six pairs in every
- * weight. Hence the rule the project now follows: Onest is self-hosted from the
- * release and never pulled from a CDN, and this script is how that is re-proved
- * rather than re-assumed.
+ * Why this exists: a font's declared `unicode-range` is a promise about which
+ * subset file to fetch, not a guarantee that the glyph is inside it. Several
+ * faces this project auditioned advertise "cyrillic-ext" and then render Tajik
+ * as tofu. The only trustworthy check is opening the actual woff2 that ships in
+ * public/build and asking the cmap.
  *
  * Tajik is a first-class locale here, so a face missing any of the six pairs is
  * disqualified no matter how it looks.
  *
- * Usage: node scripts/verify-font-coverage.mjs
- * Needs no build step — public/fonts holds the shipped files directly.
- * Exits non-zero if anything required is missing, which makes it usable in CI.
+ * Usage: node scripts/verify-font-coverage.mjs   (after `npm run build`)
+ * Exits non-zero if any required codepoint is missing from every subset of a
+ * family, which is what makes it usable in CI.
  */
-import { existsSync, readdirSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { readdirSync, readFileSync } from 'node:fs';
+import { resolve, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as fontkit from 'fontkit';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const fontsDir = resolve(root, 'public/fonts');
+const assets = resolve(root, 'public/build/assets');
 
 /* The six Tajik pairs, plus a Russian and a Latin sentinel so a file that
    somehow contains no Cyrillic at all is caught by the same run. */
-const CYRILLIC_REQUIRED = {
+const REQUIRED = {
     'Latin A': 0x0041,
     'Cyrillic А': 0x0410,
-    Ғ: 0x0492,
-    ғ: 0x0493,
-    Қ: 0x049a,
-    қ: 0x049b,
-    Ҳ: 0x04b2,
-    ҳ: 0x04b3,
-    Ҷ: 0x04b6,
-    ҷ: 0x04b7,
-    Ӣ: 0x04e2,
-    ӣ: 0x04e3,
-    Ӯ: 0x04ee,
-    ӯ: 0x04ef,
+    'Ғ': 0x0492,
+    'ғ': 0x0493,
+    'Қ': 0x049a,
+    'қ': 0x049b,
+    'Ҳ': 0x04b2,
+    'ҳ': 0x04b3,
+    'Ҷ': 0x04b6,
+    'ҷ': 0x04b7,
+    'Ӣ': 0x04e2,
+    'ӣ': 0x04e3,
+    'Ӯ': 0x04ee,
+    'ӯ': 0x04ef,
 };
 
-/* Inter ships here as a numerals-only subset, so it is checked against what it
-   is actually for. Asking it for Cyrillic would fail by design. */
-const NUMERAL_REQUIRED = Object.fromEntries(
-    [...'0123456789.,:%+-/()'].map((character) => [character, character.codePointAt(0)])
-);
-
-const EXPECTED = [
-    {
-        file: 'onest-var-2.001.woff2',
-        role: 'UI, body and headings',
-        required: CYRILLIC_REQUIRED,
-        // A variable file has to actually carry the axis, or the design system's
-        // 400/500/600/700/800 all collapse onto one weight.
-        axis: 'wght',
-    },
-    {
-        file: 'inter-numerals-4.1.woff2',
-        role: 'numerals only (KPIs, tables, money)',
-        required: NUMERAL_REQUIRED,
-        axis: 'wght',
-        // Without `tnum` a column of figures re-flows as its values change.
-        feature: 'tnum',
-    },
-];
-
-if (!existsSync(fontsDir)) {
-    console.error(`No ${fontsDir}. The self-hosted faces are missing.`);
+const files = readdirSync(assets).filter((f) => f.endsWith('.woff2'));
+if (files.length === 0) {
+    console.error('No .woff2 in public/build/assets — run `npm run build` first.');
     process.exit(1);
+}
+
+/* Parse the generated stylesheet so routing can be checked as well as
+   ownership: each @font-face gives a family, a woff2 and a unicode-range. */
+const sheet = readdirSync(assets).find((f) => /^fonts-.*\.css$/.test(f));
+const fontFaces = [];
+if (sheet) {
+    const css = readFileSync(resolve(assets, sheet), 'utf8');
+    for (const block of css.match(/@font-face\s*\{[^}]*\}/g) ?? []) {
+        const family = /font-family:\s*"([^"]+)"/.exec(block)?.[1];
+        const url = /url\("?([^")]+\.woff2)"?\)/.exec(block)?.[1];
+        const range = /unicode-range:\s*([^;]+);/.exec(block)?.[1];
+        if (family && url && range) {
+            // Slug the family the same way the asset filenames are slugged.
+            const slug = family.toLowerCase().replace(/\s+/g, '-');
+            fontFaces.push({ family: slug, file: basename(url), range });
+        }
+    }
+}
+
+const covers = (range, cp) =>
+    range.split(',').some((part) => {
+        const clean = part.trim().replace(/^[Uu]\+/, '');
+        if (clean.includes('-')) {
+            const [from, to] = clean.split('-');
+            return cp >= parseInt(from, 16) && cp <= parseInt(to, 16);
+        }
+
+        return parseInt(clean, 16) === cp;
+    });
+
+/* Files are named like `source-serif-4-400-normal-<hash>.woff2`; the family is
+   everything before the weight. */
+const families = new Map();
+for (const file of files) {
+    const family = file.replace(/-\d{3}-(normal|italic)-[^.]*\.woff2$/, '');
+    if (!families.has(family)) families.set(family, []);
+    families.get(family).push(file);
 }
 
 let failed = false;
 
-for (const { file, role, required, axis, feature } of EXPECTED) {
-    const path = resolve(fontsDir, file);
+for (const [family, subsetFiles] of [...families].sort()) {
+    /* A family's glyphs are split across subset files, so coverage is the union:
+       a codepoint counts as present if ANY subset of that family has it. */
+    const covered = new Set();
 
-    if (!existsSync(path)) {
-        console.error(`✗ ${file} — MISSING (${role})`);
+    for (const file of subsetFiles) {
+        let font;
+        try {
+            font = fontkit.create(readFileSync(resolve(assets, file)));
+        } catch (error) {
+            console.error(`  ! could not parse ${file}: ${error.message}`);
+            failed = true;
+            continue;
+        }
+
+        for (const [, cp] of Object.entries(REQUIRED)) {
+            // hasGlyphForCodePoint is the honest question; characterSet can
+            // include codepoints mapped to .notdef on some builds.
+            if (font.hasGlyphForCodePoint(cp)) covered.add(cp);
+        }
+    }
+
+    const missing = Object.entries(REQUIRED).filter(([, cp]) => !covered.has(cp));
+    const label = `${family} (${subsetFiles.length} subsets)`;
+
+    if (missing.length === 0) {
+        console.log(`PASS  ${label} — full Latin + Russian + all six Tajik pairs`);
+    } else {
         failed = true;
-        continue;
+        console.log(`FAIL  ${label} — missing ${missing.map(([name]) => name).join(' ')}`);
     }
 
-    let font = fontkit.openSync(path);
-    if (font.fonts) font = font.fonts[0];
+    /* Owning the glyph is only half of it. A browser downloads a subset file
+       ONLY if some @font-face declares a unicode-range covering the character —
+       so a family can ship the glyph in a file nothing ever asks for, and the
+       page still renders tofu. Check the generated stylesheet routes each
+       codepoint to a file that actually has it. */
+    const unrouted = Object.entries(REQUIRED).filter(([, cp]) => {
+        const faces = fontFaces.filter(
+            (face) => face.family === family && covers(face.range, cp)
+        );
 
-    const missing = Object.entries(required)
-        .filter(([, codePoint]) => !font.hasGlyphForCodePoint(codePoint))
-        .map(([name]) => name);
+        return !faces.some((face) => {
+            const file = resolve(assets, face.file);
+            try {
+                return fontkit.create(readFileSync(file)).hasGlyphForCodePoint(cp);
+            } catch {
+                return false;
+            }
+        });
+    });
 
-    const problems = [];
-    if (missing.length > 0) problems.push(`missing glyphs: ${missing.join(' ')}`);
-    if (axis && !font.variationAxes?.[axis]) problems.push(`no "${axis}" variation axis`);
-    if (feature && !(font.availableFeatures ?? []).includes(feature)) {
-        problems.push(`no "${feature}" feature`);
-    }
-
-    if (problems.length > 0) {
-        console.error(`✗ ${file} (${font.familyName}) — ${problems.join('; ')}`);
+    if (unrouted.length > 0) {
         failed = true;
-        continue;
+        console.log(
+            `FAIL  ${label} — no @font-face routes ${unrouted.map(([n]) => n).join(' ')} ` +
+                'to a file containing it (the glyph exists but will never be fetched)'
+        );
+    } else {
+        console.log(`      ${family} — every required codepoint is routed by a declared unicode-range`);
     }
-
-    const weights = font.variationAxes[axis];
-    console.log(
-        `✓ ${file} — ${font.familyName} ${font.version ?? ''}`.trim() +
-            `\n    ${role}; ${Object.keys(required).length} required codepoints present; ` +
-            `weights ${weights.min}–${weights.max}`
-    );
 }
 
-/* Anything else in the directory is either a licence or a face nobody declared.
-   The second is worth saying out loud: an orphaned font file is dead weight in
-   the deploy and usually the leftover of a face that was swapped out. */
-const declared = new Set(EXPECTED.map((entry) => entry.file));
-const orphans = readdirSync(fontsDir).filter((name) => name.endsWith('.woff2') && !declared.has(name));
-
-if (orphans.length > 0) {
-    console.warn(`! Undeclared font files in public/fonts: ${orphans.join(', ')}`);
-}
-
-if (failed) {
-    console.error('\nFont coverage check FAILED.');
-    process.exit(1);
-}
-
-console.log('\nFont coverage OK.');
+process.exit(failed ? 1 : 0);

@@ -17,11 +17,6 @@
         "vite": "^8.0.0"
     },
     "dependencies": {
-        "@inertiajs/vue3": "^3.7.1",
-        "@tabler/icons-vue": "^3.48.0",
-        "@vitejs/plugin-vue": "^6.0.9",
-        "alpinejs": "^3.15.12",
-        "apexcharts": "^7.6.1",
-        "vue": "^3.5.43"
+        "alpinejs": "^3.15.12"
     }
 }

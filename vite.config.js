@@ -1,93 +1,79 @@
 import { defineConfig } from 'vite';
 import laravel from 'laravel-vite-plugin';
-import vue from '@vitejs/plugin-vue';
+import { bunny } from 'laravel-vite-plugin/fonts';
 import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig({
     plugins: [
         laravel({
-            // TWO JS entries, for as long as the migration runs.
-            //
-            //   app.js      Alpine — every Blade page not yet migrated
-            //   inertia.js  Vue + Inertia — every migrated page
-            //
-            // A Blade page therefore never downloads Vue, and an Inertia page
-            // never downloads Alpine. When the last Blade view goes, so does
-            // app.js and the first of these lines.
-            input: ['resources/css/app.css', 'resources/js/app.js', 'resources/js/inertia.js'],
+            input: ['resources/css/app.css', 'resources/js/app.js'],
             refresh: true,
+            fonts: [
+                // ONE typeface for the entire product — landing, auth and
+                // dashboard — self-hosted so there is no third-party font
+                // origin and no render-blocking call to someone else's CDN.
+                //
+                // Geist (Vercel). Lighter and more refined on the page than
+                // Inter: narrower, more open counters and a less mechanical
+                // rhythm, which is what the landing needed — the previous face
+                // read as chunky at heading sizes. Shipping 300–600 only, so
+                // there is no 700 available to make a headline heavy by accident.
+                //
+                // Coverage is the hard constraint, not taste: TG is a first
+                // class locale here, so a face without the Tajik pairs is
+                // disqualified no matter how it looks. Verified per glyph
+                // against the actual woff2 subsets bunny serves — not the
+                // declared unicode-range, which is exactly what makes a font
+                // look covered when it is not. Full Latin, full Russian, and
+                // all six Tajik pairs:
+                //   Ғғ U+0492/3 · Ққ U+049A/B · Ҳҳ U+04B2/3
+                //   Ҷҷ U+04B6/7 · Ӣӣ U+04E2/3 · Ӯӯ U+04EE/F
+                //
+                // Failing that same test, re-confirmed across passes:
+                //   Onest, Manrope, Jost, Unbounded, Wix Madefor — no Tajik at all
+                //   Rubik                                        — missing Ҳҳ alone
+                //   Mona Sans                                    — no Cyrillic whatsoever
+                //
+                // 300 quiet UI · 400 body · 500 headings · 600 reserved.
+                //
+                // Verified this pass against the shipped subsets, same method:
+                //   Geist              full Latin + Russian + all six Tajik pairs
+                //   Manrope            Russian only — no Tajik pairs at all
+                //   Plus Jakarta Sans  no Cyrillic whatsoever
+                //   General Sans       Fontshare-only, not self-hostable here
+                bunny('Geist', {
+                    weights: [300, 400, 500, 600],
+                }),
 
-            // NOTE: there is no `fonts:` block here any more, and that is
-            // deliberate rather than an omission.
-            //
-            // The product used to pull Geist and Source Serif 4 through the
-            // plugin's `bunny()` helper. The type system is now Onest (UI and
-            // headings) plus a numerals-only cut of Inter, and BOTH are served
-            // from public/fonts/ with @font-face declared in
-            // resources/views/partials/fonts.blade.php. Two reasons it cannot
-            // go back through this plugin:
-            //
-            //   1. Bunny's Onest subsets contain no Tajik glyphs. The upstream
-            //      release at github.com/simpals/onest does — verified per
-            //      glyph against the shipped file's cmap — so the font has to
-            //      come from the release, not from a CDN mirror of it.
-            //      scripts/verify-font-coverage.mjs re-proves this on demand.
-            //
-            //   2. The landing (showcase.blade.php) ships its own inline
-            //      stylesheet and never loads this bundle, so a face reaching
-            //      the page only through Vite would be missing on the one
-            //      screen a jury sees first. A Blade partial reaches every
-            //      surface; a Vite input does not.
-            //
-            // Both faces are variable and versioned in their filename, so they
-            // are immutable and cacheable without a manifest: 84 KB of Onest
-            // covers weights 100–900, and 12 KB of Inter covers every figure.
-        }),
-        vue({
-            template: {
-                transformAssetUrls: {
-                    // Inertia's <Link> takes a URL in `href`, and Vue's asset
-                    // handling would otherwise try to resolve it at build time.
-                    base: null,
-                    includeAbsolute: false,
-                },
-            },
+                // The display face — headings, the hero, big numbers. Body and
+                // UI stay on Geist above; a serif in a table or a form label
+                // costs readability at 13px and buys nothing.
+                //
+                // Source Serif 4 (Adobe). Chosen on coverage first: of the three
+                // candidates proposed for this job, Fraunces and Newsreader ship
+                // NO Cyrillic at all — verified against Bunny's own CSS API, both
+                // return only latin/latin-ext/vietnamese — which disqualifies
+                // them outright for a product whose primary locales are Russian
+                // and Tajik. Source Serif 4 carries cyrillic AND cyrillic-ext,
+                // and its per-glyph coverage is checked (not assumed) by
+                // scripts/verify-font-coverage.mjs, which opens the shipped
+                // woff2 files and asks the cmap for all six Tajik pairs.
+                //
+                // On looks it is also the closest of the three to the reference:
+                // a Times-descended text serif with low contrast, open counters
+                // and a warm, slightly humanist axis — a book serif rather than
+                // a fashion serif. Fraunces is a soft-serif display face with a
+                // wobble to it, which reads playful, not composed.
+                //
+                // 400 for headings, 600 where a heading needs weight. No 300:
+                // a serif that light goes fragile at display sizes.
+                bunny('Source Serif 4', {
+                    weights: [400, 600],
+                }),
+            ],
         }),
         tailwindcss(),
     ],
-
-    resolve: {
-        // The ARRAY form, not the object form: an object alias matches by
-        // prefix, so aliasing "apexcharts" also rewrote the library's own
-        // internal `apexcharts/core` import into a path inside a file. These
-        // are exact-match regexes.
-        alias: [
-            {
-                // Ziggy's JavaScript half comes from the Composer package
-                // rather than from a separate npm install of `ziggy-js`. One
-                // fewer dependency, and — the actual reason — the route helper
-                // can never drift out of step with the PHP that generates the
-                // route list, because there is only one version of Ziggy in
-                // the project.
-                find: /^ziggy-js$/,
-                replacement: new URL('vendor/tightenco/ziggy/dist/index.esm.js', import.meta.url).pathname,
-            },
-            {
-                // Pin ApexCharts to its BROWSER build.
-                //
-                // Its package exports map `node` → apexcharts.ssr.esm.js and
-                // `browser` → apexcharts.esm.js. Vite resolved our import and
-                // vue3-apexcharts' through different conditions and shipped
-                // BOTH: 136 KB + 272 KB gzipped of the same library, on the one
-                // page a demo is judged on. Exact match only, so the library's
-                // own `apexcharts/core` and `apexcharts/area` subpaths still
-                // resolve normally.
-                find: /^apexcharts$/,
-                replacement: new URL('node_modules/apexcharts/dist/apexcharts.esm.js', import.meta.url).pathname,
-            },
-        ],
-    },
-
     server: {
         watch: {
             ignored: ['**/storage/framework/views/**'],

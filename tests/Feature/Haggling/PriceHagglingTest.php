@@ -18,7 +18,6 @@ use App\Services\Llm\LlmProviderInterface;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
-use Inertia\Testing\AssertableInertia;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
@@ -595,27 +594,6 @@ class PriceHagglingTest extends TestCase
     // The owner's panel
     // -----------------------------------------------------------------
 
-    /**
-     * What the leads page actually listed, by `items`.
-     *
-     * The list renders in the browser, so "is this lead on the page" is a
-     * question about the props rather than the markup — and stricter than the
-     * old assertSee, which a filter chip or a title could satisfy.
-     *
-     * @return list<string|null>
-     */
-    protected function listedItems(Agent $agent, string $url): array
-    {
-        $items = [];
-
-        $this->actingAs($agent->user)->get($url)->assertOk()
-            ->assertInertia(function (AssertableInertia $page) use (&$items) {
-                $items = array_column($page->toArray()['props']['leads']['data'], 'items');
-            });
-
-        return $items;
-    }
-
     public function test_the_panel_offers_approve_and_decline_for_a_pending_price(): void
     {
         $agent = $this->agent();
@@ -624,15 +602,13 @@ class PriceHagglingTest extends TestCase
         $response = $this->actingAs($agent->user)->get(route('leads.index', ['view' => 'haggle']));
 
         $response->assertOk();
-
-        // `awaits_price_approval` is what the card renders the approve/decline
-        // controls from, and the two prices are the numbers the decision turns
-        // on — all three have to reach the page.
-        $response->assertInertia(fn (AssertableInertia $page) => $page
-            ->where('leads.data.0.id', $lead->id)
-            ->where('leads.data.0.awaits_price_approval', true)
-            ->where('leads.data.0.requested_price', Lead::formatPrice(3800))
-            ->where('leads.data.0.listed_price', Lead::formatPrice(5000)));
+        $response->assertSee(__('leads.haggle.approve'), false);
+        $response->assertSee(__('leads.haggle.decline'), false);
+        $response->assertSee("approvePrice({$lead->id}", false);
+        $response->assertSee("declinePrice({$lead->id}", false);
+        // The two numbers the decision turns on.
+        $response->assertSee(Lead::formatPrice(3800), false);
+        $response->assertSee(Lead::formatPrice(5000), false);
     }
 
     /**
@@ -647,11 +623,15 @@ class PriceHagglingTest extends TestCase
         $this->pendingLead($agent);
         $agent->leads()->create(['items' => 'Обычный заказ', 'source' => 'telegram', 'status' => 'new']);
 
-        $this->assertSame(['Обычный заказ'], $this->listedItems($agent, route('leads.index')));
-        $this->assertSame(
-            ['Ноутбук OMEN 16'],
-            $this->listedItems($agent, route('leads.index', ['view' => 'haggle'])),
-        );
+        $orders = $this->actingAs($agent->user)->get(route('leads.index'));
+        $orders->assertOk();
+        $orders->assertSee('Обычный заказ', false);
+        $orders->assertDontSee('Ноутбук OMEN 16', false);
+
+        $haggle = $this->actingAs($agent->user)->get(route('leads.index', ['view' => 'haggle']));
+        $haggle->assertOk();
+        $haggle->assertSee('Ноутбук OMEN 16', false);
+        $haggle->assertDontSee('Обычный заказ', false);
     }
 
     /** The tab carries a count, so a waiting customer is visible from anywhere. */
@@ -663,11 +643,9 @@ class PriceHagglingTest extends TestCase
 
         $response = $this->actingAs($agent->user)->get(route('leads.index'));
 
-        // The badge is unfiltered on purpose: a pending decision the current
-        // tab hides is still a customer waiting.
-        $response->assertOk()->assertInertia(
-            fn (AssertableInertia $page) => $page->where('pendingHaggleCount', 2)
-        );
+        $response->assertOk();
+        $response->assertSee(__('leads.views.haggle'), false);
+        $response->assertSee('>2</span>', false);
     }
 
     /** Deciding one clears it from the badge. */
@@ -690,16 +668,18 @@ class PriceHagglingTest extends TestCase
         $agent = $this->agent();
         $this->pendingLead($agent);
 
-        // The tab decides which statuses exist below it: 'new' is meaningless
-        // for a price request (the assistant files it already pending), and
-        // pending is unreachable for an order.
+        // Asserted on the chip links rather than their labels: the page also
+        // ships the whole leads translation namespace to the client for the
+        // live search, so every label appears in the markup either way.
+        $pendingChip = 'status='.HagglingService::STATUS_PENDING;
+
         $this->actingAs($agent->user)->get(route('leads.index'))
-            ->assertInertia(fn (AssertableInertia $page) => $page
-                ->where('statusOptions', ['new', 'in_progress', 'done']));
+            ->assertSee('status=new', false)
+            ->assertDontSee($pendingChip, false);
 
         $this->actingAs($agent->user)->get(route('leads.index', ['view' => 'haggle']))
-            ->assertInertia(fn (AssertableInertia $page) => $page
-                ->where('statusOptions', [HagglingService::STATUS_PENDING, 'in_progress', 'done']));
+            ->assertSee($pendingChip, false)
+            ->assertDontSee('status=new', false);
     }
 
     /** A decided request stays in its own tab rather than rejoining the orders. */
@@ -710,12 +690,14 @@ class PriceHagglingTest extends TestCase
 
         $this->actingAs($agent->user)->postJson(route('leads.price.approve', $lead))->assertOk();
 
-        $this->assertSame(
-            ['Ноутбук OMEN 16'],
-            $this->listedItems($agent, route('leads.index', ['view' => 'haggle', 'status' => 'in_progress'])),
-        );
+        $this->actingAs($agent->user)
+            ->get(route('leads.index', ['view' => 'haggle', 'status' => 'in_progress']))
+            ->assertOk()
+            ->assertSee('Ноутбук OMEN 16', false);
 
-        $this->assertNotContains('Ноутбук OMEN 16', $this->listedItems($agent, route('leads.index')));
+        $this->actingAs($agent->user)
+            ->get(route('leads.index'))
+            ->assertDontSee('Ноутбук OMEN 16', false);
     }
 
     // -----------------------------------------------------------------
@@ -726,21 +708,15 @@ class PriceHagglingTest extends TestCase
     {
         $agent = $this->agent();
 
-        // The form is handed the agent's current haggling settings...
-        $this->actingAs($agent->user)->get(route('agents.edit', $agent))
-            ->assertOk()
-            ->assertInertia(fn (AssertableInertia $page) => $page
-                ->component('Agents/Form')
-                ->where('agent.haggling_enabled', true)
-                ->has('agent.haggling_level')
-                ->has('agent.haggle_min_price_percent'));
-
-        // ...and they live on their OWN step, not mixed into reply settings.
-        $form = file_get_contents(resource_path('js/Pages/Agents/Form.vue'));
-        $this->assertStringContainsString('step4_heading', $form);
-        $this->assertStringContainsString('id="haggling_level"', $form);
-        $this->assertStringContainsString('id="haggle_min_price_percent"', $form);
-        $this->assertStringContainsString('id="haggling_instructions"', $form);
+        $form = $this->actingAs($agent->user)->get(route('agents.edit', $agent));
+        $form->assertOk();
+        // Its own step, not mixed into the response-settings card.
+        $form->assertSee(__('agents.form.step4_heading'), false);
+        $form->assertSee('x-show="step === 4"', false);
+        $form->assertSee('name="haggling_enabled"', false);
+        $form->assertSee('id="haggling_level"', false);
+        $form->assertSee('id="haggling_instructions"', false);
+        $form->assertSee('id="haggle_min_price_percent"', false);
 
         $this->actingAs($agent->user)->put(route('agents.update', $agent), [
             'name' => $agent->name,

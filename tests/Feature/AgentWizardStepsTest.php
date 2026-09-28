@@ -30,69 +30,108 @@ class AgentWizardStepsTest extends TestCase
         return $this->actingAs($this->user)->get(route('agents.create'));
     }
 
-    /**
-     * The wizard's SHAPE, asserted at the source.
-     *
-     * These used to read the rendered Alpine markup — `x-for="n in 5"`,
-     * `x-data="{ step: 1 }"`, the exact `<textarea ... rows="8">` tag. The form
-     * is Pages/Agents/Form.vue now and none of those strings exists, but three
-     * properties they protected are still worth pinning and still cannot be
-     * seen from a PHP request:
-     *
-     *   · five steps, not four (a step was added once and the stepper was not)
-     *   · rules ABOVE persona — rules are the concrete "if X then Y" an owner
-     *     already has in mind; asking for character first sends them writing
-     *     prose they then have to redo
-     *   · a validation error REOPENS the step it belongs to, because an error
-     *     on a step nobody is looking at is an error nobody sees
-     */
-    public function test_the_wizard_has_five_steps(): void
+    public function test_the_stepper_has_five_segments(): void
     {
-        $form = $this->formSource();
+        $response = $this->wizard();
 
-        $this->assertStringContainsString('const STEPS = 5;', $form);
+        $response->assertOk();
+        $response->assertSee('x-for="n in 5"', false);
+        $response->assertDontSee('x-for="n in 4"', false);
+    }
 
+    public function test_all_five_step_headings_are_present_and_numbered(): void
+    {
+        $response = $this->wizard();
+
+        $response->assertOk();
         foreach (['step1_heading', 'step2_heading', 'step3_heading', 'step4_heading', 'step5_heading'] as $key) {
-            $this->assertStringContainsString("agents.form.{$key}", $form);
+            $response->assertSee(__("agents.form.{$key}"), false);
         }
     }
 
+    /**
+     * Step 1 keeps the business basics and loses the persona field, which now
+     * lives on step 2 beside the new rules field.
+     */
+    public function test_step_one_keeps_the_basics_without_the_persona_field(): void
+    {
+        $response = $this->wizard();
+        $content = $response->getContent();
+
+        $response->assertOk();
+        foreach (['name', 'description', 'tone'] as $field) {
+            $this->assertStringContainsString('id="'.$field.'"', $content);
+        }
+
+        // Both textareas exist exactly once, and both sit inside step 2.
+        $this->assertSame(1, substr_count($content, 'id="custom_system_prompt"'));
+        $this->assertSame(1, substr_count($content, 'id="rules_instructions"'));
+
+        $stepTwo = $this->stepTwoMarkup($content);
+        $this->assertStringContainsString('id="rules_instructions"', $stepTwo);
+        $this->assertStringContainsString('id="custom_system_prompt"', $stepTwo);
+    }
+
+    /** Rules first, persona below it — the order the brief specifies. */
     public function test_the_rules_field_sits_above_the_persona_field(): void
     {
-        $form = $this->formSource();
+        $content = $this->wizard()->getContent();
 
         $this->assertLessThan(
-            strpos($form, 'id="custom_system_prompt"'),
-            strpos($form, 'id="rules_instructions"'),
-            'Rules must be asked for before character.',
+            strpos($content, 'id="custom_system_prompt"'),
+            strpos($content, 'id="rules_instructions"')
         );
     }
 
+    public function test_the_rules_field_is_a_large_optional_textarea(): void
+    {
+        $response = $this->wizard();
+
+        $response->assertOk();
+        $response->assertSee('<textarea id="rules_instructions" name="rules_instructions" rows="8"', false);
+        // Optional: no required attribute on either instruction field.
+        $this->assertStringNotContainsString(
+            'id="rules_instructions" name="rules_instructions" rows="8" required',
+            $response->getContent()
+        );
+        $response->assertSee(__('agents.form.rules_label'), false);
+        $response->assertSee(__('agents.form.rules_help'), false);
+    }
+
+    /**
+     * A validation bounce must reopen the step the bad field is on, or the
+     * owner sees an untouched form with an error they cannot find.
+     */
     public function test_a_validation_error_reopens_the_step_it_belongs_to(): void
     {
-        $form = $this->formSource();
+        $base = ['name' => 'Ok', 'tone' => 'friendly', 'on_not_found' => 'apologize', 'proactivity' => 'subtle'];
 
-        // The map that makes it possible, and the watcher that uses it.
-        $this->assertStringContainsString('const stepOfField = {', $form);
-        $this->assertStringContainsString('() => form.errors', $form);
-        $this->assertStringContainsString('step.value = stepOfField[first]', $form);
+        // from() sets the referer, so the validation redirect goes back to the
+        // wizard rather than to "/" — which is what back() would otherwise pick.
+        $this->actingAs($this->user)
+            ->from(route('agents.create'))
+            ->followingRedirects()
+            ->post(route('agents.store'), ['name' => ''] + $base)
+            ->assertSee('x-data="{ step: 1 }"', false);
 
-        // And every posted field is on the map — a field missing from it would
-        // fail silently, leaving the owner on a step with no visible error.
-        foreach ([
-            'name', 'description', 'tone',
-            'rules_instructions', 'custom_system_prompt',
-            'greeting_message', 'fallback_message', 'on_not_found', 'escalation',
-            'proactivity', 'max_length', 'use_emojis',
-            'haggling_enabled', 'haggling_level', 'haggle_min_price_percent', 'haggling_instructions',
-        ] as $field) {
-            $this->assertMatchesRegularExpression(
-                '/^\s+'.preg_quote($field, '/').': \d,$/m',
-                $form,
-                "{$field} has no step, so an error on it would reopen nothing.",
-            );
-        }
+        // `rules_instructions` is on step 2, so its error must open step 2.
+        $this->actingAs($this->user)
+            ->from(route('agents.create'))
+            ->followingRedirects()
+            ->post(route('agents.store'), ['rules_instructions' => str_repeat('a', 5001)] + $base)
+            ->assertSee('x-data="{ step: 2 }"', false);
+
+        // And a step-3 field opens step 3.
+        $this->actingAs($this->user)
+            ->from(route('agents.create'))
+            ->followingRedirects()
+            ->post(route('agents.store'), ['max_length' => 999999] + $base)
+            ->assertSee('x-data="{ step: 3 }"', false);
     }
+
+    // ---------------------------------------------------------------
+    // System prompt wiring
+    // ---------------------------------------------------------------
 
     protected function promptFor(Agent $agent): string
     {
@@ -113,12 +152,6 @@ class AgentWizardStepsTest extends TestCase
             ->reply($agent->conversations()->create(['status' => 'ai']), 'Привет');
 
         return $captured;
-    }
-
-    /** The create and edit screens are one component, so one source to read. */
-    protected function formSource(): string
-    {
-        return file_get_contents(resource_path('js/Pages/Agents/Form.vue'));
     }
 
     public function test_the_rules_reach_the_system_prompt_as_their_own_section(): void

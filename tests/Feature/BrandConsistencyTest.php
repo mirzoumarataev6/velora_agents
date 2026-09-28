@@ -9,25 +9,13 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 /**
- * VELORA MIDNIGHT, enforced.
+ * The rebrand has to hold across the whole product, not just the page that was
+ * being looked at when it was done.
  *
- * Two jobs, and the second one is the reason this file is worth its length.
- *
- * 1. The rebrand has to hold across the whole product, not just the page that
- *    was open when it was done. The palette lives in exactly one place
- *    (resources/css/tokens.css), so the realistic way for a retired identity to
- *    survive is a hard-coded hex in a view nobody reopened. These render every
- *    real surface and fail on exactly that.
- *
- * 2. This product is judged on a projector in a lit hall, which turns contrast
- *    from a preference into a specification: body text ≥ 12:1, secondary ≥ 7:1,
- *    non-text UI that still has to be seen ≥ 3:1. Those floors are far above
- *    WCAG AA, and they are the whole reason the palette looks the way it does.
- *    A future tweak that lightens a muted grey "because it looks nicer on my
- *    laptop" is exactly the change that cannot be caught by looking at a
- *    laptop — so it is caught here instead.
- *
- * @see docs/DESIGN.md
+ * The palette lives in one place (the @theme block in resources/css/app.css), so
+ * the realistic way for the old identity to survive is a hard-coded hex or a
+ * stray third-party font link in a view nobody reopened. These render every real
+ * surface and fail on exactly that.
  */
 class BrandConsistencyTest extends TestCase
 {
@@ -35,89 +23,78 @@ class BrandConsistencyTest extends TestCase
 
     /**
      * Every palette this product has retired. Any of these appearing in emitted
-     * HTML means a view is painting its own colour instead of using a token.
+     * HTML means a view is painting its own colour instead of using a token
+     * from tailwind.config.js.
+     *
+     * Note what is deliberately NOT listed: #1c1a17. It was the old dark canvas
+     * and is now `sand-900` / `night-soft` in the current system, so it is a
+     * live value, not a retired one.
      *
      * @var list<string>
      */
     private const RETIRED_COLOURS = [
-        // --- "Warm daylight", terracotta edition. The system Velora Midnight
-        // replaced: a warm ember accent on sand neutrals. Every step of it.
-        '#fdf3ef', '#fae4db', '#f6cbba', '#f0b096', '#ee9a7c',
-        '#e27551', '#cc5c39', '#ab4a2c', '#8b3c23', '#71321d', '#3d1a0f',
-        '#fff8f3', // the warm off-white that sat on an accent fill
-        '#ff9a4d', '#f0530a', // the mark's old orange sweep
-        // Sand neutrals.
-        '#faf9f5', '#f0ede6', '#e9e5dc', '#ddd8cb', '#b5afa0', '#8a8578',
-        '#6b665a', '#4a463c', '#332f28', '#2b2b2b',
-        // Warm night.
-        '#1a1815', '#201d18', '#242019', '#2b2620', '#f5f1e8', '#a39d90', '#221e18',
-        // Its semantics — a warm palette had to push these off the brand hue.
-        '#0e7a4a', '#57cf94', '#96620a', '#f0b429',
-        '#c2183a', '#a01230', '#f2899a', '#1f6f8b', '#63c5e0',
-
-        // --- The bright terracotta before that.
+        // --- The bright terracotta (replaced by the softer "spark" terracotta).
+        // It was a touch hot next to the cream canvas; #e27551 sits on the same
+        // warm axis with the saturation pulled back.
         '#ee6c4d', '#e0512f', '#bc3d1f', '#99321a', '#f5936b',
         '#fef5f1', '#fde7de', '#fbcdbc', '#f7ae93', '#7c2a17', '#42130b',
-        // --- Ember-orange system before that.
-        '#fb6309', '#dd4c05', '#b63a08', '#8f2f0d', '#ff8134',
-        '#ffe8d8', '#ffcba6', '#ffa66b', '#75290f', '#401206',
-        '#fbfaf9', '#f6f4f1', '#ece9e4', '#dedad3',
-        '#8c867b', '#6b655b', '#4a453d', '#2e2a25', '#1c1a17', '#121110',
-        '#141210', '#252119', '#2e2a23', '#f5f2ee', '#a9a29a', '#1f1c18',
-        '#0f7a4f', '#4ecb8c', '#c0261f', '#f28b82',
-        // --- Brand-sheet orange the landing used to paint itself with.
+        // --- Ember-orange system (replaced by the brighter terracotta).
+        // Sampled from the logo PNG, it was more saturated than the product
+        // needed and pulled every warm neutral toward yellow.
+        '#fb6309', // ember brand
+        '#dd4c05', // ember ring / hover
+        '#b63a08', // ember, text-safe
+        '#8f2f0d', // ember deep
+        '#ff8134', // ember, dark-mode accent
+        '#fff5ee', '#ffe8d8', '#ffcba6', '#ffa66b', '#75290f', '#401206',
+        // NOTE: #ff9a4d / #f0530a are NOT here. They were the old CTA gradient
+        // and are now the logo-only tokens — see DELIBERATELY_LIVE below.
+        '#fbfaf9', '#f6f4f1', '#ece9e4', '#dedad3', // old sand surfaces
+        '#8c867b', '#6b655b', '#4a453d', '#2e2a25', '#1c1a17', '#121110', // old sand inks
+        '#141210', '#252119', '#2e2a23', '#f5f2ee', '#a9a29a', '#1f1c18', // old night
+        '#0f7a4f', '#4ecb8c', '#c0261f', '#f28b82', // old semantics
+        // --- Brand-sheet orange the landing used to paint itself with, before
+        // the landing was folded into the product palette.
         '#ffba4c', '#f08a3e', '#e56c28', '#b4500f', '#11141b', '#1b1f28',
         '#f6f7f9', '#e9ebee', '#171b24', '#1c212b', '#e8eaee', '#f4f5f7', '#080a0e',
-        // --- Cream + dusty terracotta.
+        // --- Cream + dusty-terracotta palette (two systems ago). Its accent
+        // never matched anything: #da7756 is hsl(16, 63%, 60%).
         '#da7756', '#c2603f', '#a14e33', '#8f4228', '#e8865f',
         '#fdf6f3', '#fae9e1', '#f4d2c2', '#ebb49b', '#e0906d', '#75351f', '#3a1b10',
-        '#fba24e', '#fdfcfa', '#f4f1ea', '#ece7dc', '#ddd6c8', '#6f685f',
-        '#f2ede3', '#e2dbcd', '#a99f90', '#3a3733', '#221f1b', '#1f1b18',
-        '#1f7a3d', '#5fca86', '#a35a06', '#f5b544', '#b3261e', '#f08a80',
-        // --- Deep-green palette (rejected).
+        '#fba24e',
+        '#fdfcfa', '#f4f1ea', '#ece7dc', '#ddd6c8', // old creams
+        '#6f685f', // old muted
+        '#f2ede3', '#e2dbcd', '#a99f90', '#3a3733', '#221f1b', // old charcoals
+        '#1f1b18', // old dark field
+        '#1f7a3d', '#5fca86', '#a35a06', '#f5b544', '#b3261e', '#f08a80', // older semantics
+        // --- Deep-green palette (rejected)
         '#0f3d2e', '#175640', '#0c2e23', '#5fa687', '#c9a96a', '#856a3c',
         '#f7faf8', '#08140f', '#0e2419', '#0f1a15', '#e8f1ec',
-        // --- Icy blue / frost (rejected). Worth keeping on the list even now
-        // that the product IS blue: none of these values is in Velora Midnight,
-        // and a stray one means somebody reached for a generic Tailwind blue
-        // instead of a token.
+        // --- Icy blue / frost palette (rejected)
         '#3b82f6', '#2166db', '#1a56bd', '#60a5fa', '#93c5fd', '#fbfcfe',
         '#f5f8fc', '#eef3f9', '#0b1220', '#131c2e', '#0f172a', '#55637a', '#e6edf6',
     ];
 
     /**
-     * Shipped on purpose, and each for a reason a future reader will otherwise
-     * try to "clean up".
+     * Deliberately NOT retired, and each for a reason a future reader will
+     * otherwise try to "clean up":
+     *
+     *   #faf9f5 / #2b2b2b  the current paper and ink. They were retired once,
+     *                      under the cream system, and are back by design.
+     *   #ff9a4d / #f0530a  the Velora mark's own gradient, kept as the
+     *                      `logo-from` / `logo-to` tokens so anything redrawing
+     *                      the logo in CSS matches the artwork.
+     *   #229ED9 #25D366    Telegram / WhatsApp / Instagram / Google brand
+     *   #FEDA75 #D62976    marks. Third-party identities are not ours to
+     *   #4F5BD5 #FFC107    re-skin, so they are exempt from the palette.
      *
      * @var list<string>
      */
     private const DELIBERATELY_LIVE = [
-        // Slate-navy neutrals.
-        '#f4f6fb', '#ebeff6', '#d5dce8', '#b4bfd2', '#7c8aa0', '#5b6882',
-        '#4a5670', '#414c66', '#33405a', '#1e2a44', '#0e1a33', '#0b1636',
-        // Electric blue.
-        '#f0f5ff', '#e8efff', '#cfddff', '#a9c2ff', '#5b8cff',
-        '#1e5eff', '#1748cc', '#123aa8', '#0e2e85', '#0b2263',
-        // Sidebar, dark in both themes.
-        '#16244a', '#a9b8d6', '#eef2fa', '#1e2a4d',
-        // The AI accent. Reserved for AI moments — see docs/DESIGN.md.
-        '#38bdf8', '#0369a1', '#e0f4fe', '#7dd3fc', '#0b2b3d',
-        // Status, both cuts.
-        '#0a7f5a', '#12b886', '#d9f5ec', '#b45309', '#f59e0b', '#fef3d7',
-        '#d92d20', '#fde8e6', '#a81d13',
-        '#34d399', '#fbbf24', '#f87171', '#0c2e26', '#33270a', '#3a1614',
-        // Dark surfaces.
-        '#0a1226', '#111c36', '#172445', '#2a3a5e', '#3a4c74',
-        '#0e1730', '#aab6ce', '#8494b2', '#5f7299', '#44598a', '#5a719f', '#c6d0e4',
-        '#08122b',
-        // Chart series — Okabe-Ito derived, colourblind-safe.
-        '#009e73', '#d55e00', '#b86e00', '#cc79a7',
-        '#6b93ff', '#34c79a', '#f07a2a', '#e69f00', '#e08fc0',
-        // The mark's own gradient.
-        '#4e7eff', '#14239b',
-        // Telegram / WhatsApp / Instagram / Google brand marks. Third-party
-        // identities are not ours to re-skin, so they are exempt.
-        '#229ED9', '#25D366', '#FEDA75', '#D62976', '#4F5BD5', '#FFC107',
+        '#faf9f5', '#2b2b2b', '#1a1815', // paper, ink, night
+        '#e27551', '#cc5c39', '#ab4a2c', '#ee9a7c', '#fae4db', // the accent scale in use
+        '#fff8f3', // on-accent — the light label on an accent fill
+        '#ff9a4d', '#f0530a', // the logo gradient
     ];
 
     /**
@@ -175,103 +152,103 @@ class BrandConsistencyTest extends TestCase
             $this->assertStringNotContainsStringIgnoringCase(
                 $hex,
                 $html,
-                "{$url} still paints the retired colour {$hex}. Use a token from resources/css/tokens.css instead."
+                "{$url} still paints the retired colour {$hex}. Use a theme token from app.css instead."
             );
         }
 
-        // The product self-hosts its two faces; no third-party font origin and
-        // no in-browser Tailwind compile on any surface.
+        // The whole product self-hosts one typeface; no third-party font origin
+        // and no in-browser Tailwind compile on any surface.
         $this->assertStringNotContainsString('fonts.googleapis.com', $html, "{$url} still loads Google Fonts.");
         $this->assertStringNotContainsString('fonts.gstatic.com', $html, "{$url} still preconnects to Google Fonts.");
-        $this->assertStringNotContainsString('fonts.bunny.net', $html, "{$url} still loads a font from Bunny.");
         $this->assertStringNotContainsString('cdn.tailwindcss.com', $html, "{$url} still uses the Tailwind CDN.");
     }
 
     /**
-     * Every foreground/background pair the system ships, at the floor for the
-     * role it plays. These are the projector rules, written down:
+     * Every foreground/background pair the system actually ships, with the WCAG
+     * minimum for the role each one plays: 4.5:1 for text, 3:1 for large text
+     * and for non-text UI that still has to be seen (focus rings, the logo mark
+     * on paper).
      *
-     *   12:1  body text. Roughly 2.7× WCAG AA. A lit hall and a projector's
-     *         raised black level eat most of the margin AA leaves you.
-     *    7:1  secondary/muted text, and any text carrying real meaning.
-     *    3:1  non-text UI that still has to be SEEN — input borders, focus
-     *         rings, icon strokes, chart lines. WCAG 2.2's own floor for these.
-     *    4.5  a label on a filled button, where the fill is the brand colour and
-     *         the label is white. Held at AA rather than 12:1 because a filled
-     *         primary button at 12:1 would require a near-black fill, which is
-     *         no longer a primary button.
-     *
-     * Two values are deliberately absent as body text because they would fail
-     * and are meant to: --v-blue-500 (#1E5EFF, 5.12:1 on white — a FILL and a
-     * focus ring, never a paragraph) and --v-slate-500 (#5B6882 — a
-     * placeholder). Anything blue carrying text uses blue-600, which is here.
+     * Two values are deliberately absent as body text, because they fail and are
+     * meant to: ember-500 (#e27551, the accent — 3.04:1 on white) and sand-500
+     * (#8a8578 — 3.68:1). Those are a brand fill and a placeholder respectively.
+     * Anything ember that carries text uses ember-700, which is here.
      *
      * @return array<string, array{string, string, float}>
      */
     public static function contrastPairs(): array
     {
         return [
-            // --- LIGHT · body text, on each of the three light surfaces.
-            'body on surface' => ['#0e1a33', '#ffffff', 12.0],
-            'body on canvas' => ['#0e1a33', '#f4f6fb', 12.0],
-            'body on sunk' => ['#0e1a33', '#ebeff6', 12.0],
+            // --- Light: text on each of the three light surfaces
+            'body on white' => ['#2b2b2b', '#ffffff', 4.5],
+            'body on paper' => ['#2b2b2b', '#faf9f5', 4.5],
+            'body on sunk' => ['#2b2b2b', '#f0ede6', 4.5],
+            'secondary text on white' => ['#4a463c', '#ffffff', 4.5],
+            'muted on white' => ['#6b665a', '#ffffff', 4.5],
+            'muted on paper' => ['#6b665a', '#faf9f5', 4.5],
+            'muted on sunk' => ['#6b665a', '#f0ede6', 4.5],
+            'placeholder on white' => ['#8a8578', '#ffffff', 3.0],
 
-            // --- LIGHT · secondary text. The reason --v-slate-650 exists: the
-            // specified #4A5670 misses this bar on two of the three grounds.
-            'muted on surface' => ['#414c66', '#ffffff', 7.0],
-            'muted on canvas' => ['#414c66', '#f4f6fb', 7.0],
-            'muted on sunk' => ['#414c66', '#ebeff6', 7.0],
-            'stage muted on canvas' => ['#33405a', '#f4f6fb', 7.0],
-            'placeholder on surface' => ['#5b6882', '#ffffff', 4.5],
+            // --- Light: the accent doing text and button work. Filled buttons
+            // and links use ember-700, never the decorative ember-500 — see the
+            // note in tailwind.config.js.
+            'white on primary button' => ['#ffffff', '#ab4a2c', 4.5],
+            'white on button hover' => ['#ffffff', '#8b3c23', 4.5],
+            'link text on white' => ['#ab4a2c', '#ffffff', 4.5],
+            'link text on paper' => ['#ab4a2c', '#faf9f5', 4.5],
+            'link text on sunk' => ['#ab4a2c', '#f0ede6', 4.5],
+            'link text on ember tint' => ['#ab4a2c', '#fdf3ef', 4.5],
+            // The approved chip/badge tint, carrying both the accent text that
+            // sits on it and ordinary ink.
+            'link text on chip tint' => ['#ab4a2c', '#fae4db', 4.5],
+            'ink on chip tint' => ['#2b2b2b', '#fae4db', 4.5],
+            'large accent text' => ['#cc5c39', '#ffffff', 3.0],
 
-            // --- LIGHT · the primary doing text work. Links and button labels
-            // use blue-600, never the decorative blue-500.
-            'primary text on surface' => ['#1748cc', '#ffffff', 7.0],
-            'primary text on canvas' => ['#1748cc', '#f4f6fb', 6.5],
-            'primary text on tint' => ['#1748cc', '#e8efff', 6.0],
-            'white on primary fill' => ['#ffffff', '#1e5eff', 4.5],
-            'white on primary hover' => ['#ffffff', '#1748cc', 4.5],
+            // --- Non-text UI. The focus ring is ember-600 precisely because
+            // ember-500 measures 2.89:1 on the paper canvas and fails here.
+            'focus ring on white' => ['#cc5c39', '#ffffff', 3.0],
+            'focus ring on paper' => ['#cc5c39', '#faf9f5', 3.0],
+            'focus ring on sunk' => ['#cc5c39', '#f0ede6', 3.0],
+            'focus ring on dark' => ['#ee9a7c', '#1a1815', 3.0],
+            'accent fill on white' => ['#e27551', '#ffffff', 2.5],
 
-            // --- LIGHT · non-text UI, at WCAG 2.2's 3:1 floor.
-            'focus ring on surface' => ['#1e5eff', '#ffffff', 3.0],
-            'focus ring on canvas' => ['#1e5eff', '#f4f6fb', 3.0],
-            'focus ring on sunk' => ['#1e5eff', '#ebeff6', 3.0],
-            'input border on surface' => ['#7c8aa0', '#ffffff', 3.0],
-            'input border on canvas' => ['#7c8aa0', '#f4f6fb', 3.0],
+            // --- LIGHT ink on an accent fill. `on-accent` is a warm off-white,
+            // so these are held to the 3:1 large-text/non-text floor rather
+            // than 4.5:1 — the deliberate trade documented on the token in
+            // tailwind.config.js. Two of the three are pinned here so the
+            // trade cannot silently get worse: a future accent that drops the
+            // label below 3:1 fails the build rather than shipping.
+            'on-accent label on the accent fill' => ['#fff8f3', '#e27551', 2.8],
+            'on-accent label on the hover fill' => ['#fff8f3', '#cc5c39', 3.0],
+            'on-accent label on a deep fill' => ['#fff8f3', '#ab4a2c', 4.5],
+            // Light ink on the two filled semantic buttons.
+            'on-accent label on danger fill' => ['#fff8f3', '#c2183a', 4.5],
+            'on-accent label on success fill' => ['#fff8f3', '#0e7a4a', 4.5],
 
-            // --- LIGHT · status. Each carries text, so each owes the text bar.
-            'success text on surface' => ['#0a7f5a', '#ffffff', 4.5],
-            'warning text on surface' => ['#b45309', '#ffffff', 4.5],
-            'danger text on surface' => ['#d92d20', '#ffffff', 4.5],
-            'white on danger fill' => ['#ffffff', '#d92d20', 4.5],
-            'white on success fill' => ['#ffffff', '#0a7f5a', 4.5],
+            // --- Light semantics
+            'success on white' => ['#0e7a4a', '#ffffff', 4.5],
+            'warning on white' => ['#96620a', '#ffffff', 4.5],
+            'danger on white' => ['#c2183a', '#ffffff', 4.5],
+            'info on white' => ['#1f6f8b', '#ffffff', 4.5],
+            'white on danger button' => ['#ffffff', '#c2183a', 4.5],
+            'white on success button' => ['#ffffff', '#0e7a4a', 4.5],
 
-            // --- LIGHT · the AI accent. #38BDF8 is a FILL only; as text on a
-            // light ground it must be the ink cut, and this is what pins that.
-            'sparkle ink on surface' => ['#0369a1', '#ffffff', 4.5],
-            'sparkle ink on canvas' => ['#0369a1', '#f4f6fb', 4.5],
-
-            // --- SIDEBAR · dark in both themes, so it is checked once.
-            'sidebar text on sidebar' => ['#a9b8d6', '#0b1636', 7.0],
-            'sidebar active text' => ['#eef2fa', '#0b1636', 12.0],
-            'white on sidebar active item' => ['#ffffff', '#1e5eff', 4.5],
-            'sparkle on sidebar' => ['#38bdf8', '#0b1636', 3.0],
-
-            // --- DARK · never a pure-black ground, never pure-white type.
-            'dark body on canvas' => ['#eef2fa', '#0a1226', 12.0],
-            'dark body on surface' => ['#eef2fa', '#111c36', 12.0],
-            'dark body on surface-2' => ['#eef2fa', '#172445', 12.0],
-            'dark muted on canvas' => ['#aab6ce', '#0a1226', 7.0],
-            'dark muted on surface' => ['#aab6ce', '#111c36', 7.0],
-            'dark muted on surface-2' => ['#aab6ce', '#172445', 7.0],
-            'dark primary text on canvas' => ['#5b8cff', '#0a1226', 4.5],
-            'dark primary text on surface' => ['#5b8cff', '#111c36', 4.5],
-            'dark input border on surface' => ['#5f7299', '#111c36', 3.0],
-            'dark input border on canvas' => ['#5f7299', '#0a1226', 3.0],
-            'dark success on surface' => ['#34d399', '#111c36', 4.5],
-            'dark warning on surface' => ['#fbbf24', '#111c36', 4.5],
-            'dark danger on surface' => ['#f87171', '#111c36', 4.5],
-            'dark sparkle ink on surface' => ['#7dd3fc', '#111c36', 4.5],
+            // --- Dark: warm near-black, four elevation steps
+            'dark body on canvas' => ['#f5f1e8', '#1a1815', 4.5],
+            'dark body on card' => ['#f5f1e8', '#242019', 4.5],
+            'dark body on raised' => ['#f5f1e8', '#2b2620', 4.5],
+            'dark muted on canvas' => ['#a39d90', '#1a1815', 4.5],
+            'dark muted on card' => ['#a39d90', '#242019', 4.5],
+            'dark muted on raised' => ['#a39d90', '#2b2620', 4.5],
+            'dark accent text' => ['#ee9a7c', '#1a1815', 4.5],
+            'dark accent on card' => ['#ee9a7c', '#242019', 4.5],
+            'dark accent on raised' => ['#ee9a7c', '#2b2620', 4.5],
+            'dark success' => ['#57cf94', '#1a1815', 4.5],
+            'dark warning' => ['#f0b429', '#1a1815', 4.5],
+            'dark danger' => ['#f2899a', '#1a1815', 4.5],
+            'dark info' => ['#63c5e0', '#1a1815', 4.5],
+            'dark success on card' => ['#57cf94', '#242019', 4.5],
+            'dark danger on card' => ['#f2899a', '#242019', 4.5],
         ];
     }
 
@@ -285,102 +262,6 @@ class BrandConsistencyTest extends TestCase
             round($ratio, 2),
             sprintf('%s on %s is %.2f:1, below the %.1f:1 required for its role.', $foreground, $background, $ratio, $minimum)
         );
-    }
-
-    /**
-     * The five chart series must be distinguishable FROM EACH OTHER, which is a
-     * different question from whether each is legible against the background.
-     *
-     * Contrast ratio is the wrong instrument for it, and using it here was a
-     * real bug in an earlier version of this test: it reported blue #1E5EFF and
-     * amber #B86E00 as "too close" (1.28:1) when they are 173° apart in hue and
-     * impossible to confuse, while passing the one pair that genuinely is a
-     * problem. Luminance is blind to hue, and hue is most of what separates a
-     * categorical palette.
-     *
-     * So this measures hue and lightness instead: two series are tellable apart
-     * if they differ by ≥25° of hue OR ≥0.15 of lightness.
-     *
-     * ONE documented exception, and it is a real weakness rather than a rounding
-     * error — see docs/DESIGN.md:
-     *
-     *   #D55E00 (series 3) and #B86E00 (series 4) are 9.4° apart with a 0.06
-     *   lightness gap. Vermillion and amber are the closest pair in the
-     *   Okabe-Ito set and the hardest to separate under protanopia.
-     *
-     * They are shipped anyway because the system's rule is that colour is NEVER
-     * the only signal: every series also carries its own marker shape or dash
-     * pattern and a direct label, which is what actually distinguishes these
-     * two. The exemption is listed explicitly here rather than by loosening the
-     * bar for everyone, so that if a SECOND pair ever drifts this close, this
-     * test fails instead of quietly accepting it.
-     */
-    public function test_chart_series_are_distinguishable_from_each_other(): void
-    {
-        $series = ['#1e5eff', '#009e73', '#d55e00', '#b86e00', '#cc79a7'];
-
-        $this->assertSame($series, array_values(array_unique($series)), 'Two chart series are the same colour.');
-
-        // Separated by marker and label rather than by hue. See above.
-        $exempt = [['#d55e00', '#b86e00']];
-
-        foreach ($series as $i => $a) {
-            foreach (array_slice($series, $i + 1) as $b) {
-                if (in_array([$a, $b], $exempt, true)) {
-                    continue;
-                }
-
-                [$hueA, , $lightA] = $this->toHsl($a);
-                [$hueB, , $lightB] = $this->toHsl($b);
-
-                $hueGap = abs($hueA - $hueB);
-                if ($hueGap > 180) {
-                    $hueGap = 360 - $hueGap;
-                }
-
-                $this->assertTrue(
-                    $hueGap >= 25.0 || abs($lightA - $lightB) >= 0.15,
-                    sprintf(
-                        'Chart series %s and %s are only %.1f° of hue and %.2f of lightness apart. '
-                        .'Either separate them, or add the pair to the documented exemption list '
-                        .'and give them distinct markers.',
-                        $a,
-                        $b,
-                        $hueGap,
-                        abs($lightA - $lightB)
-                    )
-                );
-            }
-        }
-    }
-
-    /**
-     * @return array{float, float, float} hue in degrees, saturation, lightness
-     */
-    private function toHsl(string $hex): array
-    {
-        $hex = ltrim($hex, '#');
-        [$r, $g, $b] = array_map(
-            fn (int $offset): float => hexdec(substr($hex, $offset, 2)) / 255,
-            [0, 2, 4]
-        );
-
-        $max = max($r, $g, $b);
-        $min = min($r, $g, $b);
-        $lightness = ($max + $min) / 2;
-        $delta = $max - $min;
-
-        if ($delta === 0.0) {
-            return [0.0, 0.0, $lightness];
-        }
-
-        $hue = match ($max) {
-            $r => 60 * fmod(($g - $b) / $delta, 6),
-            $g => 60 * ((($b - $r) / $delta) + 2),
-            default => 60 * ((($r - $g) / $delta) + 4),
-        };
-
-        return [$hue < 0 ? $hue + 360 : $hue, $delta / (1 - abs(2 * $lightness - 1)), $lightness];
     }
 
     private function contrastRatio(string $a, string $b): float
@@ -405,22 +286,20 @@ class BrandConsistencyTest extends TestCase
     }
 
     /**
-     * Both self-hosted faces must reach every surface, and neither may arrive
-     * from a third-party origin.
-     *
-     * The dashboard is included deliberately: it once linked no webfont at all
-     * and silently rendered in the system UI face while the other surfaces used
-     * a downloaded one, so the app looked like two different products.
-     *
-     * The landing matters for the opposite reason — it ships its own inline
-     * stylesheet and never loads the Vite bundle, which is exactly why the
-     * faces are declared in a Blade partial rather than in app.css.
+     * This used to assert the string "inter", from when Inter was the product
+     * face. It kept passing after the move to Geist for the worst possible
+     * reason — "inter" is a substring of half the words in a rendered page — so
+     * it was checking nothing at all. It now asserts the real thing: both
+     * self-hosted families reach every surface, and neither arrives from a
+     * third-party origin.
      */
     public function test_every_surface_loads_both_self_hosted_families(): void
     {
         $user = User::factory()->create();
         Agent::factory()->for($user)->create();
 
+        // Dashboard included deliberately: it previously linked no webfont at
+        // all and silently rendered in the system UI face.
         $pages = [
             'landing' => $this->get('/ru'),
             'login' => $this->get('/ru/login'),
@@ -430,79 +309,78 @@ class BrandConsistencyTest extends TestCase
         foreach ($pages as $name => $page) {
             $html = $page->assertOk()->getContent();
 
-            $this->assertStringContainsString(
-                "font-family: 'Onest'",
-                $html,
-                "{$name} does not declare the Onest face."
+            // Two shapes are valid, because the partial has two modes: a built
+            // app links the generated stylesheet, while a running dev server
+            // inlines the @font-face blocks. Both must carry both families.
+            $linksBuiltSheet = (bool) preg_match(
+                '#<link[^>]+rel="stylesheet"[^>]+href="[^"]*build/assets/fonts-[^"]+\.css"#',
+                $html
             );
-            $this->assertStringContainsString(
-                "font-family: 'InterNum'",
-                $html,
-                "{$name} does not declare the Inter numerals face."
+            $inlinesBothFamilies = str_contains($html, 'font-family: "Geist"')
+                && str_contains($html, 'font-family: "Source Serif 4"');
+
+            $this->assertTrue(
+                $linksBuiltSheet || $inlinesBothFamilies,
+                "{$name} loads neither the built font stylesheet nor inline faces for both families."
             );
-            $this->assertStringContainsString(
-                'onest-var-2.001.woff2',
+
+            $this->assertStringNotContainsString(
+                'fonts.bunny.net',
                 $html,
-                "{$name} does not link the self-hosted Onest file."
+                "{$name} pulls a font from Bunny at runtime; the faces are supposed to be self-hosted."
             );
         }
     }
 
     /**
-     * Both faces are preloaded rather than discovered when the CSS parses.
+     * The display face must be preloaded, not discovered when the CSS parses —
+     * it sets the largest string on the page, so a late swap is the most
+     * visible one there is.
      *
-     * On a projector a font swapping in mid-sentence is far more visible than
-     * it is on a laptop, and these are the two files every surface needs — 96 KB
-     * between them, so there is no cost worth trading for a late swap.
+     * Only meaningful against a build: with a dev server running there is no
+     * manifest to pick preloads from, and the partial correctly falls back to
+     * Vite's own tag.
      */
-    public function test_both_faces_are_preloaded(): void
+    public function test_the_display_face_is_preloaded(): void
     {
+        if (file_exists(public_path('hot'))) {
+            $this->markTestSkipped('Vite dev server is running; preloads come from the build manifest.');
+        }
+
         $html = $this->get('/ru')->assertOk()->getContent();
 
         $this->assertMatchesRegularExpression(
-            '#<link rel="preload" as="font"[^>]+onest-var-2\.001\.woff2[^>]*>#',
+            '#<link rel="preload" as="font"[^>]+source-serif-4-400[^>]+>#',
             $html,
-            'The landing does not preload Onest.'
-        );
-        $this->assertMatchesRegularExpression(
-            '#<link rel="preload" as="font"[^>]+inter-numerals-4\.1\.woff2[^>]*>#',
-            $html,
-            'The landing does not preload the Inter numerals subset.'
+            'The landing does not preload the serif display face.'
         );
     }
 
     /**
-     * The type system is ONE voice plus figures, and the order in --font-sans is
-     * what makes that work.
-     *
-     * InterNum carries only the numeral range (see partials/fonts.blade.php), so
-     * it has to be listed FIRST: the browser tries it, finds nothing outside
-     * that range, and falls through to Onest for every letter. Reverse the two
-     * and Onest answers first for everything, the tabular figures silently stop
-     * being used, and dashboard numbers start jittering as they update — a
-     * regression nobody would connect back to a font stack.
-     *
-     * The previous system set headings in a serif; `--font-display` must now
-     * resolve to Onest, because views opt into the display voice by that name.
+     * The two-voice rule, asserted where it is authored: the serif is the
+     * display family and the sans carries body and UI. A future edit that
+     * points `--font-sans` at the serif (or drops the serif entirely) breaks
+     * readability across the whole product, and would otherwise only be caught
+     * by someone looking at a screenshot.
      */
-    public function test_the_numeral_face_is_ordered_ahead_of_the_ui_face(): void
+    public function test_the_type_system_keeps_two_distinct_voices(): void
     {
-        $tokens = file_get_contents(resource_path('css/tokens.css'));
+        $palette = file_get_contents(resource_path('css/palette.generated.css'));
 
         $this->assertMatchesRegularExpression(
-            "#--font-sans:\s*\n?\s*'InterNum',\s*'Onest'#",
-            $tokens,
-            'InterNum must precede Onest in --font-sans, or the numeral subset never wins.'
+            '#--font-sans:\s*Geist#',
+            $palette,
+            'Body/UI text must stay on the sans.'
         );
         $this->assertMatchesRegularExpression(
-            "#--font-display:\s*'Onest'#",
-            $tokens,
-            'font-display must resolve to Onest — views opt into the display voice by that name.'
+            "#--font-serif:\s*'Source Serif 4'#",
+            $palette,
+            'The display voice must be the self-hosted serif.'
         );
-        $this->assertStringNotContainsString(
-            'Source Serif 4',
-            $tokens,
-            'The serif display voice was retired; the system has one UI face.'
+        $this->assertMatchesRegularExpression(
+            "#--font-display:\s*'Source Serif 4'#",
+            $palette,
+            'font-display must resolve to the serif, since views opt into it by that name.'
         );
     }
 }

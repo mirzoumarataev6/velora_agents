@@ -10,8 +10,8 @@
 <link rel="manifest" href="/site.webmanifest" />
 {{-- Browser UI tint. These have to be literal hexes — the meta tag is read
      before any stylesheet, so a var() would resolve to nothing. They mirror
-     the canvas and dark canvas from resources/css/tokens.css, and are asserted against the
+     `paper` and `night` from tailwind.config.js and are asserted against the
      retired-colour list in BrandConsistencyTest, which is what catches them
      drifting out of sync with the palette. --}}
-<meta name="theme-color" content="#f4f6fb" media="(prefers-color-scheme: light)" />
-<meta name="theme-color" content="#0a1226" media="(prefers-color-scheme: dark)" />
+<meta name="theme-color" content="#faf9f5" media="(prefers-color-scheme: light)" />
+<meta name="theme-color" content="#1a1815" media="(prefers-color-scheme: dark)" />

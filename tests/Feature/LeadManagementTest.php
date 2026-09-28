@@ -7,7 +7,6 @@ use App\Models\Channel;
 use App\Models\Lead;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Inertia\Testing\AssertableInertia;
 use Tests\TestCase;
 
 class LeadManagementTest extends TestCase
@@ -25,9 +24,9 @@ class LeadManagementTest extends TestCase
 
         $response = $this->actingAs($owner)->get(route('leads.index'));
 
-        $response->assertOk()->assertInertia(fn (AssertableInertia $page) => $page
-            ->count('leads.data', 1)
-            ->where('leads.data.0.customer_name', 'Моя заявка'));
+        $response->assertOk();
+        $response->assertSee('Моя заявка');
+        $response->assertDontSee('Чужая заявка');
     }
 
     /**
@@ -44,13 +43,11 @@ class LeadManagementTest extends TestCase
 
         $response = $this->actingAs($owner)->get(route('leads.index'));
 
-        // `is_chat_only` resolves the model's own predicate server-side, so the
-        // card never re-implements "what counts as chat-only" in JavaScript.
-        $response->assertOk()->assertInertia(fn (AssertableInertia $page) => $page
-            ->where('leads.data.0.customer_name', 'Без номера')
-            ->where('leads.data.0.is_chat_only', true)
-            // And the badge says WHY, for an owner who has not met it before.
-            ->has('translations.leads.index.chat_only_hint'));
+        $response->assertOk();
+        $response->assertSee('Без номера');
+        $response->assertSee(__('leads.index.chat_only'));
+        // And it says why, for an owner who has not met the badge before.
+        $response->assertSee(__('leads.index.chat_only_hint'), false);
     }
 
     public function test_the_chat_only_badge_is_absent_when_a_phone_number_was_given(): void
@@ -82,17 +79,9 @@ class LeadManagementTest extends TestCase
         Lead::factory()->for($agent)->create(['customer_name' => 'Звонить можно', 'phone' => '+992905550101']);
         Lead::factory()->for($agent)->chatOnly()->create(['customer_name' => 'Только чат']);
 
-        $flags = [];
+        $html = $this->actingAs($owner)->get(route('leads.index'))->assertOk()->getContent();
 
-        $this->actingAs($owner)->get(route('leads.index'))->assertOk()
-            ->assertInertia(function (AssertableInertia $page) use (&$flags) {
-                $flags = array_column($page->toArray()['props']['leads']['data'], 'is_chat_only');
-            });
-
-        // Order is by creation time and both rows land in the same second, so
-        // the count is what matters rather than which came first.
-        $this->assertCount(2, $flags);
-        $this->assertSame(1, count(array_filter($flags)), 'Only the phoneless order is chat-only.');
+        $this->assertSame(1, substr_count($html, __('leads.index.chat_only')));
     }
 
     public function test_visiting_the_index_marks_leads_seen(): void

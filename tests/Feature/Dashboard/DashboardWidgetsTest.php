@@ -13,7 +13,6 @@ use App\Services\Haggling\HagglingService;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Testing\TestResponse;
-use Inertia\Testing\AssertableInertia;
 use Tests\TestCase;
 
 /**
@@ -51,22 +50,6 @@ class DashboardWidgetsTest extends TestCase
     protected function page(): TestResponse
     {
         return $this->actingAs($this->owner)->get(route('dashboard'))->assertOk();
-    }
-
-    /**
-     * Assert on the props the dashboard was handed.
-     *
-     * The widgets render in the browser now, so "the card says X" is no longer
-     * observable from a PHP request — what IS observable, and what actually
-     * decides whether the card can say X, is the data it was given. Every
-     * ported assertion below goes through here.
-     */
-    protected function assertPage(callable $assertions): void
-    {
-        $this->page()->assertInertia(function (AssertableInertia $page) use ($assertions) {
-            $page->component('Dashboard');
-            $assertions($page);
-        });
     }
 
     /**
@@ -133,9 +116,7 @@ class DashboardWidgetsTest extends TestCase
 
         $this->assertSame('price_approvals', $highlight['kind']);
         $this->assertSame(1, $highlight['count']);
-        $this->assertPage(fn (AssertableInertia $page) => $page
-            ->where('metrics.highlight.kind', 'price_approvals')
-            ->where('metrics.highlight.count', 1));
+        $this->page()->assertSee(__('dashboard.highlight.price_approvals', ['count' => 1]), false);
     }
 
     /**
@@ -166,11 +147,8 @@ class DashboardWidgetsTest extends TestCase
         $this->assertSame(3, $highlight['count']);
         $this->assertSame('Есть ли доставка в Худжанд?', $highlight['subject']);
 
-        // The card names the question and says the thing to do about it; both
-        // are derived from `kind` + `subject` by HighlightCard.vue.
-        $this->assertPage(fn (AssertableInertia $page) => $page
-            ->where('metrics.highlight.kind', 'unanswered')
-            ->where('metrics.highlight.subject', 'Есть ли доставка в Худжанд?'));
+        // The card says the thing to do, not just the number.
+        $this->page()->assertSee(__('dashboard.highlight.unanswered_action'), false);
     }
 
     public function test_open_orders_are_the_fallback_when_nothing_is_wrong(): void
@@ -187,10 +165,7 @@ class DashboardWidgetsTest extends TestCase
         $this->conversationWith();
 
         $this->assertNull($this->metrics()['highlight']);
-
-        // A null highlight is what makes the card render its all-clear state
-        // rather than a gap.
-        $this->assertPage(fn (AssertableInertia $page) => $page->where('metrics.highlight', null));
+        $this->page()->assertSee(__('dashboard.highlight.clear_title'), false);
     }
 
     // -----------------------------------------------------------------
@@ -201,20 +176,14 @@ class DashboardWidgetsTest extends TestCase
     {
         $this->conversationWith();
 
-        // FunnelCard.vue looks each stage's label and hint up by the stage's
-        // own `key`, so "every stage is explained" holds exactly when every
-        // key has both strings. Assert that, rather than the rendered copy.
-        $this->assertPage(function (AssertableInertia $page) {
-            $page->where('metrics.funnel.0.key', 'conversations')
-                ->where('metrics.funnel.1.key', 'leads')
-                ->where('metrics.funnel.2.key', 'confirmed')
-                ->has('translations.dashboard.funnel.description');
+        $page = $this->page();
 
-            foreach (['conversations', 'leads', 'confirmed'] as $stage) {
-                $page->has("translations.dashboard.funnel.{$stage}")
-                    ->has("translations.dashboard.funnel.{$stage}_hint");
-            }
-        });
+        $page->assertSee(__('dashboard.funnel.description'), false);
+
+        // Every stage is defined, not only the last one.
+        $page->assertSee(__('dashboard.funnel.conversations_hint'), false);
+        $page->assertSee(__('dashboard.funnel.leads_hint'), false);
+        $page->assertSee(__('dashboard.funnel.confirmed_hint'), false);
     }
 
     /** Neutral, analytical framing — a conversion rate, not a loss to act on. */
@@ -228,18 +197,8 @@ class DashboardWidgetsTest extends TestCase
         $funnel = collect($this->metrics()['funnel'])->firstWhere('key', 'leads');
 
         $this->assertSame(50.0, $funnel['conversion']);
-
-        // Neutral framing: the stage carries a CONVERSION, and the vocabulary
-        // of loss appears nowhere in the strings the page ships.
-        // 50, not 50.0: json_encode drops the fractional part of a whole
-        // float, so the value that actually reaches the page is an integer.
-        $this->assertPage(fn (AssertableInertia $page) => $page
-            ->where('metrics.funnel.1.conversion', 50));
-
-        $this->assertStringNotContainsStringIgnoringCase(
-            'потеряно',
-            json_encode(__('dashboard.funnel'), JSON_UNESCAPED_UNICODE),
-        );
+        $this->page()->assertSee(__('dashboard.funnel.conversion', ['percent' => 50.0]), false);
+        $this->page()->assertDontSee('потеряно', false);
     }
 
     // -----------------------------------------------------------------
@@ -267,11 +226,8 @@ class DashboardWidgetsTest extends TestCase
     {
         $this->conversationWith(5);
 
-        // A null score is what switches the card to its teaching empty state.
         $this->assertNull($this->metrics()['ratings']['score']);
-        $this->assertPage(fn (AssertableInertia $page) => $page
-            ->where('metrics.ratings.total', 0)
-            ->where('metrics.ratings.score', null));
+        $this->page()->assertSee(__('dashboard.ratings.empty'), false);
     }
 
     /** The point of per-message ratings: which reply, not how many. */
@@ -284,19 +240,25 @@ class DashboardWidgetsTest extends TestCase
         $this->assertCount(1, $worst);
         $this->assertSame($conversation->id, $worst[0]['conversation_id']);
 
-        // RatingsCard.vue builds one link per row from `conversation_id`, so
-        // what the server owes is the id on the row.
-        $this->assertPage(fn (AssertableInertia $page) => $page
-            ->where('metrics.ratings.worst.0.conversation_id', $conversation->id)
-            ->has('metrics.ratings.worst.0.excerpt'));
+        $this->page()->assertSee(
+            route('conversations.index', ['conversation' => $conversation->id]),
+            false,
+        );
     }
 
-    /*
-     * REMOVED WITH THE BLADE CHART: `test_the_ratings_chart_draws_bars_with_a_real_height`,
-     * which asserted a non-zero rem height on a `bg-success` div. The bars are
-     * an ApexCharts SVG now, sized in the browser. What they are drawn from is
-     * asserted by `test_ratings_are_counted_and_scored` above.
-     */
+    /** Bars must have a real height, the way the messages chart does. */
+    public function test_the_ratings_chart_draws_bars_with_a_real_height(): void
+    {
+        $this->conversationWith(2, at: CarbonImmutable::now(), rating: Message::RATING_UP);
+
+        $html = $this->page()->getContent();
+
+        $this->assertMatchesRegularExpression(
+            '/bg-success[^"]*"\s+style="height: (?!0rem)[\d.]+rem"/',
+            $html,
+            'A rated day should draw a bar with a non-zero height.',
+        );
+    }
 
     /**
      * The card has to explain itself. A judge — or an owner — meeting this for
@@ -308,12 +270,11 @@ class DashboardWidgetsTest extends TestCase
     {
         $this->conversationWith(1, rating: Message::RATING_UP);
 
-        // The explanatory copy is what makes this a card rather than a caption,
-        // so it has to reach the page even though the card renders it client-side.
-        $this->assertPage(fn (AssertableInertia $page) => $page
-            ->has('translations.dashboard.ratings.title')
-            ->has('translations.dashboard.ratings.description')
-            ->has('translations.dashboard.ratings.telegram_only'));
+        $page = $this->page();
+
+        $page->assertSee(__('dashboard.ratings.title'), false);
+        $page->assertSee(__('dashboard.ratings.description'), false);
+        $page->assertSee(__('dashboard.ratings.telegram_only'), false);
     }
 
     /** The percentage AND a visual for it, not one or the other. */
@@ -322,11 +283,13 @@ class DashboardWidgetsTest extends TestCase
         $this->conversationWith(3, rating: Message::RATING_UP);
         $this->conversationWith(1, rating: Message::RATING_DOWN);
 
-        // The ring and the figure are both drawn from one number, so there is
-        // exactly one thing for the server to get right. (RatingsCard.vue cuts
-        // a conic-gradient to it and prints it beside the ring.)
-        $this->assertPage(fn (AssertableInertia $page) => $page
-            ->where('metrics.ratings.score', 75));
+        $html = $this->page()->getContent();
+
+        // The ring is a conic gradient cut to 75% success.
+        $this->assertStringContainsString('conic-gradient(var(--color-success) 0 75%', $html);
+        // And the same number in figures, wired to the count-up convention.
+        $this->assertStringContainsString('data-countup="75"', $html);
+        $this->assertStringContainsString('data-countup-suffix="%"', $html);
     }
 
     public function test_the_totals_and_split_are_shown(): void
@@ -334,11 +297,12 @@ class DashboardWidgetsTest extends TestCase
         $this->conversationWith(3, rating: Message::RATING_UP);
         $this->conversationWith(1, rating: Message::RATING_DOWN);
 
-        $this->assertPage(fn (AssertableInertia $page) => $page
-            ->where('metrics.ratings.up', 3)
-            ->where('metrics.ratings.down', 1)
-            ->where('metrics.ratings.total', 4)
-            ->has('translations.dashboard.ratings.trend_title'));
+        $page = $this->page();
+
+        $page->assertSee(__('dashboard.ratings.total'), false);
+        $page->assertSee(__('dashboard.ratings.up'), false);
+        $page->assertSee(__('dashboard.ratings.down'), false);
+        $page->assertSee(__('dashboard.ratings.trend_title'), false);
     }
 
     /**
@@ -349,11 +313,9 @@ class DashboardWidgetsTest extends TestCase
     {
         $this->conversationWith(1, rating: Message::RATING_DOWN);
 
-        // `down > 0` is the condition RatingsCard.vue renders the filtered
-        // link from; below it, the card says there is nothing to look at.
-        $this->assertPage(fn (AssertableInertia $page) => $page
-            ->where('metrics.ratings.down', 1)
-            ->has('translations.dashboard.ratings.view_negative'));
+        $this->page()
+            ->assertSee(__('dashboard.ratings.view_negative'), false)
+            ->assertSee(route('conversations.index', ['status' => 'rated_down']), false);
     }
 
     /** With ratings but no bad ones, there is nothing to go and look at. */
@@ -361,9 +323,9 @@ class DashboardWidgetsTest extends TestCase
     {
         $this->conversationWith(2, rating: Message::RATING_UP);
 
-        $this->assertPage(fn (AssertableInertia $page) => $page
-            ->where('metrics.ratings.down', 0)
-            ->where('metrics.ratings.up', 2));
+        $this->page()
+            ->assertSee(__('dashboard.ratings.no_negative'), false)
+            ->assertDontSee(__('dashboard.ratings.view_negative'), false);
     }
 
     /**
@@ -374,8 +336,9 @@ class DashboardWidgetsTest extends TestCase
     {
         $this->conversationWith(1, rating: Message::RATING_UP);
 
-        $this->assertPage(fn (AssertableInertia $page) => $page
-            ->where('metrics.ratings.up', 1));
+        $this->page()
+            ->assertSee(__('dashboard.ratings.view_positive'), false)
+            ->assertSee(route('conversations.index', ['status' => 'rated_up']), false);
     }
 
     /** With ratings but no good ones, there is nothing positive to go and look at. */
@@ -383,7 +346,7 @@ class DashboardWidgetsTest extends TestCase
     {
         $this->conversationWith(2, rating: Message::RATING_DOWN);
 
-        $this->assertPage(fn (AssertableInertia $page) => $page->where('metrics.ratings.up', 0));
+        $this->page()->assertDontSee(__('dashboard.ratings.view_positive'), false);
     }
 
     /** Both links appear together when there are both kinds of ratings. */
@@ -392,9 +355,9 @@ class DashboardWidgetsTest extends TestCase
         $this->conversationWith(1, rating: Message::RATING_UP);
         $this->conversationWith(1, rating: Message::RATING_DOWN);
 
-        $this->assertPage(fn (AssertableInertia $page) => $page
-            ->where('metrics.ratings.up', 1)
-            ->where('metrics.ratings.down', 1));
+        $this->page()
+            ->assertSee(__('dashboard.ratings.view_positive'), false)
+            ->assertSee(__('dashboard.ratings.view_negative'), false);
     }
 
     /**
@@ -406,16 +369,17 @@ class DashboardWidgetsTest extends TestCase
     {
         $this->conversationWith(3);
 
-        // The empty state teaches: every step of "how this works" has to reach
-        // the page, not just the apology. And the score stays null — never a
-        // flattering 100% — which is what keeps the ring and chart off.
-        $this->assertPage(function (AssertableInertia $page) {
-            $page->where('metrics.ratings.score', null)
-                ->where('metrics.ratings.total', 0)
-                ->has('translations.dashboard.ratings.empty_title')
-                ->has('translations.dashboard.ratings.empty_how_title')
-                ->count('translations.dashboard.ratings.empty_how', count(__('dashboard.ratings.empty_how')));
-        });
+        $page = $this->page();
+
+        $page->assertSee(__('dashboard.ratings.empty_title'), false);
+        $page->assertSee(__('dashboard.ratings.empty_how_title'), false);
+
+        foreach (__('dashboard.ratings.empty_how') as $step) {
+            $page->assertSee($step, false);
+        }
+
+        // And still no ring, no chart and above all no flattering 100%.
+        $page->assertDontSee('conic-gradient', false);
     }
 
     // -----------------------------------------------------------------
@@ -447,31 +411,67 @@ class DashboardWidgetsTest extends TestCase
         $this->assertNotNull(end($series)['ms']);
     }
 
-    /*
-     * REMOVED WITH THE BLADE LINE CHART: three tests that asserted its drawn
-     * geometry — that the plot area carried an explicit `height: 7rem` rather
-     * than `flex-1` (it used to swallow a whole grid row), that the data points
-     * were HTML divs rather than SVG <circle>s (preserveAspectRatio="none"
-     * scaled circles into ellipses), and that a single measured day still drew
-     * its dot without a <polyline>.
-     *
-     * Every one of those was a workaround for hand-rolling a line chart in
-     * markup. ApexCharts draws into a correctly-scaled SVG at an explicit pixel
-     * height, so none of the three failure modes exists to guard against.
-     *
-     * The DATA behind the chart — per-day averages, and a gap rather than a
-     * zero on a day with no replies — is still asserted by the two tests above.
+    /**
+     * The chart's height must come from what it is, not from what sits beside
+     * it. It used to be `flex-1`, so it absorbed every spare pixel of a grid
+     * row whose height is set by the heatmap — and a two-point line was drawn
+     * over the best part of a screen.
      */
+    public function test_the_trend_chart_area_is_capped_rather_than_filling_the_row(): void
+    {
+        $today = CarbonImmutable::now()->startOfDay()->addHours(10);
+        $this->conversationWith(1, ['total_ms' => 400], $today);
+        $this->conversationWith(1, ['total_ms' => 900], $today->subDays(2));
+
+        $html = $this->page()->getContent();
+
+        // Constrained the same way every other chart here is: an explicit rem
+        // height on the drawing area.
+        $this->assertStringContainsString('style="height: 7rem"', $html);
+        $this->assertStringNotContainsString('style="min-height: 7rem"', $html);
+    }
+
+    /**
+     * The dots are HTML rather than <circle> because preserveAspectRatio="none"
+     * scales x and y differently — nothing protects a filled shape from that,
+     * so SVG circles were drawn as ellipses, flatter the shorter the chart.
+     */
+    public function test_the_trend_data_points_stay_round_at_the_smaller_size(): void
+    {
+        $today = CarbonImmutable::now()->startOfDay()->addHours(10);
+        $this->conversationWith(1, ['total_ms' => 400], $today);
+        $this->conversationWith(1, ['total_ms' => 900], $today->subDays(2));
+
+        $html = $this->page()->getContent();
+
+        $this->assertMatchesRegularExpression('/rounded-full bg-brand"\s+style="left: [\d.]+%; top: [\d.]+%"/', $html);
+        // The old distorted dot, by its distinctive radius.
+        $this->assertStringNotContainsString('r="3.5"', $html);
+    }
+
+    /** A single measured day still draws its point, and both axis labels. */
+    public function test_a_single_data_point_still_renders(): void
+    {
+        $today = CarbonImmutable::now()->startOfDay()->addHours(10);
+        $this->conversationWith(1, ['total_ms' => 400], $today);
+
+        $html = $this->page()->getContent();
+
+        // The dot is there; the line and its fill are correctly absent.
+        $this->assertMatchesRegularExpression('/rounded-full bg-brand"\s+style="left:/', $html);
+        $this->assertStringNotContainsString('<polyline', $html);
+
+        // And the labels either side of the range survive.
+        $this->assertStringContainsString(CarbonImmutable::now()->subDays(6)->format('d.m'), $html);
+        $this->assertStringContainsString($today->format('d.m'), $html);
+    }
 
     public function test_the_response_trend_says_so_when_nothing_has_been_measured(): void
     {
         $this->conversationWith(1);
 
-        // `has_data` is the switch the card renders its empty state from.
         $this->assertFalse($this->metrics()['response_trend']['has_data']);
-        $this->assertPage(fn (AssertableInertia $page) => $page
-            ->where('metrics.response_trend.has_data', false)
-            ->has('translations.dashboard.response_trend.empty'));
+        $this->page()->assertSee(__('dashboard.response_trend.empty'), false);
     }
 
     // -----------------------------------------------------------------
@@ -506,12 +506,7 @@ class DashboardWidgetsTest extends TestCase
         $statuses = array_column($this->metrics()['leads_by_status']['rows'], 'status');
 
         $this->assertSame(['new', 'in_progress', HagglingService::STATUS_PENDING, 'done'], $statuses);
-
-        // A zero row is information — "nobody is waiting on you" — so the row
-        // has to survive all the way to the page rather than be filtered out.
-        $this->assertPage(fn (AssertableInertia $page) => $page
-            ->where('metrics.leads_by_status.rows.2.status', HagglingService::STATUS_PENDING)
-            ->where('metrics.leads_by_status.rows.2.count', 0));
+        $this->page()->assertSee(__('dashboard.leads_status.statuses.awaiting_price_approval'), false);
     }
 
     public function test_the_leads_breakdown_says_so_when_there_are_none(): void
@@ -519,9 +514,7 @@ class DashboardWidgetsTest extends TestCase
         $this->conversationWith();
 
         $this->assertSame(0, $this->metrics()['leads_by_status']['total']);
-        $this->assertPage(fn (AssertableInertia $page) => $page
-            ->where('metrics.leads_by_status.total', 0)
-            ->has('translations.dashboard.leads_status.empty'));
+        $this->page()->assertSee(__('dashboard.leads_status.empty'), false);
     }
 
     // -----------------------------------------------------------------
@@ -533,10 +526,8 @@ class DashboardWidgetsTest extends TestCase
     {
         $this->conversationWith(3);
 
-        // An empty array is what makes the card disappear entirely — the page
-        // renders it behind `v-if="metrics.agent_comparison.length"`.
         $this->assertSame([], $this->metrics()['agent_comparison']);
-        $this->assertPage(fn (AssertableInertia $page) => $page->count('metrics.agent_comparison', 0));
+        $this->page()->assertDontSee(__('dashboard.agents_compare.title'), false);
     }
 
     public function test_the_agent_comparison_ranks_agents_by_volume(): void
@@ -553,9 +544,7 @@ class DashboardWidgetsTest extends TestCase
         $this->assertSame(5, $comparison[0]['messages']);
         $this->assertSame(2, $comparison[1]['messages']);
 
-        $this->assertPage(fn (AssertableInertia $page) => $page
-            ->count('metrics.agent_comparison', 2)
-            ->where('metrics.agent_comparison.0.name', 'Второй'));
+        $this->page()->assertSee(__('dashboard.agents_compare.title'), false);
     }
 
     /**
@@ -575,9 +564,7 @@ class DashboardWidgetsTest extends TestCase
         $this->assertSame(71.4, $comparison['Второй']['share']);
         $this->assertSame(28.6, $comparison['Первый']['share']);
 
-        $this->assertPage(fn (AssertableInertia $page) => $page
-            ->where('metrics.agent_comparison.0.share', 71.4)
-            ->where('metrics.agent_comparison.1.share', 28.6));
+        $this->page()->assertSee(__('dashboard.agents_compare.share', ['percent' => 71.4]), false);
     }
 
     // -----------------------------------------------------------------
@@ -604,16 +591,35 @@ class DashboardWidgetsTest extends TestCase
         $this->assertSame(0, $metrics['leads_by_status']['total']);
     }
 
-    /*
-     * REMOVED WITH THE BLADE MARKUP: the two motion tests.
-     *
-     * They asserted `data-countup="4"` on the summary tiles and that exactly
-     * two `pulse-ring` elements existed — the live tile and the highlight card.
-     * Both attributes belonged to an animation driven by app.js walking the
-     * DOM, which the Vue dashboard does not use.
-     *
-     * The rule they protected survives in the components: the pulse belongs to
-     * LiveStatus.vue alone, which is the one figure that is true right now
-     * rather than true of the period, and StatCard.vue formats only integers.
+    // -----------------------------------------------------------------
+    // Motion
+    // -----------------------------------------------------------------
+
+    /**
+     * The animations are markup-level, so they are assertable: the count-up
+     * needs its target value on the element, and the live dot belongs to the
+     * one figure that describes this moment rather than the period.
      */
+    public function test_the_summary_numbers_carry_their_count_up_targets(): void
+    {
+        $this->conversationWith();
+        Lead::factory()->count(4)->for($this->agent)->create(['status' => 'new']);
+
+        $html = $this->page()->getContent();
+
+        $this->assertStringContainsString('data-countup="4"', $html);
+        // The live dot, on the active-conversations tile only.
+        $this->assertSame(2, substr_count($html, 'pulse-ring'), 'The pulse belongs to the live tile and the highlight card, nowhere else.');
+    }
+
+    /** A figure that is not a plain number has nothing to count toward. */
+    public function test_a_dash_is_never_animated_as_a_number(): void
+    {
+        $this->conversationWith();
+
+        $html = $this->page()->getContent();
+
+        $this->assertStringNotContainsString('data-countup="—"', $html);
+        $this->assertStringNotContainsString('data-countup=""', $html);
+    }
 }
