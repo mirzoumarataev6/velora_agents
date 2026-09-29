@@ -28,12 +28,12 @@
         </div>
 
         <button type="submit"
-            class="flex w-full items-center justify-center gap-2 rounded-full bg-brand px-4 py-2.5 text-sm font-semibold text-on-accent shadow-glow-ember transition-all duration-200 hover:-translate-y-0.5 hover:bg-brand-hover">
+            class="btn btn-primary btn-block">
             <span class="btn-label" data-i18n="auth.forgot.submit">{{ __('auth.forgot.submit') }}</span>
         </button>
     </form>
 
     <p class="mt-4 text-center text-sm text-muted dark:text-night-muted">
-        <a href="{{ route('login') }}" data-transition class="font-semibold text-brand hover:underline" data-i18n="auth.forgot.back_to_login">{{ __('auth.forgot.back_to_login') }}</a>
+        <a href="{{ route('login') }}" data-transition class="font-semibold text-brand-strong hover:underline" data-i18n="auth.forgot.back_to_login">{{ __('auth.forgot.back_to_login') }}</a>
     </p>
 @endsection

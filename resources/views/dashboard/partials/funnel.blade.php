@@ -27,8 +27,8 @@
     ];
 @endphp
 
-<div class="rounded-2xl border border-black/10 bg-white p-5 dark:border-white/10 dark:bg-white/5">
-    <h2 class="text-base font-semibold">{{ __('dashboard.funnel.title') }}</h2>
+<div class="card p-5">
+    <h2 class="section-head-title">{{ __('dashboard.funnel.title') }}</h2>
     <p class="mt-1 text-xs text-muted dark:text-night-muted">{{ __('dashboard.funnel.description') }}</p>
 
     <div class="mt-5 space-y-4">
@@ -50,7 +50,7 @@
                     </span>
                 </div>
 
-                <div class="mt-1.5 h-2.5 overflow-hidden rounded-full bg-black/5 dark:bg-white/10">
+                <div class="mt-1.5 h-2.5 overflow-hidden rounded-full bg-sunk dark:bg-night-raised">
                     <div class="h-full rounded-full {{ $tints[$stage['key']] }} transition-all duration-slow ease-out"
                         style="width: {{ $stage['value'] === 0 ? 0 : max(2, $stage['share']) }}%"></div>
                 </div>

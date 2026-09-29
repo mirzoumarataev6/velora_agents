@@ -3,6 +3,8 @@
 namespace App\Providers;
 
 use App\Services\Database\DriverManager;
+use App\Models\Deal;
+use App\Observers\DealObserver;
 use App\Services\Llm\GeminiProvider;
 use App\Services\Llm\LlmProviderInterface;
 use App\Services\Llm\OpenAiProvider;
@@ -75,6 +77,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        Deal::observe(DealObserver::class);
         $this->recordWorkerHeartbeat();
         $this->limitDatabaseConnectionTests();
     }

@@ -25,7 +25,7 @@
         ]) }},
     })">
     <button type="button" @click="open()"
-        class="flex items-center gap-1.5 rounded-full border border-brand/30 bg-brand/5 px-3.5 py-1.5 text-xs font-semibold text-brand transition-colors hover:bg-brand/10">
+        class="flex items-center gap-1.5 rounded-full border-brand/30 bg-azure-50 px-3.5 py-1.5 text-xs font-semibold text-brand-strong transition-colors hover:bg-brand/10">
         <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.5 6.5L22 12l-6.5 2.5L13 21l-2.5-6.5L4 12l6.5-2.5L13 3z"/></svg>
         {{ __('agents.persona_assistant.button') }}
     </button>
@@ -36,7 +36,7 @@
         <div x-show="showing" x-cloak @keydown.escape.window="close()"
             class="fixed inset-0 z-50 flex items-end justify-center overflow-y-auto bg-black/40 p-0 backdrop-blur-sm sm:items-center sm:p-6">
             <div @click.outside="close()" x-transition.opacity.duration.200ms
-                class="w-full max-w-lg rounded-t-3xl bg-white p-6 shadow-e4 dark:bg-night-card sm:rounded-3xl">
+                class="w-full max-w-lg rounded-t-3xl bg-white p-6 dark:bg-night-card sm:rounded-3xl">
 
                 <div class="flex items-start justify-between gap-3">
                     <div>
@@ -45,7 +45,7 @@
                             x-text="stepLabel()"></p>
                     </div>
                     <button type="button" @click="close()" aria-label="{{ __('agents.persona_assistant.close') }}"
-                        class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted transition-colors hover:bg-black/5 dark:text-night-muted dark:hover:bg-white/5">
+                        class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted transition-colors hover:bg-sunk dark:text-night-muted dark:hover:bg-night-raised">
                         <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
                     </button>
                 </div>
@@ -67,7 +67,7 @@
                             <textarea id="pa_{{ $key }}" rows="4" x-model="answers.{{ $key }}"
                                 maxlength="{{ \App\Services\Agents\AgentPersonaAssistant::MAX_ANSWER_LENGTH }}"
                                 placeholder="{{ __('agents.persona_assistant.placeholders.'.$key) }}"
-                                class="field mt-1.5 w-full rounded-xl px-4 py-2.5 text-sm"></textarea>
+                                class="field mt-1.5 w-full px-4 py-2.5 text-sm"></textarea>
                             <p class="mt-1 text-xs text-muted dark:text-night-muted">{{ __('agents.persona_assistant.optional') }}</p>
                         </div>
                     @endforeach
@@ -76,17 +76,17 @@
 
                     <div class="mt-5 flex items-center justify-between gap-3">
                         <button type="button" @click="qIndex--" x-show="qIndex > 0" x-cloak
-                            class="rounded-full border border-black/10 px-4 py-2 text-sm font-semibold transition-all hover:-translate-y-0.5 dark:border-white/10">
+                            class="rounded-full px-4 py-2 text-sm font-semibold transition-all">
                             {{ __('agents.persona_assistant.back') }}
                         </button>
                         <div class="ml-auto">
                             <button type="button" @click="qIndex++" x-show="qIndex < questions.length - 1"
-                                class="rounded-full bg-brand px-5 py-2 text-sm font-semibold text-on-accent transition-all hover:-translate-y-0.5 hover:bg-brand-hover">
+                                class="btn btn-primary">
                                 {{ __('agents.persona_assistant.next') }}
                             </button>
                             <button type="button" @click="generate()" x-show="qIndex === questions.length - 1" x-cloak
                                 :disabled="loading"
-                                class="flex items-center gap-2 rounded-full bg-brand px-5 py-2 text-sm font-semibold text-on-accent transition-all hover:-translate-y-0.5 hover:bg-brand-hover disabled:cursor-not-allowed disabled:opacity-60">
+                                class="btn btn-primary disabled:cursor-not-allowed disabled:opacity-60">
                                 <span x-show="loading" class="spinner h-3.5 w-3.5 border-[1.5px]"></span>
                                 <span x-text="loading ? @js(__('agents.persona_assistant.generating')) : @js(__('agents.persona_assistant.generate'))"></span>
                             </button>
@@ -99,7 +99,7 @@
                      leaves their textareas untouched. --}}
                 <div x-show="stage === 'draft'" x-cloak class="mt-4">
                     <div class="flex items-center gap-2">
-                        <span class="rounded-full bg-warning/10 px-2.5 py-1 text-[11px] font-semibold text-warning dark:text-warning-light">
+                        <span class="badge badge-warning">
                             {{ __('agents.persona_assistant.draft_badge') }}
                         </span>
                     </div>
@@ -108,21 +108,21 @@
                     <div class="mt-4 max-h-72 space-y-4 overflow-y-auto pr-1">
                         <div>
                             <p class="text-xs font-semibold uppercase tracking-wide text-muted dark:text-night-muted">{{ __('agents.persona_assistant.rules_preview') }}</p>
-                            <pre class="mt-1.5 whitespace-pre-wrap rounded-xl bg-sunk p-3 font-sans text-sm dark:bg-white/5" x-text="draft.rules"></pre>
+                            <pre class="mt-1.5 whitespace-pre-wrap rounded-xl bg-sunk p-3 font-sans text-sm dark:bg-night-raised" x-text="draft.rules"></pre>
                         </div>
                         <div>
                             <p class="text-xs font-semibold uppercase tracking-wide text-muted dark:text-night-muted">{{ __('agents.persona_assistant.persona_preview') }}</p>
-                            <pre class="mt-1.5 whitespace-pre-wrap rounded-xl bg-sunk p-3 font-sans text-sm dark:bg-white/5" x-text="draft.persona"></pre>
+                            <pre class="mt-1.5 whitespace-pre-wrap rounded-xl bg-sunk p-3 font-sans text-sm dark:bg-night-raised" x-text="draft.persona"></pre>
                         </div>
                     </div>
 
                     <div class="mt-5 flex items-center justify-between gap-3">
                         <button type="button" @click="close()"
-                            class="rounded-full border border-black/10 px-4 py-2 text-sm font-semibold transition-all hover:-translate-y-0.5 dark:border-white/10">
+                            class="rounded-full px-4 py-2 text-sm font-semibold transition-all">
                             {{ __('agents.persona_assistant.discard') }}
                         </button>
                         <button type="button" @click="apply()"
-                            class="rounded-full bg-brand px-5 py-2 text-sm font-semibold text-on-accent transition-all hover:-translate-y-0.5 hover:bg-brand-hover">
+                            class="btn btn-primary">
                             {{ __('agents.persona_assistant.apply') }}
                         </button>
                     </div>

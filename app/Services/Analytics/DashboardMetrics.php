@@ -49,6 +49,7 @@ class DashboardMetrics
             'ratings' => $ratings = $this->ratings($since, $days),
             'response_trend' => $this->responseTrend($since, $days),
             'leads_by_status' => $this->leadsByStatus(),
+            'daily' => $this->daily($since, $days),
             'agent_comparison' => $this->agentComparison($since),
             'highlight' => $this->highlight($unanswered, $products, $ratings),
         ];
@@ -136,6 +137,62 @@ class DashboardMetrics
         }
 
         return $series;
+    }
+
+    /**
+     * Дневные ряды для спарклайнов и трендов на карточках KPI.
+     *
+     * Читает и группирует — ничего не решает. Существует только для того,
+     * чтобы плитка, показывающая «10», могла показать и то, как эти 10
+     * набрались: без этого три из пяти карточек остались бы без линии, а
+     * рисовать её из выдуманных чисел нельзя.
+     *
+     * Два запроса на весь блок: даты достаются одним столбцом и
+     * раскладываются по дням в PHP. Группировка по дате в SQL потребовала бы
+     * диалекто-зависимой функции (date() против DATE_FORMAT()), а этот проект
+     * ходит и в SQLite (тесты), и в MySQL (прод) — так что день считается там,
+     * где часовой пояс аналитики уже известен.
+     *
+     * Ряд конверсии — производный, не третий запрос: доля диалогов за день,
+     * из которых вышла заявка. Дни без диалогов дают null, а не ноль: день без
+     * трафика — это не день с нулевой конверсией.
+     */
+    protected function daily(CarbonImmutable $since, int $days): array
+    {
+        $leadsByDay = $this->leads()
+            ->where('leads.created_at', '>=', $since)
+            ->pluck('leads.created_at')
+            ->groupBy(fn ($at) => $this->local(CarbonImmutable::parse($at))->toDateString())
+            ->map->count();
+
+        $conversationsByDay = $this->conversations()
+            ->where('conversations.created_at', '>=', $since)
+            ->pluck('conversations.created_at')
+            ->groupBy(fn ($at) => $this->local(CarbonImmutable::parse($at))->toDateString())
+            ->map->count();
+
+        $leads = [];
+        $conversations = [];
+        $conversion = [];
+
+        for ($i = 0; $i < $days; $i++) {
+            $key = $since->addDays($i)->toDateString();
+
+            $leadCount = (int) ($leadsByDay[$key] ?? 0);
+            $conversationCount = (int) ($conversationsByDay[$key] ?? 0);
+
+            $leads[] = $leadCount;
+            $conversations[] = $conversationCount;
+            $conversion[] = $conversationCount > 0
+                ? round($leadCount / $conversationCount * 100, 1)
+                : null;
+        }
+
+        return [
+            'leads' => $leads,
+            'conversations' => $conversations,
+            'conversion' => $conversion,
+        ];
     }
 
     // Строит тепловую карту активности по дням недели и часам

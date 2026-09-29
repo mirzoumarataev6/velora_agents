@@ -2,9 +2,11 @@
 
 namespace App\Models;
 
+use App\Observers\ConversationObserver;
 use App\Policies\ConversationPolicy;
 use Database\Factories\ConversationFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Attributes\UsePolicy;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -12,8 +14,9 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['channel_id', 'external_user_id', 'external_user_name', 'status', 'last_message_at', 'operator_read_at'])]
+#[Fillable(['channel_id', 'customer_id', 'external_user_id', 'external_user_name', 'status', 'last_message_at', 'operator_read_at'])]
 #[UsePolicy(ConversationPolicy::class)]
+#[ObservedBy(ConversationObserver::class)]
 class Conversation extends Model
 {
     /** @use HasFactory<ConversationFactory> */
@@ -89,6 +92,15 @@ class Conversation extends Model
     public function agent(): BelongsTo
     {
         return $this->belongsTo(Agent::class);
+    }
+
+    /**
+     * The person behind this thread. Nullable: playground threads have none,
+     * and a thread whose customer profile was deleted keeps its transcript.
+     */
+    public function customer(): BelongsTo
+    {
+        return $this->belongsTo(Customer::class);
     }
 
     public function channel(): BelongsTo

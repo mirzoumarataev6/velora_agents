@@ -5,6 +5,7 @@ return [
         'dashboard' => 'Analytics',
         'agents' => 'Agents',
         'conversations' => 'Conversations',
+        'crm' => 'CRM',
         'leads' => 'Leads',
         'settings' => 'Settings',
         'logout' => 'Log out',
@@ -16,6 +17,13 @@ return [
 
     'index' => [
         'title' => 'Agents — Velora Agents',
+        /* Screen-reader names for the three counts on an agent card. They
+         * render as an icon and a number only; without these a reader
+         * hears "3 2 41" and learns nothing. */
+        'count' => ':count agent|:count agents',
+        'stat_knowledge' => 'knowledge sources',
+        'stat_channels' => 'channels',
+        'stat_conversations' => 'conversations',
         'heading' => 'Agents',
         'subheading' => 'Create AI agents and connect them to the channels your customers use.',
         'create' => 'Create agent',
@@ -118,6 +126,75 @@ return [
         'haggling_instructions_help' => 'In your own words: how to haggle, what to say, which products never get a discount, what to offer instead of one. This outranks the style preset above — but it cannot move the floor: a price below it still comes to you.',
         'haggling_instructions_placeholder' => "For example:\n• No discounts at all on new arrivals or Apple — offer instalments instead.\n• Regulars can be met halfway right away, but still check the price with me.\n• Offer free city delivery instead of a price cut.\n• Never say \"that's cheap\" — say what the price includes.",
         'haggle_floor_authority' => 'This floor is set here and nowhere else. A sentence in the instructions above ("approve anything over 3000") does not change it — those prices still come to you for approval.',
+        /* The labelled stepper and its side panel.
+         *
+         * `step_names` are what the five bare progress bars never said: they
+         * told an owner they were somewhere in five steps, and nothing at all
+         * about what the five steps were or what was still coming.
+         *
+         * `step_tips` fill the panel beside the form. They answer the
+         * questions a first-time owner actually has at each step, before they
+         * ask them — which is also what stopped this screen being a narrow
+         * card floating in the middle of an empty page. Three per step: enough
+         * to be useful, few enough to be read. */
+        /* The side panel summarizes the current step from the owner's inputs.
+         * An unset greeting is stated as unset, never shown as sample copy. */
+        'preview_title' => 'This step at a glance',
+        'preview_placeholder_name' => 'New assistant',
+        'preview_first_message' => 'First message to the customer',
+        'preview_step_1' => 'Agent name, description and tone',
+        'preview_step_2' => 'The rules and style you entered',
+        'preview_step_3' => 'Messages and what happens when there is no answer',
+        'preview_step_4' => 'Negotiation settings and discount limit',
+        'preview_step_5' => 'Review the settings before saving',
+        'preview_description_empty' => 'No description added yet.',
+        'preview_empty' => 'Not filled in — optional.',
+        'preview_greeting_empty' => 'No custom greeting set.',
+        'preview_greeting_set' => 'Greeting is set.',
+        'preview_haggling_on' => 'Negotiation enabled',
+        'preview_haggling_off' => 'Negotiation disabled',
+        'preview_floor_label' => 'Minimum price',
+        'preview_floor_help' => 'Share of the listed price. Below this limit, the assistant asks for your approval.',
+        'preview_name_missing' => 'Add a name on the first step.',
+        'preview_after_save' => 'Catalog and channels can be set up on the agent page after saving.',
+
+        'step_word' => 'Step',
+        'tips_title' => 'Tips',
+        'step_names' => [
+            1 => 'Business',
+            2 => 'Instructions',
+            3 => 'Replies',
+            4 => 'Haggling',
+            5 => 'Done',
+        ],
+        'step_tips' => [
+            1 => [
+                'The name is for you alone — it is how you find this agent in the list.',
+                'Describe the business the way you would explain it to a new hire on day one.',
+                'Tone is a quick preset. The next step lets you override it in your own words.',
+            ],
+            2 => [
+                'Rules are what the assistant must always do: how to greet, what to ask, when to fetch a human.',
+                'A system prompt is rarely needed. Start with rules — they are easier to read and edit.',
+                'Do not restate the catalogue or knowledge base; the assistant already sees them.',
+            ],
+            3 => [
+                'If you set a greeting, the customer sees it as the first message in a new conversation.',
+                'What the assistant does when it finds nothing is the important one: it decides whether it starts inventing.',
+                'Reply length is counted in characters. 600 is roughly a paragraph.',
+            ],
+            4 => [
+                'The price floor is a limit of authority. Below it the assistant always asks you.',
+                'Haggling instructions are about style, not numbers. The number lives only in the floor field.',
+                'You can turn this on later: haggling is not required to launch.',
+            ],
+            5 => [
+                'After creating it, connect a channel and upload a catalogue or knowledge base.',
+                'The playground lets you test answers without publishing anything.',
+                'Every setting stays editable at any time.',
+            ],
+        ],
+
         'back_button' => 'Back',
 
         'step5_heading' => 'Step 5 · Done',

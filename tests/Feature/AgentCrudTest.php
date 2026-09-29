@@ -215,9 +215,15 @@ class AgentCrudTest extends TestCase
 
         // It must render inside the step-2 panel, after step 2 begins and
         // before step 3 does.
+        //
+        // Anchored on the panels' own `x-show` rather than on the words
+        // "Шаг 2"/"Шаг 3": those used to be headings inside each panel and are
+        // now in the stepper at the top of the page, where they all appear
+        // before any panel and the ordering check would pass or fail for
+        // reasons that have nothing to do with where the field lives.
         $html = $response->getContent();
-        $step2Start = strpos($html, 'Шаг 2');
-        $step3Start = strpos($html, 'Шаг 3');
+        $step2Start = strpos($html, 'x-show="step === 2"');
+        $step3Start = strpos($html, 'x-show="step === 3"');
         $fieldPos = strpos($html, 'id="custom_system_prompt"');
 
         $this->assertNotFalse($step2Start);

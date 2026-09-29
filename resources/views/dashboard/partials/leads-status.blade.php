@@ -24,8 +24,8 @@
     ];
 @endphp
 
-<div class="flex h-full flex-col rounded-2xl border border-black/10 bg-white p-5 dark:border-white/10 dark:bg-white/5">
-    <h2 class="text-base font-semibold">{{ __('dashboard.leads_status.title') }}</h2>
+<div class="card flex h-full flex-col p-5">
+    <h2 class="section-head-title">{{ __('dashboard.leads_status.title') }}</h2>
     <p class="mt-1 text-xs text-muted dark:text-night-muted">{{ __('dashboard.leads_status.description') }}</p>
 
     @if ($leads['total'] === 0)
@@ -39,7 +39,7 @@
         {{-- One bar, split by share. Segments below 1.5% still get 1.5% so a
              single lead in a pile of two hundred is visible rather than
              mathematically present. --}}
-        <div class="mt-4 flex h-3 w-full overflow-hidden rounded-full bg-black/5 dark:bg-white/10">
+        <div class="mt-4 flex h-3 w-full overflow-hidden rounded-full bg-sunk dark:bg-night-raised">
             @foreach ($rows as $row)
                 @if ($row['count'] > 0)
                     <div class="{{ $tints[$row['status']] }} transition-all duration-slow ease-out"

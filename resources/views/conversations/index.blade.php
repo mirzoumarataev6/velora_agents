@@ -10,10 +10,14 @@
     renders exactly the same thing pre-scoped to that agent. Only the page
     heading is specific to this route.
 --}}
-<div class="mx-auto max-w-7xl">
-    <div>
-        <h1 class="font-display text-2xl font-semibold" data-i18n="conversations.index.heading">{{ __('conversations.index.heading') }}</h1>
-        <p class="mt-1 text-sm text-muted dark:text-night-muted" data-i18n="conversations.index.subheading">{{ __('conversations.index.subheading') }}</p>
+{{-- The width cap lives in layouts/dashboard now, once, for every page — and
+     the inbox is the page that most wants all of it. --}}
+<div>
+    <div class="page-header">
+        <div>
+            <h1 class="page-title" data-i18n="conversations.index.heading">{{ __('conversations.index.heading') }}</h1>
+            <p class="page-sub" data-i18n="conversations.index.subheading">{{ __('conversations.index.subheading') }}</p>
+        </div>
     </div>
 
     @include('conversations.partials.inbox', [

@@ -18,6 +18,25 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Brand mark cache-busting version
+    |--------------------------------------------------------------------------
+    |
+    | The V mark and lockup keep their filenames when the artwork changes
+    | (mark.webp, lockup-*.webp/png), and a browser caches those far more
+    | aggressively than the page that links them. Without a query string on
+    | every <img> that renders them, a visitor who loaded the app once keeps
+    | seeing whatever version of the mark was current then, on a URL that has
+    | since started serving different pixels. favicons.blade.php learned this
+    | the hard way; this is the same fix, one number for every place the mark
+    | appears, so it cannot go stale in one spot while the rest moves on.
+    |
+    | Bump it whenever the artwork under public/images/brand/gen changes.
+    |
+    */
+    'brand_mark_version' => 4,
+
+    /*
+    |--------------------------------------------------------------------------
     | Instagram (instagrapi) microservice
     |--------------------------------------------------------------------------
     |

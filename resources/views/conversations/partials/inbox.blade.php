@@ -55,15 +55,15 @@
         @foreach (['all', 'unread', 'needs_human', 'has_lead', 'rated_down', 'rated_up', 'closed'] as $key)
             <button type="button" @click="setStatus('{{ $key }}')"
                 :class="filters.status === '{{ $key }}'
-                    ? 'border-brand bg-brand/10 text-brand'
+                    ? 'border-brand bg-brand-circle text-brand-strong'
                     : 'border-black/10 text-muted hover:bg-black/5 dark:border-white/10 dark:text-night-muted dark:hover:bg-white/5'"
-                class="shrink-0 whitespace-nowrap rounded-full border px-2.5 py-1.5 text-xs font-medium transition-colors">
+                class="shrink-0 whitespace-nowrap rounded-full px-2.5 py-1.5 text-xs font-medium transition-colors">
                 <span data-i18n="conversations.filters.{{ $key }}">{{ __("conversations.filters.$key") }}</span>
             </button>
         @endforeach
 
         {{-- Separates "which conversations" from "narrow them down". --}}
-        <span aria-hidden="true" class="mx-0.5 h-5 w-px shrink-0 bg-black/10 dark:bg-white/10"></span>
+        <span aria-hidden="true" class="mx-0.5 h-5 w-px shrink-0 bg-sunk dark:bg-night-raised"></span>
 
         <div class="relative min-w-[7.5rem] flex-1 basis-40 sm:max-w-xs">
             <svg x-show="!searching" class="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted dark:text-night-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path stroke-linecap="round" d="M20 20l-3.5-3.5"/></svg>
@@ -73,17 +73,17 @@
                  button below also drops the matches and the auto-open key. --}}
             <input type="search" x-model="filters.q" @input.debounce.150ms="reload()" x-ref="search"
                 placeholder="{{ __('conversations.index.search_placeholder') }}" data-i18n-ph="conversations.index.search_placeholder"
-                class="field w-full rounded-xl py-1.5 pl-8 pr-7 text-xs [&::-webkit-search-cancel-button]:hidden [&::-webkit-search-decoration]:hidden" />
+                class="field w-full py-1.5 pl-8 pr-7 text-xs [&::-webkit-search-cancel-button]:hidden [&::-webkit-search-decoration]:hidden" />
             <button type="button" x-show="filters.q" x-cloak @click="clearSearch()"
                 aria-label="{{ __('conversations.search.clear') }}" data-i18n-al="conversations.search.clear"
-                class="absolute right-2 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center rounded-full text-muted transition-colors hover:text-brand dark:text-night-muted">
+                class="absolute right-2 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center rounded-full text-muted transition-colors hover:text-brand-strong dark:text-night-muted">
                 <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/></svg>
             </button>
         </div>
 
         {{-- Pointless when the whole view is already one agent. --}}
         @if (! $scopeAgent && $inboxAgents->count() > 1)
-            <select x-model="filters.agent" @change="reload()" class="field shrink-0 rounded-xl px-2 py-1.5 text-xs">
+            <select x-model="filters.agent" @change="reload()" class="field shrink-0 px-2 py-1.5 text-xs">
                 <option value="">{{ __('conversations.index.all_agents') }}</option>
                 @foreach ($inboxAgents as $agentOption)
                     <option value="{{ $agentOption->id }}">{{ $agentOption->name }}</option>
@@ -92,7 +92,7 @@
         @endif
 
         @if ($channelTypes->count() > 1)
-            <select x-model="filters.channel" @change="reload()" class="field shrink-0 rounded-xl px-2 py-1.5 text-xs">
+            <select x-model="filters.channel" @change="reload()" class="field shrink-0 px-2 py-1.5 text-xs">
                 <option value="">{{ __('conversations.index.all_channels') }}</option>
                 @foreach ($channelTypes as $type)
                     <option value="{{ $type }}">{{ __("agents.channels.$type.name") }}</option>
@@ -103,19 +103,19 @@
         {{-- Native date inputs carry a fixed intrinsic width, so they are the
              widest things here; an explicit width keeps the pair predictable. --}}
         <input type="date" x-model="filters.from" @change="reload()" aria-label="{{ __('conversations.index.date_from') }}" data-i18n-al="conversations.index.date_from"
-            class="field w-[8.25rem] shrink-0 rounded-xl px-2 py-1.5 text-xs" />
+            class="field w-[8.25rem] shrink-0 px-2 py-1.5 text-xs" />
         <input type="date" x-model="filters.to" @change="reload()" aria-label="{{ __('conversations.index.date_to') }}" data-i18n-al="conversations.index.date_to"
-            class="field w-[8.25rem] shrink-0 rounded-xl px-2 py-1.5 text-xs" />
+            class="field w-[8.25rem] shrink-0 px-2 py-1.5 text-xs" />
 
         <button type="button" x-show="hasFilters()" x-cloak @click="resetFilters()"
-            class="shrink-0 whitespace-nowrap rounded-xl px-2 py-1.5 text-xs font-medium text-muted transition-colors hover:text-brand dark:text-night-muted">
+            class="shrink-0 whitespace-nowrap rounded-xl px-2 py-1.5 text-xs font-medium text-muted transition-colors hover:text-brand-strong dark:text-night-muted">
             <span data-i18n="conversations.index.reset_filters">{{ __('conversations.index.reset_filters') }}</span>
         </button>
 
         {{-- Scoped to this agent when the tab is, since the count comes from
              the same filtered query the list does. --}}
         <span x-show="unreadTotal > 0" x-cloak
-            class="shrink-0 whitespace-nowrap rounded-full bg-brand/10 px-2.5 py-1 text-xs font-semibold text-brand">
+            class="badge badge-brand shrink-0">
             <span x-text="unreadTotal"></span> <span data-i18n="conversations.index.unread_badge">{{ __('conversations.index.unread_badge') }}</span>
         </span>
     </div>
@@ -131,17 +131,22 @@
 
         {{-- List pane --}}
         <div :class="openId && 'hidden lg:block'" class="min-w-0">
-            <div class="flex {{ $scopeAgent ? 'h-[calc(100vh_-_20rem)]' : 'h-[calc(100vh_-_11.5rem)]' }} min-h-[26rem] flex-col overflow-hidden rounded-2xl border border-black/10 bg-white dark:border-white/10 dark:bg-white/5">
+            <div class="card flex {{ $scopeAgent ? 'h-[calc(100vh_-_20rem)]' : 'h-[calc(100vh_-_11.5rem)]' }} min-h-[26rem] flex-col overflow-hidden">
 
                 {{-- Skeletons: only for the very first load, so a poll never blanks the list --}}
                 <template x-if="loading && conversations.length === 0">
                     <div class="divide-y divide-black/5 dark:divide-white/10">
+                        {{-- `.skeleton` rather than `animate-pulse`: a sweep
+                             reads as loading, where a whole block fading in
+                             and out reads as something broken and blinking.
+                             It is also the same skeleton every other pane in
+                             the product uses. --}}
                         <template x-for="i in 6" :key="i">
-                            <div class="flex animate-pulse gap-3 p-4">
-                                <div class="h-9 w-9 shrink-0 rounded-full bg-black/5 dark:bg-white/10"></div>
+                            <div class="flex gap-3 p-4">
+                                <div class="skeleton skeleton-circle h-9 w-9 shrink-0"></div>
                                 <div class="min-w-0 flex-1 space-y-2">
-                                    <div class="h-3 w-1/3 rounded bg-black/5 dark:bg-white/10"></div>
-                                    <div class="h-3 w-2/3 rounded bg-black/5 dark:bg-white/10"></div>
+                                    <div class="skeleton skeleton-text w-1/3"></div>
+                                    <div class="skeleton skeleton-text w-2/3"></div>
                                 </div>
                             </div>
                         </template>
@@ -150,7 +155,7 @@
 
                 <template x-if="!loading && conversations.length === 0">
                     <div class="flex flex-1 flex-col items-center justify-center px-6 py-16 text-center">
-                        <div class="flex h-14 w-14 items-center justify-center rounded-2xl bg-brand/10 text-brand">
+                        <div class="icon-circle icon-circle-lg">
                             <svg class="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8-1.06 0-2.08-.16-3.02-.46L3 21l1.5-4.5C3.55 15.1 3 13.6 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
                         </div>
                         {{-- A failed search says what was looked for; a failed
@@ -167,11 +172,11 @@
                 <div class="min-h-0 flex-1 divide-y divide-black/5 overflow-y-auto dark:divide-white/10" @scroll.debounce.150ms="maybeLoadMore($event.target)">
                     <template x-for="c in conversations" :key="c.id">
                         <button type="button" @click="open(c.id)"
-                            :class="openId === c.id ? 'bg-brand/5' : 'hover:bg-black/[0.03] dark:hover:bg-white/5'"
+                            :class="openId === c.id ? 'bg-azure-50' : 'hover:bg-black/[0.03] dark:hover:bg-white/5'"
                             class="flex w-full gap-3 p-4 text-left transition-colors">
                             {{-- Channel avatar --}}
                             <div class="relative shrink-0">
-                                <div class="flex h-9 w-9 items-center justify-center rounded-full bg-brand/10 text-sm font-semibold uppercase text-brand"
+                                <div class="icon-circle icon-circle-sm text-sm font-semibold uppercase"
                                     x-text="(c.customer || '?').slice(0, 1)"></div>
                                 <span class="absolute -bottom-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-white ring-2 ring-white dark:bg-night dark:ring-night">
                                     <span x-html="channelIcon(c.channel)" class="flex h-3 w-3 items-center justify-center"></span>
@@ -201,16 +206,16 @@
                                     {{-- Which agent answered is the whole point in the
                                          global inbox and pure noise in an agent's own tab. --}}
                                     @unless ($scopeAgent)
-                                        <span class="rounded-full bg-black/5 px-2 py-0.5 text-[10px] font-medium text-muted dark:bg-white/10 dark:text-night-muted" x-text="c.agent.name"></span>
+                                        <span class="badge badge-neutral" x-text="c.agent.name"></span>
                                     @endunless
-                                    <span x-show="c.status === 'human_takeover'" x-cloak class="rounded-full bg-warning/10 px-2 py-0.5 text-[10px] font-semibold text-warning" x-text="labels.status.human_takeover"></span>
-                                    <span x-show="c.status === 'closed'" x-cloak class="rounded-full bg-black/5 px-2 py-0.5 text-[10px] font-semibold text-muted dark:bg-white/10 dark:text-night-muted" x-text="labels.status.closed"></span>
-                                    <span x-show="c.leads_count > 0" x-cloak class="flex items-center gap-1 rounded-full bg-success/10 px-2 py-0.5 text-[10px] font-semibold text-success">
+                                    <span x-show="c.status === 'human_takeover'" x-cloak class="badge badge-warning" x-text="labels.status.human_takeover"></span>
+                                    <span x-show="c.status === 'closed'" x-cloak class="badge badge-neutral" x-text="labels.status.closed"></span>
+                                    <span x-show="c.leads_count > 0" x-cloak class="badge badge-success">
                                         <svg class="h-2.5 w-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
                                         <span x-text="c.leads_count"></span>
                                     </span>
                                     <span x-show="c.match_count > 1" x-cloak
-                                        class="rounded-full bg-brand/10 px-2 py-0.5 text-[10px] font-semibold text-brand"
+                                        class="badge badge-brand"
                                         x-text="labels.matchesInChat.replace(':count', c.match_count)"></span>
                                     <span x-show="c.unread" x-cloak class="ml-auto h-2 w-2 shrink-0 rounded-full bg-brand"></span>
                                 </div>
@@ -236,31 +241,56 @@
                  an !important on top, so the dark-mode rule can't out-specify
                  the active state. --}}
             <div class="h-10 w-1 rounded-full transition-colors"
-                :class="resizing ? 'bg-brand' : 'bg-black/10 group-hover:bg-brand/50 dark:bg-white/15'"></div>
+                :class="resizing ? 'bg-brand' : 'bg-black/10 group-hover:bg-azure-500 dark:bg-white/15'"></div>
         </div>
 
         {{-- Thread pane --}}
         <div :class="!openId && 'hidden lg:block'" class="min-w-0">
-            <div class="flex {{ $scopeAgent ? 'h-[calc(100vh_-_20rem)]' : 'h-[calc(100vh_-_11.5rem)]' }} min-h-[26rem] flex-col overflow-hidden rounded-2xl border border-black/10 bg-white dark:border-white/10 dark:bg-white/5">
+            <div class="card flex {{ $scopeAgent ? 'h-[calc(100vh_-_20rem)]' : 'h-[calc(100vh_-_11.5rem)]' }} min-h-[26rem] flex-col overflow-hidden">
 
+                {{-- THE UNOPENED STATE.
+
+                     This pane is two thirds of the inbox and, until a
+                     conversation is clicked, it was an icon and two lines of
+                     grey text floating in the middle of it — the single
+                     emptiest rectangle in the product.
+
+                     It still says the same thing, but the space underneath now
+                     carries what the reader would otherwise have to discover:
+                     what each filter above actually selects. Reference, not
+                     decoration — the filters are the only non-obvious part of
+                     this screen, and this is where someone is looking while
+                     they work out which one they want. --}}
                 <template x-if="!openId">
-                    <div class="flex flex-1 flex-col items-center justify-center px-6 text-center">
-                        <div class="flex h-14 w-14 items-center justify-center rounded-2xl bg-black/5 text-muted dark:bg-white/10 dark:text-night-muted">
-                            <svg class="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M17 8h2a2 2 0 012 2v6a2 2 0 01-2 2h-2v4l-4-4H9a1.994 1.994 0 01-1.414-.586m0 0L11 14h4a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2v4l1.586-1.586z"/></svg>
-                        </div>
-                        <h2 class="mt-4 text-base font-semibold" data-i18n="conversations.thread.placeholder_title">{{ __('conversations.thread.placeholder_title') }}</h2>
-                        <p class="mt-1.5 max-w-xs text-sm text-muted dark:text-night-muted" data-i18n="conversations.thread.placeholder_description">{{ __('conversations.thread.placeholder_description') }}</p>
+                    <div class="flex flex-1 flex-col items-center justify-center px-6 py-10 text-center">
+                        <span class="icon-circle icon-circle-lg" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path stroke-linecap="round" stroke-linejoin="round" d="M17 8h2a2 2 0 012 2v6a2 2 0 01-2 2h-2v4l-4-4H9a1.994 1.994 0 01-1.414-.586m0 0L11 14h4a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2v4l1.586-1.586z"/></svg>
+                        </span>
+                        <h2 class="empty-state-title mt-4" data-i18n="conversations.thread.placeholder_title">{{ __('conversations.thread.placeholder_title') }}</h2>
+                        <p class="empty-state-text max-w-sm" data-i18n="conversations.thread.placeholder_description">{{ __('conversations.thread.placeholder_description') }}</p>
+
+                        <dl class="mt-8 grid w-full max-w-lg grid-cols-1 gap-x-8 gap-y-3 text-left sm:grid-cols-2">
+                            @foreach (['needs_human', 'has_lead', 'rated_down', 'unread'] as $filterKey)
+                                <div class="rule flex items-start gap-2.5 pt-3">
+                                    <svg class="mt-0.5 h-4 w-4 shrink-0 text-faint" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M7 12h10M10 18h4"/></svg>
+                                    <div class="min-w-0">
+                                        <dt class="text-xs font-medium text-ink dark:text-night-ink" data-i18n="conversations.filters.{{ $filterKey }}">{{ __('conversations.filters.'.$filterKey) }}</dt>
+                                        <dd class="mt-0.5 text-xs leading-relaxed text-muted dark:text-night-muted" data-i18n="conversations.filter_help.{{ $filterKey }}">{{ __('conversations.filter_help.'.$filterKey) }}</dd>
+                                    </div>
+                                </div>
+                            @endforeach
+                        </dl>
                     </div>
                 </template>
 
                 <template x-if="openId">
                     <div class="flex min-h-0 flex-1 flex-col">
                         {{-- Thread header --}}
-                        <div class="flex shrink-0 flex-wrap items-center gap-2 border-b border-black/10 p-3 dark:border-white/10">
+                        <div class="flex shrink-0 flex-wrap items-center gap-2 border-b border-hairline p-3 dark:border-white/10">
                             {{-- Visible at every size: on mobile it goes back to the
                                  list, on desktop it deselects the thread — which is
                                  also what hands the nav rail its width back. --}}
-                            <button type="button" @click="close()" class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted transition-colors hover:bg-black/5 dark:text-night-muted dark:hover:bg-white/10" aria-label="{{ __('conversations.thread.back') }}" data-i18n-al="conversations.thread.back">
+                            <button type="button" @click="close()" class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted transition-colors hover:bg-sunk dark:text-night-muted dark:hover:bg-night-raised" aria-label="{{ __('conversations.thread.back') }}" data-i18n-al="conversations.thread.back">
                                 <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
                             </button>
                             <div class="min-w-0 flex-1">
@@ -275,17 +305,17 @@
 
                             {{-- Match stepper: only while a search is actually
                                  hitting something in this transcript. --}}
-                            <div x-show="matchIds.length > 0" x-cloak class="flex shrink-0 items-center gap-0.5 rounded-lg bg-brand/10 px-1 py-0.5">
+                            <div x-show="matchIds.length > 0" x-cloak class="badge badge-brand shrink-0">
                                 <button type="button" @click="prevMatch()"
                                     aria-label="{{ __('conversations.search.prev_match') }}" data-i18n-al="conversations.search.prev_match"
-                                    class="flex h-6 w-6 items-center justify-center rounded-md text-brand transition-colors hover:bg-brand/15">
+                                    class="flex h-6 w-6 items-center justify-center rounded-md text-brand-strong transition-colors hover:bg-brand/15">
                                     <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M18 15l-6-6-6 6"/></svg>
                                 </button>
-                                <span class="tnum px-1 text-[11px] font-semibold text-brand"
+                                <span class="tnum px-1 text-[11px] font-semibold text-brand-strong"
                                     x-text="(matchIndex + 1) + '/' + matchIds.length"></span>
                                 <button type="button" @click="nextMatch()"
                                     aria-label="{{ __('conversations.search.next_match') }}" data-i18n-al="conversations.search.next_match"
-                                    class="flex h-6 w-6 items-center justify-center rounded-md text-brand transition-colors hover:bg-brand/15">
+                                    class="flex h-6 w-6 items-center justify-center rounded-md text-brand-strong transition-colors hover:bg-brand/15">
                                     <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 9l6 6 6-6"/></svg>
                                 </button>
                             </div>
@@ -293,35 +323,35 @@
                             <div class="flex items-center gap-1.5">
                                 {{-- Already on the agent's page when scoped. --}}
                                 @unless ($scopeAgent)
-                                    <a :href="agentUrl(thread?.agent?.slug)" class="hidden rounded-lg px-2.5 py-1.5 text-xs font-medium text-muted transition-colors hover:text-brand dark:text-night-muted sm:block"
+                                    <a :href="agentUrl(thread?.agent?.slug)" class="hidden rounded-lg px-2.5 py-1.5 text-xs font-medium text-muted transition-colors hover:text-brand-strong dark:text-night-muted sm:block"
                                         data-i18n="conversations.thread.open_agent">{{ __('conversations.thread.open_agent') }}</a>
                                 @endunless
 
                                 <button type="button" x-show="thread?.status !== 'human_takeover'" @click="setStatusFor('human_takeover')"
-                                    class="rounded-lg border border-black/10 px-2.5 py-1.5 text-xs font-semibold transition-colors hover:border-brand/40 hover:text-brand dark:border-white/10"
+                                    class="rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors hover:border-brand/40 hover:text-brand-strong"
                                     data-i18n="conversations.thread.take_over">{{ __('conversations.thread.take_over') }}</button>
 
                                 <button type="button" x-show="thread?.status === 'human_takeover'" x-cloak @click="setStatusFor('ai')"
-                                    class="rounded-lg border border-black/10 px-2.5 py-1.5 text-xs font-semibold transition-colors hover:border-brand/40 hover:text-brand dark:border-white/10"
+                                    class="rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors hover:border-brand/40 hover:text-brand-strong"
                                     data-i18n="conversations.thread.hand_back">{{ __('conversations.thread.hand_back') }}</button>
 
                                 <button type="button" x-show="thread?.status !== 'closed'" @click="setStatusFor('closed')"
-                                    class="hidden rounded-lg border border-black/10 px-2.5 py-1.5 text-xs font-semibold text-muted transition-colors hover:border-danger/40 hover:text-danger dark:border-white/10 dark:text-night-muted sm:block"
+                                    class="hidden rounded-lg px-2.5 py-1.5 text-xs font-semibold text-muted transition-colors hover:border-danger/40 hover:text-danger dark:text-night-muted sm:block"
                                     data-i18n="conversations.thread.close">{{ __('conversations.thread.close') }}</button>
 
                                 <button type="button" x-show="thread?.status === 'closed'" x-cloak @click="setStatusFor('ai')"
-                                    class="rounded-lg border border-black/10 px-2.5 py-1.5 text-xs font-semibold transition-colors hover:border-brand/40 hover:text-brand dark:border-white/10"
+                                    class="rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors hover:border-brand/40 hover:text-brand-strong"
                                     data-i18n="conversations.thread.reopen">{{ __('conversations.thread.reopen') }}</button>
                             </div>
                         </div>
 
                         {{-- Captured leads --}}
                         <template x-if="leads.length > 0">
-                            <div class="shrink-0 border-b border-black/10 bg-success/5 px-4 py-2.5 dark:border-white/10">
+                            <div class="badge badge-success shrink-0 border-b border-hairline dark:border-white/10">
                                 <div class="flex flex-wrap items-center gap-2">
                                     <span class="text-xs font-semibold text-success" data-i18n="conversations.thread.leads_heading">{{ __('conversations.thread.leads_heading') }}</span>
                                     <template x-for="lead in leads" :key="lead.id">
-                                        <span class="rounded-full bg-white px-2.5 py-0.5 text-[11px] font-medium dark:bg-white/10">
+                                        <span class="rounded-full bg-white px-2.5 py-0.5 text-[11px] font-medium dark:bg-night-raised">
                                             <span x-text="lead.customer_name || lead.contact || '—'"></span>
                                             <span x-show="lead.items" class="text-muted dark:text-night-muted"> · <span x-text="lead.items"></span></span>
                                         </span>
@@ -336,10 +366,12 @@
                         <div class="min-h-0 flex-1 space-y-3 overflow-y-auto p-4" x-ref="transcript">
                             <template x-if="threadLoading">
                                 <div class="space-y-3">
+                                    {{-- Bubble-shaped, alternating sides, so
+                                         the transcript's real shape is already
+                                         on screen when the messages land and
+                                         nothing jumps. --}}
                                     <template x-for="i in 4" :key="i">
-                                        <div class="animate-pulse rounded-2xl bg-black/5 p-4 dark:bg-white/10" :class="i % 2 === 0 ? 'ml-12' : 'mr-12'">
-                                            <div class="h-3 w-2/3 rounded bg-black/10 dark:bg-white/10"></div>
-                                        </div>
+                                        <div class="skeleton h-14 rounded-2xl" :class="i % 2 === 0 ? 'ml-12' : 'mr-12'"></div>
                                     </template>
                                 </div>
                             </template>
@@ -355,8 +387,8 @@
                                          itself — message content is whatever a
                                          stranger typed and is never trusted. --}}
                                     <div :class="{
-                                            'bg-black/[0.04] dark:bg-white/10': m.role === 'user',
-                                            'bg-brand/10': m.role === 'assistant',
+                                            'bg-sunk dark:bg-night-raised': m.role === 'user',
+                                            'bg-brand-circle': m.role === 'assistant',
                                             'bg-brand text-on-accent': m.role === 'operator',
                                             'bg-warning/10 text-warning': m.role === 'system',
                                             'ring-2 ring-brand ring-offset-2 ring-offset-white dark:ring-offset-night': isActiveMatch(m.id),
@@ -377,7 +409,7 @@
                                          bubble above already holds the transcript, so this
                                          only has to say where the words came from. --}}
                                     <div x-show="m.source_type === 'voice'" x-cloak
-                                        class="mt-1 flex w-fit items-center gap-1 rounded-full bg-brand/10 px-2 py-0.5 text-[10px] font-medium text-brand">
+                                        class="badge badge-brand mt-1 w-fit">
                                         <span aria-hidden="true">🎤</span>
                                         <span data-i18n="conversations.thread.voice_note">{{ __('conversations.thread.voice_note') }}</span>
                                         <span x-show="m.voice_duration" x-text="'· ' + voiceLength(m.voice_duration)" class="tnum"></span>
@@ -405,7 +437,7 @@
                                         <span x-text="fullTime(m.created_at)" class="tnum"></span>
                                         <button type="button" x-show="m.chunks && m.chunks.length" x-cloak
                                             @click="expanded === m.id ? expanded = null : expanded = m.id"
-                                            class="font-medium text-brand hover:underline">
+                                            class="font-medium text-brand-strong hover:underline">
                                             <span data-i18n="conversations.thread.knowledge_used">{{ __('conversations.thread.knowledge_used') }}</span>
                                             (<span x-text="m.chunks.length"></span>)
                                         </button>
@@ -414,11 +446,11 @@
                                     {{-- Which knowledge chunks fed this answer --}}
                                     <div x-show="expanded === m.id" x-cloak x-transition.opacity.duration.150ms class="mt-1.5 w-full max-w-[85%] space-y-1.5">
                                         <template x-for="chunk in m.chunks" :key="chunk.source + chunk.score">
-                                            <div class="rounded-xl border border-black/10 bg-paper p-2.5 text-[11px] dark:border-white/10 dark:bg-white/5">
+                                            <div class="card p-2.5 text-[11px]">
                                                 <div class="flex items-center justify-between gap-2">
                                                     <span class="truncate font-semibold" x-text="chunk.source || '—'"></span>
                                                     <span class="flex shrink-0 items-center gap-1.5">
-                                                        <span x-show="!chunk.confident" x-cloak class="rounded-full bg-warning/10 px-1.5 text-[10px] font-medium text-warning" x-text="labels.knowledgeUnconfirmed"></span>
+                                                        <span x-show="!chunk.confident" x-cloak class="badge badge-warning" x-text="labels.knowledgeUnconfirmed"></span>
                                                         <span class="tnum text-muted dark:text-night-muted" x-text="chunk.score"></span>
                                                     </span>
                                                 </div>
@@ -431,7 +463,7 @@
                         </div>
 
                         {{-- Composer --}}
-                        <div class="shrink-0 border-t border-black/10 p-3 dark:border-white/10">
+                        <div class="shrink-0 border-t border-hairline p-3 dark:border-white/10">
                             <template x-if="thread && !thread.can_reply">
                                 <p class="px-1 py-2 text-xs text-muted dark:text-night-muted" data-i18n="conversations.thread.no_channel">{{ __('conversations.thread.no_channel') }}</p>
                             </template>
@@ -440,9 +472,9 @@
                                     <textarea x-model="draft" rows="1" @keydown.enter.exact.prevent="send()"
                                         @input="$el.style.height = 'auto'; $el.style.height = Math.min($el.scrollHeight, 160) + 'px'"
                                         placeholder="{{ __('conversations.thread.reply_placeholder') }}" data-i18n-ph="conversations.thread.reply_placeholder"
-                                        class="field max-h-40 min-h-[2.5rem] flex-1 resize-none rounded-xl px-3 py-2 text-sm"></textarea>
+                                        class="field max-h-40 min-h-[2.5rem] flex-1 resize-none px-3 py-2 text-sm"></textarea>
                                     <button type="submit" :disabled="sending || !draft.trim()"
-                                        class="flex h-10 shrink-0 items-center gap-2 rounded-xl bg-brand px-4 text-sm font-semibold text-on-accent transition-all hover:-translate-y-0.5 hover:bg-brand-hover disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0">
+                                        class="btn btn-primary h-10 shrink-0 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0">
                                         <span x-show="!sending" data-i18n="conversations.thread.send">{{ __('conversations.thread.send') }}</span>
                                         <span x-show="sending" x-cloak class="spinner h-4 w-4"></span>
                                     </button>

@@ -13,8 +13,8 @@
     $agents = $metrics['agent_comparison'];
 @endphp
 
-<div class="flex h-full flex-col rounded-2xl border border-black/10 bg-white p-5 dark:border-white/10 dark:bg-white/5">
-    <h2 class="text-base font-semibold">{{ __('dashboard.agents_compare.title') }}</h2>
+<div class="card flex h-full flex-col p-5">
+    <h2 class="section-head-title">{{ __('dashboard.agents_compare.title') }}</h2>
     <p class="mt-1 text-xs text-muted dark:text-night-muted">{{ __('dashboard.agents_compare.description') }}</p>
 
     <div class="mt-5 space-y-3.5">
@@ -25,10 +25,10 @@
                     <span class="shrink-0 text-xs text-muted dark:text-night-muted">
                         <span class="tnum font-medium text-ink dark:text-night-ink">{{ __('dashboard.agents_compare.messages', ['count' => $agent['messages']]) }}</span>
                         · {{ __('dashboard.agents_compare.leads', ['count' => $agent['leads']]) }}
-                        · <span class="tnum font-semibold text-brand">{{ __('dashboard.agents_compare.share', ['percent' => $agent['share']]) }}</span>
+                        · <span class="tnum font-semibold text-brand-strong">{{ __('dashboard.agents_compare.share', ['percent' => $agent['share']]) }}</span>
                     </span>
                 </div>
-                <div class="mt-1.5 h-2 overflow-hidden rounded-full bg-black/5 dark:bg-white/10">
+                <div class="mt-1.5 h-2 overflow-hidden rounded-full bg-sunk dark:bg-night-raised">
                     {{-- A share of the TOTAL across every agent, not of the
                          busiest one — this is the load-balance question
                          ("who's carrying how much of the whole"), so the bars

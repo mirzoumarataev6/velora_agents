@@ -22,6 +22,15 @@
    =================================================================== */
 @import './palette.generated.css';
 
+/* THE TYPEFACE — Onest 2.001, self-hosted.
+   The @font-face declarations are NOT here. They live in
+   resources/views/partials/fonts.blade.php, beside the preload links that
+   point at the same files, because the landing page ships no Tailwind and so
+   never loads this stylesheet — it was preloading three woff2 that nothing
+   ever claimed, and rendering the whole page in a system fallback. One
+   partial, included by every layout, is the only arrangement where the faces
+   and the preloads cannot drift apart. See that file for the full rationale. */
+
 @theme {
     /* Motion tokens are behaviour, not palette, so they stay hand-written. */
     --animate-float: float 6s ease-in-out infinite;
@@ -47,10 +56,115 @@
     }
 }
 
-/* Base typography for the whole product. Geist carries body and UI: dense and
-   even, with the tabular figures keeping dashboard numbers from shifting as
-   they update, and the tightened default tracking is what makes it read as
-   designed rather than as a browser default. */
+/* Base typography for the whole product. Onest carries everything — headings,
+   body, UI and the KPI figures — with the tightened default tracking that makes
+   it read as designed rather than as a browser default. */
+
+/* No elastic/rubber-band overscroll anywhere in the product. This is a
+   desktop web app; the bounce past the top or bottom of a page (or of an
+   inner scroll panel — the sidebar nav, the kanban board's columns and its
+   horizontal strip, the inbox, a customer's message timeline) reads as a
+   mobile browser quirk, not a deliberate effect, and nothing here is built to
+   rely on it. `none` rather than `contain`: `contain` still stops SCROLL
+   CHAINING to the parent but leaves the glow/bounce visuals in some browsers,
+   which is exactly the motion being removed here. */
+html,
+body {
+    overscroll-behavior: none;
+}
+
+/* The same, for every inner scroll panel rather than one file at a time.
+   Tailwind's own overflow-y-auto / overflow-x-auto utilities are the marker
+   for "this element scrolls" everywhere in the product (the sidebar nav, the
+   kanban board's columns and its horizontal strip, the inbox list and
+   transcript, a customer's message timeline, the lead bell, table scrollers,
+   …) so hanging the rule off those two classes catches all of them — present
+   and future — without hunting down and annotating each container by hand.
+   `contain` here, not `none`: an inner panel SHOULD still let its own content
+   refuse to overscroll, it just must not hand the bounce up to the page
+   behind it, which is what chaining un-contained would do. */
+.overflow-y-auto,
+.overflow-x-auto {
+    overscroll-behavior: contain;
+}
+
+/* The document is the CRM's only vertical scroll region. The list must grow
+   with the page so the mouse wheel never gets trapped in a nested scroller. */
+.crm-deals-scroll {
+    max-height: none;
+    overflow-x: auto;
+    /* `visible` computes to `auto` beside overflow-x:auto, which creates
+       exactly the nested vertical scroller this panel must not have. */
+    overflow-y: clip;
+    scrollbar-gutter: auto;
+    overscroll-behavior: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-brand) transparent;
+}
+.crm-deals-scroll::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+.crm-deals-scroll::-webkit-scrollbar-track {
+    background: transparent;
+    border-radius: 999px;
+}
+.crm-deals-scroll::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--color-brand) 48%, transparent);
+    border: 3px solid transparent;
+    background-clip: padding-box;
+    border-radius: 999px;
+}
+.crm-deals-scroll::-webkit-scrollbar-thumb:hover {
+    background: var(--color-brand);
+}
+.crm-deals-scroll thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--color-surface);
+}
+.dark .crm-deals-scroll {
+    scrollbar-color: var(--color-brand-light) var(--color-night-card);
+}
+.dark .crm-deals-scroll::-webkit-scrollbar-track,
+.dark .crm-deals-scroll::-webkit-scrollbar-thumb {
+    border-color: transparent;
+}
+.dark .crm-deals-scroll::-webkit-scrollbar-track {
+    background: transparent;
+}
+.dark .crm-deals-scroll thead th {
+    background: var(--color-night-card);
+}
+
+/* Secondary analytics remain available without competing with the primary
+   numbers and next action on the first screen. */
+.analytics-more-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.5rem;
+    padding: 1rem 1.25rem;
+    border: 1px solid var(--color-hairline);
+    border-radius: 1rem;
+    background: var(--color-surface);
+    cursor: pointer;
+    list-style: none;
+    color: var(--color-ink);
+    transition: border-color .18s ease, background-color .18s ease;
+}
+.analytics-more-toggle::-webkit-details-marker { display: none; }
+.analytics-more-toggle:hover { border-color: var(--color-brand-light); background: var(--color-azure-50); }
+.analytics-more-toggle:focus-visible { outline: 3px solid var(--color-brand-light); outline-offset: 3px; }
+.analytics-more-toggle strong { display: block; font-size: 1rem; font-weight: 600; }
+.analytics-more-description { display: block; margin-top: .2rem; font-size: .875rem; color: var(--color-muted); }
+.analytics-more-toggle svg { width: 1.25rem; height: 1.25rem; flex: none; color: var(--color-brand); transition: transform .18s ease; }
+.analytics-more[open] .analytics-more-toggle svg { transform: rotate(180deg); }
+.dark .analytics-more-toggle { border-color: var(--color-night-raised); background: var(--color-night-card); color: var(--color-night-ink); }
+.dark .analytics-more-toggle:hover { border-color: var(--color-brand-light); background: var(--color-night-raised); }
+.dark .analytics-more-description { color: var(--color-night-muted); }
+
 body {
     font-family: theme(--font-sans);
     font-size: var(--text-body);
@@ -61,29 +175,27 @@ body {
     text-rendering: optimizeLegibility;
 }
 
-/* THE TWO VOICES.
+/* ONE VOICE.
  *
- * Serif for the display range — page titles, section titles, the hero, big
- * numbers. Sans for everything else, deliberately: h3/h4 are component titles
- * (card headers, panel labels) and sit close to body text, where a serif at
- * 18px starts costing readability instead of adding character. That split is
- * the whole system; it is why `font-display` resolves to the serif and why
- * nothing here touches h3, h4, or any UI class.
+ * The terracotta scheme ran a serif across the display range and a sans
+ * everywhere else. The Eskhata reference has no serif anywhere: headings, the
+ * balance, the section titles and the body are one face, and hierarchy is
+ * carried by weight and size alone. So `--font-display` now resolves to the
+ * same stack as `--font-sans`, and this rule is left in place only for the
+ * figure treatment it also sets.
  *
  * Element selectors rather than a utility so a heading is in the right voice by
- * default — a view that forgets a class still gets the system. */
+ * default — a view that forgets a class still gets the system.
+ *
+ * Figures in the display voice — balances, counters, stat tiles — are set
+ * lining and tabular: tabular keeps a column from jittering as it updates,
+ * which matters more here than anywhere, because the reference's whole
+ * hierarchy hangs on one big number per card.
+ */
 h1,
 h2,
 .font-display {
     font-family: theme(--font-display);
-    /* The sans is antialiased to keep 13px UI crisp; the serif wants the
-       extra weight back at display sizes or it goes spindly on macOS. */
-    -webkit-font-smoothing: auto;
-    -moz-osx-font-smoothing: auto;
-    /* Figures in the display voice — prices, counters, stat tiles — are set
-       lining and tabular. A book serif's default figures can sit below the cap
-       line, which reads as a rendering fault in a price, and tabular keeps a
-       column from jittering as it updates. */
     font-variant-numeric: lining-nums tabular-nums;
     font-feature-settings:
         'lnum' 1,
@@ -97,10 +209,33 @@ h2,
     font-feature-settings: 'tnum' 1;
 }
 
-/* Only upright weights of Inter are shipped, so a bare <em> would render a
-   synthesised oblique — exactly the cheap tell this redesign is trying to
-   remove. Emphasis is weight and colour instead. (The landing's italic accent
-   is a real serif family of its own, not a slanted Inter.) */
+/* THE WEIGHT CEILING — 600, everywhere, no exceptions.
+ *
+ * The brief is explicit: body 400, labels and buttons 500, headings and KPI
+ * figures 600, never 700+. The last pass ran headings and numbers at 700 and
+ * 800 and that is most of why it read chunky and dated.
+ *
+ * Only three weights are shipped, so a `font-bold` (700) or `font-extrabold`
+ * (800) left behind in a view would not render as 700 — the browser would
+ * SYNTHESISE it by smearing the 600 outlines, which looks worse than either
+ * real weight. Rather than hunt every one of them down across thirty-odd
+ * views, the utilities are re-pointed at 600 here. The ceiling is then a
+ * property of the system rather than of anyone's diligence.
+ *
+ * `!important` is needed because these are Tailwind utilities and would
+ * otherwise win on specificity order; this is the one place the codebase uses
+ * it, and it is buying a guarantee rather than patching a conflict. */
+.font-bold,
+.font-extrabold,
+.font-black,
+strong,
+b {
+    font-weight: 600 !important;
+}
+
+/* Only upright weights are shipped, so a bare <em> would render a synthesised
+   oblique — exactly the cheap tell this redesign is trying to remove. Emphasis
+   is weight and colour instead. */
 em,
 i {
     font-style: normal;
@@ -155,11 +290,19 @@ i {
    stack of Tailwind `focus:`/`dark:focus:` utilities, whose source-order
    ambiguity was turning focused inputs white-on-white in dark mode. Apply
    `.field` to every text input, textarea, and select; keep layout utilities
-   (w-full, px-*, rounded-*, pl-*) alongside it. */
+   (w-full, px-*, pl-*) alongside it.
+
+   The reference draws no hard border on a control. An input is a soft grey-blue
+   WELL — the same `sunk` fill the rest of the flat surface uses — with a 12px
+   radius and a 1px border of the same colour as the fill, so the box keeps its
+   exact metrics (swapping the border for none would shift every control by 2px)
+   while reading as fill-only. Focus is where the blue arrives: the field goes
+   white, the border becomes the accent, and a 3px halo confirms it. */
 .field {
-    background-color: var(--color-surface);
+    background-color: var(--color-sunk);
     color: var(--color-ink);
-    border: 1px solid rgba(0, 0, 0, 0.1);
+    border: 1px solid var(--color-sunk);
+    border-radius: var(--radius-md);
     caret-color: var(--color-brand);
     outline: none;
     transition:
@@ -168,28 +311,46 @@ i {
         box-shadow 0.2s ease;
 }
 .field::placeholder {
-    color: color-mix(in srgb, var(--color-muted) 72%, transparent);
+    color: var(--color-faint);
     opacity: 1;
 }
+.field:hover:not(:focus) {
+    background-color: var(--color-hairline);
+    border-color: var(--color-hairline);
+}
 .field:focus {
-    border-color: var(--color-brand);
+    border-color: var(--color-brand-strong);
     background-color: var(--color-surface);
-    /* Warm focus ring — the same halo used on buttons and links. */
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-brand) 28%, transparent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-brand-strong) 22%, transparent);
+}
+.field:disabled {
+    color: var(--color-faint);
+    cursor: not-allowed;
+    opacity: 0.7;
+}
+/* A control that is genuinely invalid keeps the same shape and only changes
+   hue, so the form does not reflow as the user types. */
+.field[aria-invalid='true'] {
+    border-color: var(--color-danger);
+    background-color: color-mix(in srgb, var(--color-danger) 6%, var(--color-surface));
 }
 .dark .field {
     background-color: var(--color-field-dark);
     color: var(--color-night-ink);
-    border-color: rgba(255, 255, 255, 0.12);
+    border-color: var(--color-field-dark);
 }
 .dark .field::placeholder {
-    color: color-mix(in srgb, var(--color-night-muted) 78%, transparent);
+    color: var(--color-night-muted);
+}
+.dark .field:hover:not(:focus) {
+    background-color: var(--color-night-raised);
+    border-color: var(--color-night-raised);
 }
 .dark .field:focus {
-    /* The base orange is close in value to warm charcoal; the lighter step reads. */
+    /* azure-600 is close in value to the night canvas; the lighter step reads. */
     border-color: var(--color-brand-light);
     background-color: var(--color-night-soft);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-brand-light) 30%, transparent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-brand-light) 26%, transparent);
 }
 /* Belt-and-braces for the option popup on the rare platform that ignores
    color-scheme (older Chromium on Windows). */
@@ -198,10 +359,25 @@ i {
     color: var(--color-night-ink);
 }
 
-/* Kept for the views that use it as a utility; the family comes from the rule
-   above, this only carries the optical tracking. */
+/* A checkbox or radio is the one control that keeps a visible outline, because
+   a fill-only box at 16px is indistinguishable from a blank one. It picks up
+   the accent when checked, which `accent-color` does natively and correctly in
+   both themes. */
+.field-check {
+    accent-color: var(--color-brand-strong);
+    border-radius: var(--radius-xs);
+}
+.dark .field-check {
+    accent-color: var(--color-brand-light);
+}
+
+/* Kept for the views that use it as a utility. The family is no longer a
+   distinction (one face now carries everything), so what this contributes is
+   the display treatment: the tight optical tracking and the weight that makes a
+   number read as a headline figure rather than as body copy. */
 .font-display {
-    letter-spacing: -0.012em;
+    letter-spacing: -0.02em;
+    font-weight: 600;
 }
 
 /* ===================================================================
@@ -213,7 +389,7 @@ i {
    landing — follows the palette automatically.
    =================================================================== */
 
-/* Warm selection instead of the browser default blue. */
+/* Selection in the accent, at a weight that keeps the ink readable through it. */
 ::selection {
     background: color-mix(in srgb, var(--color-brand) 26%, transparent);
     color: var(--color-ink);
@@ -226,9 +402,10 @@ i {
 /* One focus treatment for the entire product. `:focus-visible` (not `:focus`)
    so a mouse click doesn't leave a ring behind, only keyboard navigation.
 
-   The ring is `brand-ring` (ember-600), NOT the identity terracotta: WCAG 2.2
-   sets a 3:1 floor on non-text UI, and ember-500 measures 2.78:1 against the
-   paper canvas — it fails on the page behind it. ember-600 is 3.70:1 there. */
+   The ring is `brand-ring` (azure-600), NOT the identity blue: WCAG 2.2 sets a
+   3:1 floor on non-text UI, and azure-500 measures 5.42:1 against the paper
+   canvas while azure-600 measures 6.33:1 — both clear it, and the deeper one
+   reads as deliberate against a surface this light. */
 :where(a, button, summary, [role='button'], [tabindex]:not([tabindex='-1'])):focus-visible {
     outline: 2px solid var(--color-brand-ring);
     outline-offset: 2px;
@@ -240,16 +417,41 @@ i {
 
 /* Accent text, dark mode.
  *
- * `text-brand` is ember-500, tuned for a light surface — it measures 3.85:1 on
- * the night canvas, which is fine for a large label and thin for a 13px one.
- * ember-400 is the dark-mode accent the system already defines (7.37:1 on a
- * card), so the swap happens once here rather than asking every sidebar link,
- * alert and empty state to remember `dark:text-brand-light`.
+ * `text-brand` is azure-500, tuned for a light surface — it measures 2.24:1 on
+ * the night canvas, which is unreadable there. azure-400 is the dark-mode
+ * accent the system already defines (7.80:1 on the canvas), so the swap happens
+ * once here rather than asking every sidebar link, alert and empty state to
+ * remember `dark:text-brand-light`.
  *
  * Fills are untouched: this is about accent text ON a dark surface, not about
  * text on an accent surface — that one is `on-accent`, and it is light. */
 .dark .text-brand {
     color: var(--color-brand-light);
+}
+
+/* The same swap for the deep accent, and for the two sampled tints.
+ *
+ * The re-skin moved accent text and icon strokes from `text-brand` (azure-500,
+ * the identity) to `text-brand-strong` (azure-600, what the reference actually
+ * samples on every outline icon and link), and moved accent fills from alpha
+ * mixes to the sampled `brand-circle` / `brand-tint`. All four are tuned for a
+ * light surface and are wrong on the night canvas — azure-600 measures 1.72:1
+ * there, and a tint that light is a white rectangle.
+ *
+ * Doing it here rather than at 100-odd call sites is the same decision as the
+ * rule above: a dark mode with three illegible labels is exactly what happens
+ * when every view is asked to remember its own `dark:` variant. */
+.dark .text-brand-strong {
+    color: var(--color-brand-light);
+}
+.dark .bg-brand-circle {
+    background-color: color-mix(in srgb, var(--color-azure-900) 60%, var(--color-night-card));
+}
+.dark .bg-brand-tint {
+    background-color: color-mix(in srgb, var(--color-azure-900) 55%, var(--color-night-card));
+}
+.dark .bg-azure-50 {
+    background-color: var(--color-night-raised);
 }
 
 /* Semantic text, dark mode.
@@ -277,17 +479,17 @@ i {
 }
 
 /* Frosted panel for anything floating over content — dropdowns, the sticky
-   header, the notification popover. The saturate() keeps the warm background
-   warm instead of letting the blur wash it grey. */
+   header, the notification popover. On a flat surface the blur is most of what
+   separates floating material from the page, so it is stronger here than the
+   hairline it replaces. */
 .glass {
-    background: color-mix(in srgb, var(--color-surface) 72%, transparent);
+    background: color-mix(in srgb, var(--color-surface) 82%, transparent);
     backdrop-filter: blur(20px) saturate(180%);
     -webkit-backdrop-filter: blur(20px) saturate(180%);
-    border: 1px solid color-mix(in srgb, var(--color-ink) 8%, transparent);
+    border: none;
 }
 .dark .glass {
-    background: color-mix(in srgb, var(--color-night) 70%, transparent);
-    border-color: color-mix(in srgb, var(--color-night-ink) 12%, transparent);
+    background: color-mix(in srgb, var(--color-night) 80%, transparent);
 }
 
 /* DEPRECATED aliases for the previous shadow helpers, re-pointed at the new
@@ -311,7 +513,8 @@ i {
         0 28px 56px -28px rgba(0, 0, 0, 0.9);
 }
 
-/* Ember glow for primary actions. */
+/* Accent glow. The flat surface has no use for this, so it survives only for
+   the landing's hero CTA, which is deliberately the one lit object on the page. */
 .glow-warm {
     box-shadow: var(--shadow-glow-ember);
 }
@@ -319,12 +522,21 @@ i {
     box-shadow: var(--shadow-glow-ember-lg);
 }
 
-/* Warm scrollbars, so the chrome around the app matches the app. */
+/* Scrollbars in the palette, so the chrome around the app matches the app. */
 * {
     scrollbar-color: var(--color-hairline) transparent;
 }
 .dark * {
     scrollbar-color: var(--color-night-raised) transparent;
+}
+/* The viewport scrollbar is the only vertical scrollbar on the CRM board.
+   Give it the brand accent so it remains easy to spot in either theme. */
+html {
+    scrollbar-color: var(--color-brand) transparent;
+    scrollbar-width: thin;
+}
+html.dark {
+    scrollbar-color: var(--color-brand-light) transparent;
 }
 
 /* Scroll-reveal: one-shot fade + slide-up, triggered via IntersectionObserver
@@ -375,15 +587,19 @@ i {
     }
 }
 
-/* Cards lift very slightly under the cursor. Small enough that it registers as
-   responsiveness rather than as an effect. */
-.stat-card {
-    transition:
-        box-shadow 0.2s ease,
-        transform 0.2s ease;
-}
+/* Cards acknowledge the cursor. On the terracotta scheme that was a 2px lift
+   plus a shadow; on a flat surface a shadow is exactly the thing being removed,
+   and a lift without one reads as a glitch. So the feedback is a tint instead —
+   the card warms very slightly toward the accent wash, which is the same move
+   the reference's pressed list rows make. */
+/* A KPI tile's own hover. The lift and the deeper shadow come from `.card`
+   (see `.card-lift`); what this adds is the accent tint, so the tile the
+   cursor is over is unmistakable in a row of five. */
 .stat-card:hover {
-    transform: translateY(-2px);
+    background-color: var(--color-azure-50);
+}
+.dark .stat-card:hover {
+    background-color: var(--color-night-raised);
 }
 
 /* A number mid-count-up. See resources/js/app.js — the class is added for the
@@ -590,6 +806,26 @@ i {
         animation: none;
         opacity: 0.6;
     }
+    /* The new motion, all of it, off. A chart that draws itself and a shimmer
+       that sweeps are exactly the kinds of thing this query exists for. */
+    .chart-animate .chart-line,
+    .chart-animate .chart-area,
+    .chart-animate .chart-dot {
+        animation: none;
+        stroke-dashoffset: 0;
+        opacity: 1;
+    }
+    .skeleton::after {
+        animation: none;
+    }
+    .card,
+    .card-lift:hover,
+    a.card:hover,
+    button.card:hover {
+        transition: none;
+        transform: none;
+    }
+
     /* The live dot stays — it is a status mark, and removing it would remove
        information. It just stops moving. */
     .pulse-ring {
@@ -606,5 +842,1619 @@ i {
        number caught mid-animation when the setting changes. */
     .counting {
         opacity: 1;
+    }
+}
+
+/* ===================================================================
+   THE ESKHATA COMPONENT LAYER
+
+   Every recurring element in the product, in the flat banking-app language the
+   reference screenshots use. These live in `@layer components` on purpose: a
+   Tailwind utility written next to one of these classes in a view must be able
+   to override it (`class="btn btn-primary rounded-pill"`), and an unlayered
+   rule would beat the utility instead.
+
+   The rules of the language, so a new component can be written without going
+   back to the screenshots:
+
+     1. A surface is a fill, never a stroke. No card border, no card shadow.
+        Separation comes from the gap between cards and from the one-step
+        difference between the grey canvas and white.
+     2. Radius is 20px for a card, 14px for a button, 12px for a control.
+        Measured, not chosen — see the note in tailwind.config.js.
+     3. Blue appears as: a deep fill (primary action), a light tint (accent
+        material, icon circles), or an outline stroke (icons). Never as a
+        gradient inside the app — the one gradient left is the landing hero.
+     4. Anything grey and small is secondary text at `muted`; anything grey and
+        decorative is `faint`. Nothing is lighter than `faint`.
+     5. Spacing is generous. A card's inner padding starts at 20px.
+   =================================================================== */
+@layer components {
+    /* --- Cards ------------------------------------------------------------
+       The single most-used surface. White on the blue-grey canvas, 16px radius,
+       no border — and, unlike the flat pass that came before, a real shadow.
+
+       Two layers, both very light: a 1px contact shadow that defines the edge
+       so a white card does not dissolve into a light canvas, and a wide ambient
+       one that lifts it. Nobody should consciously see a shadow here; they
+       should see a page with depth. That is the difference between "airy" and
+       "unfinished", and the flat pass landed on the wrong side of it.
+
+       `.card` sets the surface only. Padding is a separate class so a card that
+       holds a full-bleed list (dividers running edge to edge) can skip it.
+       `.card-lift` adds the hover response — opt in, because a card that is not
+       a link should not pretend to be one. */
+    .card {
+        background-color: var(--color-surface);
+        border-radius: var(--radius-2xl);
+        border: none;
+        box-shadow: var(--shadow-e1);
+        transition:
+            box-shadow var(--duration-base, 240ms) var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)),
+            transform var(--duration-base, 240ms) var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1));
+    }
+    .dark .card {
+        background-color: var(--color-night-card);
+        /* A shadow is invisible on a near-black canvas, so depth after dark is
+           carried by a hairline of light along the card's own edge instead. */
+        box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06);
+    }
+
+    /* The lift. 3px is deliberately small: the card should feel like it
+       responded, not like it jumped. */
+    .card-lift:hover,
+    a.card:hover,
+    button.card:hover {
+        transform: translateY(-3px);
+        box-shadow: var(--shadow-e2);
+    }
+    .dark .card-lift:hover,
+    .dark a.card:hover,
+    .dark button.card:hover {
+        box-shadow:
+            0 0 0 1px rgba(255, 255, 255, 0.12),
+            0 12px 28px rgba(0, 0, 0, 0.45);
+    }
+
+    /* Generous by default, per rule 5. `.card-pad-sm` is for dense grids where
+       five tiles sit in a row and 20px would push the number off the card. */
+    .card-pad {
+        padding: 1.25rem;
+    }
+    .card-pad-lg {
+        padding: 1.5rem;
+    }
+    .card-pad-sm {
+        padding: 1rem;
+    }
+
+    /* The accent card: "Идентификация" and the "Открыть продукт" tiles. A light
+       blue wash carrying DARK text — not white — with a chevron on the right.
+       The tint is the sampled #d8e6f8, and ink on it measures 15.24:1. */
+    .card-tinted {
+        background-color: var(--color-brand-tint);
+        border-radius: var(--radius-2xl);
+        border: none;
+        box-shadow: none;
+        color: var(--color-ink);
+    }
+    .dark .card-tinted {
+        background-color: color-mix(in srgb, var(--color-azure-900) 55%, var(--color-night-card));
+        color: var(--color-night-ink);
+    }
+    /* Secondary copy inside an accent card. `muted` on the tint is 4.82:1, which
+       clears the secondary floor; the dark-mode counterpart is 6.9:1. */
+    .card-tinted .card-tinted-sub {
+        color: var(--color-muted);
+    }
+    .dark .card-tinted .card-tinted-sub {
+        color: var(--color-night-muted);
+    }
+    /* A whole accent card that is also a link: the only feedback is the wash
+       deepening, since it must not lift. */
+    a.card-tinted,
+    button.card-tinted {
+        transition: background-color 0.2s ease;
+    }
+    a.card-tinted:hover,
+    button.card-tinted:hover {
+        background-color: var(--color-azure-300);
+    }
+    .dark a.card-tinted:hover,
+    .dark button.card-tinted:hover {
+        background-color: color-mix(in srgb, var(--color-azure-900) 75%, var(--color-night-card));
+    }
+
+    /* A sunk well inside a card — the reference uses it behind the "Создать
+       шаблон" tile and behind table headers. */
+    .card-sunk {
+        background-color: var(--color-sunk);
+        border-radius: var(--radius-xl);
+        border: none;
+    }
+    .dark .card-sunk {
+        background-color: var(--color-night-raised);
+    }
+
+    /* --- Buttons ----------------------------------------------------------
+       14px radius (measured off "Все продукты"), tall, semibold, and centred.
+       The reference's primary button is full width in a column and inline in a
+       row; `.btn-block` opts into the first. */
+    .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        border: none;
+        border-radius: var(--radius-lg);
+        padding: 0.75rem 1.25rem;
+        min-height: 2.75rem;
+        font-size: var(--text-body-sm);
+        font-weight: 600;
+        line-height: 1.2;
+        letter-spacing: -0.005em;
+        text-align: center;
+        cursor: pointer;
+        white-space: nowrap;
+        box-shadow: none;
+        transition:
+            background-color 0.16s ease,
+            color 0.16s ease,
+            opacity 0.16s ease;
+    }
+    .btn:disabled,
+    .btn[aria-disabled='true'] {
+        cursor: not-allowed;
+        opacity: 0.55;
+    }
+
+    /* Tall, like the reference's main action. */
+    .btn-lg {
+        min-height: 3.25rem;
+        padding: 0.875rem 1.5rem;
+        font-size: var(--text-body);
+        border-radius: var(--radius-lg);
+    }
+    .btn-sm {
+        min-height: 2.25rem;
+        padding: 0.5rem 0.875rem;
+        font-size: var(--text-caption);
+        border-radius: var(--radius-md);
+    }
+    .btn-block {
+        display: flex;
+        width: 100%;
+    }
+
+    /* PRIMARY — solid deep blue, white semibold text. White on azure-600 is
+       6.82:1, so this needs no large-text caveat. */
+    .btn-primary {
+        background-color: var(--color-brand-strong);
+        color: var(--color-on-accent);
+    }
+    .btn-primary:hover:not(:disabled) {
+        background-color: var(--color-brand-hover);
+    }
+    .dark .btn-primary {
+        background-color: var(--color-brand-strong);
+        color: var(--color-on-accent);
+    }
+    .dark .btn-primary:hover:not(:disabled) {
+        background-color: var(--color-azure-500);
+    }
+
+    /* SECONDARY — light-blue tint with blue text. azure-600 on the circle tint
+       is 5.96:1. */
+    .btn-secondary {
+        background-color: var(--color-brand-circle);
+        color: var(--color-brand-strong);
+    }
+    .btn-secondary:hover:not(:disabled) {
+        background-color: var(--color-brand-tint);
+    }
+    .dark .btn-secondary {
+        background-color: color-mix(in srgb, var(--color-azure-900) 60%, var(--color-night-card));
+        color: var(--color-brand-light);
+    }
+    .dark .btn-secondary:hover:not(:disabled) {
+        background-color: color-mix(in srgb, var(--color-azure-900) 85%, var(--color-night-card));
+    }
+
+    /* GHOST — blue text only, no fill until hover. */
+    .btn-ghost {
+        background-color: transparent;
+        color: var(--color-brand-strong);
+    }
+    .btn-ghost:hover:not(:disabled) {
+        background-color: var(--color-brand-circle);
+    }
+    .dark .btn-ghost {
+        color: var(--color-brand-light);
+    }
+    .dark .btn-ghost:hover:not(:disabled) {
+        background-color: var(--color-night-raised);
+    }
+
+    /* NEUTRAL — a grey-blue well, for "Cancel" next to a primary action. */
+    .btn-neutral {
+        background-color: var(--color-sunk);
+        color: var(--color-ink-soft);
+    }
+    .btn-neutral:hover:not(:disabled) {
+        background-color: var(--color-hairline);
+    }
+    .dark .btn-neutral {
+        background-color: var(--color-night-raised);
+        color: var(--color-night-ink);
+    }
+    .dark .btn-neutral:hover:not(:disabled) {
+        background-color: color-mix(in srgb, var(--color-night-ink) 14%, var(--color-night-raised));
+    }
+
+    /* DANGER — same shape, crimson fill. White on it is 6.02:1. */
+    .btn-danger {
+        background-color: var(--color-danger);
+        color: #ffffff;
+    }
+    .btn-danger:hover:not(:disabled) {
+        background-color: var(--color-danger-deep);
+    }
+    /* The quiet destructive: red text on a red wash, for a delete that sits in a
+       row of other actions and must not shout. */
+    .btn-danger-soft {
+        background-color: color-mix(in srgb, var(--color-danger) 10%, var(--color-surface));
+        color: var(--color-danger);
+    }
+    .btn-danger-soft:hover:not(:disabled) {
+        background-color: color-mix(in srgb, var(--color-danger) 18%, var(--color-surface));
+    }
+    .dark .btn-danger-soft {
+        background-color: color-mix(in srgb, var(--color-danger) 22%, var(--color-night-card));
+        color: var(--color-danger-light);
+    }
+
+    /* --- Icon circles -----------------------------------------------------
+       A blue outline icon inside a light-blue circle — the reference's single
+       most repeated object. Measured at 56px on a 360dp screen; 44px is the
+       desktop equivalent, with the glyph at half the circle.
+
+       The icon inherits `currentColor`, so an <svg stroke="currentColor"> needs
+       no colour class of its own. */
+    .icon-circle {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex: none;
+        width: 2.75rem;
+        height: 2.75rem;
+        border-radius: 999px;
+        background-color: var(--color-brand-circle);
+        color: var(--color-brand-strong);
+    }
+    .icon-circle > svg {
+        width: 1.375rem;
+        height: 1.375rem;
+    }
+    .icon-circle-sm {
+        width: 2.25rem;
+        height: 2.25rem;
+    }
+    .icon-circle-sm > svg {
+        width: 1.125rem;
+        height: 1.125rem;
+    }
+    .icon-circle-lg {
+        width: 3.5rem;
+        height: 3.5rem;
+    }
+    .icon-circle-lg > svg {
+        width: 1.75rem;
+        height: 1.75rem;
+    }
+    .dark .icon-circle {
+        background-color: color-mix(in srgb, var(--color-azure-900) 60%, var(--color-night-card));
+        color: var(--color-brand-light);
+    }
+    /* Status variants, for the places a circle marks something other than a
+       navigation target. Each keeps the same geometry. */
+    .icon-circle-success {
+        background-color: color-mix(in srgb, var(--color-success) 12%, var(--color-surface));
+        color: var(--color-success);
+    }
+    .icon-circle-danger {
+        background-color: color-mix(in srgb, var(--color-danger) 12%, var(--color-surface));
+        color: var(--color-danger);
+    }
+    .icon-circle-warning {
+        background-color: color-mix(in srgb, var(--color-warning) 14%, var(--color-surface));
+        color: var(--color-warning);
+    }
+    .icon-circle-neutral {
+        background-color: var(--color-sunk);
+        color: var(--color-muted);
+    }
+    .dark .icon-circle-success {
+        background-color: color-mix(in srgb, var(--color-success) 26%, var(--color-night-card));
+        color: var(--color-success-light);
+    }
+    .dark .icon-circle-danger {
+        background-color: color-mix(in srgb, var(--color-danger) 26%, var(--color-night-card));
+        color: var(--color-danger-light);
+    }
+    .dark .icon-circle-warning {
+        background-color: color-mix(in srgb, var(--color-warning) 28%, var(--color-night-card));
+        color: var(--color-warning-light);
+    }
+    .dark .icon-circle-neutral {
+        background-color: var(--color-night-raised);
+        color: var(--color-night-muted);
+    }
+
+    /* --- List rows --------------------------------------------------------
+       The "Платежи" list: icon circle, label, grey chevron on the right, thin
+       dividers BETWEEN rows only, all inside one white rounded card.
+
+       `.list` goes on the container (which is usually also a `.card`), `.list-row`
+       on each child. The divider is inset to the label, not run full-bleed —
+       that inset is what stops a flat list from looking like a table. */
+    .list > .list-row + .list-row {
+        border-top: 1px solid var(--color-hairline);
+    }
+    .dark .list > .list-row + .list-row {
+        border-top-color: color-mix(in srgb, var(--color-night-ink) 10%, transparent);
+    }
+    .list-row {
+        display: flex;
+        align-items: center;
+        gap: 0.875rem;
+        padding: 0.875rem 1.25rem;
+        min-height: 4rem;
+        color: var(--color-ink);
+        transition: background-color 0.16s ease;
+    }
+    .dark .list-row {
+        color: var(--color-night-ink);
+    }
+    a.list-row:hover,
+    button.list-row:hover,
+    .list-row-hover:hover {
+        background-color: var(--color-azure-50);
+    }
+    .dark a.list-row:hover,
+    .dark button.list-row:hover,
+    .dark .list-row-hover:hover {
+        background-color: var(--color-night-raised);
+    }
+    /* The first and last rows have to round with the card they sit in, or the
+       hover fill spills past the corner. */
+    .list > .list-row:first-child {
+        border-top-left-radius: var(--radius-2xl);
+        border-top-right-radius: var(--radius-2xl);
+    }
+    .list > .list-row:last-child {
+        border-bottom-left-radius: var(--radius-2xl);
+        border-bottom-right-radius: var(--radius-2xl);
+    }
+    /* Label block: title, and an optional second grey line under it. */
+    .list-row-title {
+        font-size: var(--text-body);
+        font-weight: 500;
+        line-height: 1.35;
+    }
+    .list-row-sub {
+        font-size: var(--text-body-sm);
+        color: var(--color-muted);
+        line-height: 1.4;
+    }
+    .dark .list-row-sub {
+        color: var(--color-night-muted);
+    }
+    /* Divider inset to the label, used where rows are not full-bleed. */
+    .list-inset > .list-row + .list-row {
+        border-top: none;
+        position: relative;
+    }
+    .list-inset > .list-row + .list-row::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 4.375rem;
+        right: 1.25rem;
+        border-top: 1px solid var(--color-hairline);
+    }
+    .dark .list-inset > .list-row + .list-row::before {
+        border-top-color: color-mix(in srgb, var(--color-night-ink) 10%, transparent);
+    }
+
+    /* The chevron. Grey, never blue, and held at the 3:1 non-text floor rather
+       than the reference's #b7b7b8, which measures 2.00:1. */
+    .chevron {
+        flex: none;
+        margin-left: auto;
+        width: 1.25rem;
+        height: 1.25rem;
+        color: var(--color-faint);
+    }
+    .dark .chevron {
+        color: var(--color-night-muted);
+    }
+
+    /* --- Section headers --------------------------------------------------
+       "Шаблоны и автоплатежи" with a blue "Все" on the right. Bold title left,
+       accent link right, sitting on the canvas rather than inside a card. */
+    .section-head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 1rem;
+        margin-bottom: 0.875rem;
+    }
+    .section-head-title {
+        font-size: var(--text-h4);
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        color: var(--color-ink);
+    }
+    .dark .section-head-title {
+        color: var(--color-night-ink);
+    }
+    /* `inline-flex`, not the bare `flex: none` it used to be: every call site
+       puts a chevron after the label, and with no display set the svg wrapped
+       onto its own line the moment the link was given a width to fill. */
+    .section-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        flex: none;
+        font-size: var(--text-body-sm);
+        font-weight: 500;
+        color: var(--color-brand-strong);
+        transition: color 0.16s ease, gap 0.16s ease;
+    }
+    /* The chevron edges away on hover — the cheapest possible "this goes
+       somewhere", and it costs no layout. */
+    .section-link:hover {
+        gap: 0.4375rem;
+    }
+    .section-link:hover {
+        color: var(--color-brand-hover);
+    }
+    .dark .section-link {
+        color: var(--color-brand-light);
+    }
+
+    /* --- Horizontal tiles -------------------------------------------------
+       "На кошелек / На карту" — a rounded square holding an icon circle and a
+       short label, scrolled horizontally in a row. */
+    .tile {
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        gap: 0.75rem;
+        flex: none;
+        width: 8.75rem;
+        min-height: 8.75rem;
+        padding: 1rem;
+        background-color: var(--color-surface);
+        border-radius: var(--radius-xl);
+        border: none;
+        box-shadow: none;
+        color: var(--color-ink);
+        text-align: left;
+        transition: background-color 0.16s ease;
+    }
+    .dark .tile {
+        background-color: var(--color-night-card);
+        color: var(--color-night-ink);
+    }
+    a.tile:hover,
+    button.tile:hover {
+        background-color: var(--color-azure-50);
+    }
+    .dark a.tile:hover,
+    .dark button.tile:hover {
+        background-color: var(--color-night-raised);
+    }
+    .tile-label {
+        font-size: var(--text-body-sm);
+        font-weight: 500;
+        line-height: 1.3;
+    }
+    /* The tint variant — the "Открыть продукт" row. */
+    .tile-tinted {
+        background-color: var(--color-brand-tint);
+    }
+    .dark .tile-tinted {
+        background-color: color-mix(in srgb, var(--color-azure-900) 55%, var(--color-night-card));
+    }
+    a.tile-tinted:hover,
+    button.tile-tinted:hover {
+        background-color: var(--color-azure-300);
+    }
+    /* A horizontal strip of tiles that scrolls rather than wraps, with the
+       scrollbar hidden — the reference never shows one. */
+    .tile-row {
+        display: flex;
+        gap: 0.75rem;
+        overflow-x: auto;
+        scrollbar-width: none;
+        padding-bottom: 0.25rem;
+    }
+    .tile-row::-webkit-scrollbar {
+        display: none;
+    }
+
+    /* --- Filter chips -----------------------------------------------------
+       "Счета и карты ⌄" — a white pill-ish button with a dropdown caret. NOT a
+       pill: measured at a 12px radius on a 47px-tall element, where a true pill
+       would have measured 23.5px. */
+    .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.375rem;
+        flex: none;
+        padding: 0.5rem 0.875rem;
+        min-height: 2.5rem;
+        background-color: var(--color-surface);
+        border: none;
+        border-radius: var(--radius-md);
+        font-size: var(--text-body-sm);
+        font-weight: 500;
+        color: var(--color-ink);
+        white-space: nowrap;
+        cursor: pointer;
+        transition:
+            background-color 0.16s ease,
+            color 0.16s ease;
+    }
+    .dark .chip {
+        background-color: var(--color-night-card);
+        color: var(--color-night-ink);
+    }
+    .chip:hover {
+        background-color: var(--color-azure-50);
+    }
+    .dark .chip:hover {
+        background-color: var(--color-night-raised);
+    }
+    /* Selected: the chip fills with the tint and the label goes blue. */
+    .chip-active,
+    .chip[aria-pressed='true'],
+    .chip[aria-selected='true'] {
+        background-color: var(--color-brand-circle);
+        color: var(--color-brand-strong);
+    }
+    .dark .chip-active,
+    .dark .chip[aria-pressed='true'],
+    .dark .chip[aria-selected='true'] {
+        background-color: color-mix(in srgb, var(--color-azure-900) 60%, var(--color-night-card));
+        color: var(--color-brand-light);
+    }
+    /* The caret. Grey like the chevron, and it rotates when the menu is open. */
+    .chip-caret {
+        width: 1rem;
+        height: 1rem;
+        flex: none;
+        color: var(--color-faint);
+        transition: transform 0.16s ease;
+    }
+    .chip[aria-expanded='true'] .chip-caret {
+        transform: rotate(180deg);
+    }
+    .dark .chip-caret {
+        color: var(--color-night-muted);
+    }
+    /* A chip sitting on white (inside a card) needs the inverse fill, or it
+       disappears. */
+    .chip-on-card {
+        background-color: var(--color-sunk);
+    }
+    .dark .chip-on-card {
+        background-color: var(--color-night-raised);
+    }
+
+    /* --- Badges -----------------------------------------------------------
+       Small, soft, tinted. A badge is a label, never a button, so it has no
+       hover and no pointer. */
+    .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3125rem;
+        padding: 0.1875rem 0.5rem;
+        border-radius: var(--radius-xs);
+        border: none;
+        font-size: var(--text-caption);
+        font-weight: 500;
+        line-height: 1.35;
+        white-space: nowrap;
+    }
+    .badge-brand {
+        background-color: var(--color-brand-circle);
+        color: var(--color-brand-strong);
+    }
+    .badge-neutral {
+        background-color: var(--color-sunk);
+        color: var(--color-muted);
+    }
+    .badge-success {
+        background-color: color-mix(in srgb, var(--color-success) 12%, var(--color-surface));
+        color: var(--color-success);
+    }
+    .badge-danger {
+        background-color: color-mix(in srgb, var(--color-danger) 11%, var(--color-surface));
+        color: var(--color-danger);
+    }
+    .badge-warning {
+        background-color: color-mix(in srgb, var(--color-warning) 14%, var(--color-surface));
+        color: var(--color-warning);
+    }
+    .badge-info {
+        background-color: color-mix(in srgb, var(--color-info) 12%, var(--color-surface));
+        color: var(--color-info);
+    }
+    .dark .badge-brand {
+        background-color: color-mix(in srgb, var(--color-azure-900) 60%, var(--color-night-card));
+        color: var(--color-brand-light);
+    }
+    .dark .badge-neutral {
+        background-color: var(--color-night-raised);
+        color: var(--color-night-muted);
+    }
+    .dark .badge-success {
+        background-color: color-mix(in srgb, var(--color-success) 24%, var(--color-night-card));
+        color: var(--color-success-light);
+    }
+    .dark .badge-danger {
+        background-color: color-mix(in srgb, var(--color-danger) 24%, var(--color-night-card));
+        color: var(--color-danger-light);
+    }
+    .dark .badge-warning {
+        background-color: color-mix(in srgb, var(--color-warning) 26%, var(--color-night-card));
+        color: var(--color-warning-light);
+    }
+    .dark .badge-info {
+        background-color: color-mix(in srgb, var(--color-info) 24%, var(--color-night-card));
+        color: var(--color-info-light);
+    }
+
+    /* --- Tabs -------------------------------------------------------------
+       A row of soft pills on the canvas; the active one takes the blue fill.
+       No underline — the reference has no underlined tab anywhere. */
+    .tabs {
+        display: flex;
+        align-items: center;
+        gap: 0.25rem;
+        padding: 0.25rem;
+        background-color: var(--color-sunk);
+        border-radius: var(--radius-lg);
+        overflow-x: auto;
+        scrollbar-width: none;
+    }
+    .tabs::-webkit-scrollbar {
+        display: none;
+    }
+    .dark .tabs {
+        background-color: var(--color-night-raised);
+    }
+    .tab {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4375rem;
+        flex: none;
+        padding: 0.5rem 0.875rem;
+        border: none;
+        border-radius: var(--radius-md);
+        background-color: transparent;
+        font-size: var(--text-body-sm);
+        font-weight: 500;
+        color: var(--color-muted);
+        white-space: nowrap;
+        cursor: pointer;
+        transition:
+            background-color 0.16s ease,
+            color 0.16s ease;
+    }
+    .tab:hover {
+        color: var(--color-ink);
+    }
+    .dark .tab {
+        color: var(--color-night-muted);
+    }
+    .dark .tab:hover {
+        color: var(--color-night-ink);
+    }
+    .tab-active,
+    .tab[aria-selected='true'] {
+        background-color: var(--color-surface);
+        color: var(--color-brand-strong);
+        font-weight: 600;
+    }
+    .dark .tab-active,
+    .dark .tab[aria-selected='true'] {
+        background-color: var(--color-night-card);
+        color: var(--color-brand-light);
+    }
+
+    /* --- Navigation -------------------------------------------------------
+       Sidebar and bottom nav: the active item is blue text on a light-blue
+       pill; inactive items are grey with the same geometry, so nothing shifts
+       when the selection moves. Icons are outline strokes in both states and
+       take their colour from the row.
+
+       The inactive grey is `muted`, not the reference's #bfc1c3 — that measures
+       1.81:1 and is unreadable anywhere but a phone held at arm's length. */
+    .nav-item {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.625rem 0.75rem;
+        border-radius: var(--radius-md);
+        font-size: var(--text-body-sm);
+        font-weight: 500;
+        color: var(--color-muted);
+        background-color: transparent;
+        transition:
+            background-color 0.16s ease,
+            color 0.16s ease;
+    }
+    .nav-item > svg {
+        flex: none;
+        width: 1.25rem;
+        height: 1.25rem;
+    }
+    .nav-item:hover {
+        background-color: var(--color-sunk);
+        color: var(--color-ink);
+    }
+    .dark .nav-item {
+        color: var(--color-night-muted);
+    }
+    .dark .nav-item:hover {
+        background-color: var(--color-night-raised);
+        color: var(--color-night-ink);
+    }
+    .nav-item-active,
+    .nav-item[aria-current='page'] {
+        background-color: var(--color-brand-circle);
+        color: var(--color-brand-strong);
+        font-weight: 600;
+    }
+    .nav-item-active:hover,
+    .nav-item[aria-current='page']:hover {
+        background-color: var(--color-brand-tint);
+        color: var(--color-brand-strong);
+    }
+    .dark .nav-item-active,
+    .dark .nav-item[aria-current='page'] {
+        background-color: color-mix(in srgb, var(--color-azure-900) 60%, var(--color-night-card));
+        color: var(--color-brand-light);
+    }
+    .dark .nav-item-active:hover,
+    .dark .nav-item[aria-current='page']:hover {
+        background-color: color-mix(in srgb, var(--color-azure-900) 80%, var(--color-night-card));
+        color: var(--color-brand-light);
+    }
+
+    /* --- Stat / KPI -------------------------------------------------------
+       A KPI card is FIVE things, not two. The previous pass shipped a label and
+       a number on a big white rectangle, which is why the dashboard read as
+       empty: each tile spent 120px of vertical space saying one word and one
+       digit.
+
+       The anatomy now, top to bottom:
+         · an outline icon in a light-blue circle, naming the metric visually
+         · the small grey label
+         · the figure, at `kpi` (24–28px) and weight 600, tabular
+         · a trend pill — green for up, amber/red for down, grey for flat
+         · a sparkline of the same metric across the period
+
+       The figure dropped from 28px/700/-0.03em to the `kpi` step at 600. On
+       Onest that is a visibly lighter, more modern number, and the trend pill
+       beside it now carries the emphasis that extra weight used to fake. */
+    .kpi-label {
+        font-size: var(--text-body-sm);
+        font-weight: 400;
+        color: var(--color-muted);
+        line-height: 1.4;
+    }
+    .dark .kpi-label {
+        color: var(--color-night-muted);
+    }
+    .kpi-value {
+        font-size: var(--text-kpi);
+        font-weight: 600;
+        letter-spacing: var(--text-kpi--letter-spacing);
+        line-height: var(--text-kpi--line-height);
+        color: var(--color-ink);
+        font-variant-numeric: lining-nums tabular-nums;
+        font-feature-settings:
+            'lnum' 1,
+            'tnum' 1;
+    }
+    .dark .kpi-value {
+        color: var(--color-night-ink);
+    }
+    .kpi-value-lg {
+        font-size: var(--text-kpi-lg);
+        letter-spacing: var(--text-kpi-lg--letter-spacing);
+    }
+    .kpi-value-sm {
+        font-size: 1.25rem;
+    }
+    /* The unit or currency riding after the number, one step down and quieter. */
+    .kpi-unit {
+        font-size: 0.62em;
+        font-weight: 500;
+        color: var(--color-muted);
+        letter-spacing: 0;
+    }
+    .dark .kpi-unit {
+        color: var(--color-night-muted);
+    }
+
+    /* THE TREND PILL. A small filled capsule carrying an arrow and a
+       percentage, sitting beside the figure.
+
+       Colour is never the only signal: `.trend-up` and `.trend-down` each
+       render their own arrow through `::before`, so the direction survives
+       greyscale, colour blindness and a black-and-white printout. */
+    .trend {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.1875rem;
+        padding: 0.1875rem 0.4375rem;
+        border-radius: 999px;
+        font-size: 0.6875rem;
+        font-weight: 500;
+        line-height: 1.2;
+        letter-spacing: 0;
+        white-space: nowrap;
+        font-variant-numeric: tabular-nums;
+    }
+    .trend::before {
+        font-size: 0.85em;
+        line-height: 1;
+    }
+    .trend-up {
+        background-color: color-mix(in srgb, var(--color-success) 11%, transparent);
+        color: var(--color-success);
+    }
+    .trend-up::before {
+        content: '↑';
+    }
+    .trend-down {
+        background-color: color-mix(in srgb, var(--color-danger) 10%, transparent);
+        color: var(--color-danger);
+    }
+    .trend-down::before {
+        content: '↓';
+    }
+    /* "Down" is not always bad — a falling response time is a win — so a metric
+       whose good direction is downward uses the success tone with the down
+       arrow, and vice versa. The call site picks; the arrow still tells the
+       truth about direction. */
+    .trend-good {
+        background-color: color-mix(in srgb, var(--color-success) 11%, transparent);
+        color: var(--color-success);
+    }
+    .trend-bad {
+        background-color: color-mix(in srgb, var(--color-warning) 12%, transparent);
+        color: var(--color-warning);
+    }
+    .trend-flat {
+        background-color: var(--color-sunk);
+        color: var(--color-muted);
+    }
+    .trend-flat::before {
+        content: '→';
+    }
+    .dark .trend-up,
+    .dark .trend-good {
+        background-color: color-mix(in srgb, var(--color-success-light) 16%, transparent);
+        color: var(--color-success-light);
+    }
+    .dark .trend-down {
+        background-color: color-mix(in srgb, var(--color-danger-light) 16%, transparent);
+        color: var(--color-danger-light);
+    }
+    .dark .trend-bad {
+        background-color: color-mix(in srgb, var(--color-warning-light) 16%, transparent);
+        color: var(--color-warning-light);
+    }
+    .dark .trend-flat {
+        background-color: var(--color-night-raised);
+        color: var(--color-night-muted);
+    }
+
+    /* The delta line under a KPI — the older, text-only form. Kept for call
+       sites that want it inline rather than as a pill. */
+    .kpi-delta-up {
+        color: var(--color-success);
+    }
+    .kpi-delta-down {
+        color: var(--color-danger);
+    }
+    .dark .kpi-delta-up {
+        color: var(--color-success-light);
+    }
+    .dark .kpi-delta-down {
+        color: var(--color-danger-light);
+    }
+
+    /* --- Empty states -----------------------------------------------------
+       "Нет транзакций": an outline icon in a light-blue circle, a bold title, a
+       grey description, all centred with real air around it. */
+    .empty-state {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        padding: 3rem 1.5rem;
+        gap: 0.5rem;
+    }
+    .empty-state-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 4.5rem;
+        height: 4.5rem;
+        margin-bottom: 0.75rem;
+        border-radius: 999px;
+        background-color: var(--color-brand-circle);
+        color: var(--color-brand-strong);
+    }
+    .empty-state-icon > svg {
+        width: 2rem;
+        height: 2rem;
+    }
+    .dark .empty-state-icon {
+        background-color: color-mix(in srgb, var(--color-azure-900) 60%, var(--color-night-card));
+        color: var(--color-brand-light);
+    }
+    .empty-state-title {
+        font-size: var(--text-h4);
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        color: var(--color-ink);
+    }
+    .dark .empty-state-title {
+        color: var(--color-night-ink);
+    }
+    .empty-state-text {
+        font-size: var(--text-body-sm);
+        color: var(--color-muted);
+        max-width: 28ch;
+        line-height: 1.5;
+    }
+    .dark .empty-state-text {
+        color: var(--color-night-muted);
+    }
+
+    /* --- Page header ------------------------------------------------------
+       WHAT REPLACED THE BLUE BAND.
+
+       The flat #2f66c4 slab with a 44px white "Аналитика" across it was the
+       single most dated thing on the dashboard: a coloured masthead is how
+       websites announced their section in about 2012, and it spent the most
+       valuable 120px on the page saying a word the sidebar had already
+       highlighted.
+
+       In its place: a light header on the page's own canvas. A small grey
+       date/context line, the title at `h3` (22–26px, weight 600), and actions
+       on the right. It costs a third of the height, carries more information,
+       and lets the first row of real content start above the fold.
+
+       `.band-*` below is what survives of the old band — the pill, which the
+       highlight card still uses on its accent surface. The band itself is
+       gone, and so is `.header-band`. */
+    .page-header {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 1rem 1.5rem;
+        margin-bottom: 1.5rem;
+    }
+    /* The quiet line above the title: today's date, a breadcrumb, a count.
+       Never decoration — if there is nothing true to put here, omit it. */
+    .page-eyebrow {
+        font-size: var(--text-body-sm);
+        font-weight: 400;
+        color: var(--color-muted);
+        line-height: 1.4;
+    }
+    .dark .page-eyebrow {
+        color: var(--color-night-muted);
+    }
+    .page-title {
+        font-size: var(--text-h3);
+        font-weight: 600;
+        letter-spacing: var(--text-h3--letter-spacing);
+        line-height: var(--text-h3--line-height);
+        color: var(--color-ink);
+        margin-top: 0.125rem;
+    }
+    .dark .page-title {
+        color: var(--color-night-ink);
+    }
+    /* A one-line answer to "so what?" under the title, when the page has one.
+       Capped to a comfortable measure so it never runs the full 1600px. */
+    .page-sub {
+        font-size: var(--text-body-sm);
+        color: var(--color-muted);
+        margin-top: 0.375rem;
+        max-width: 60ch;
+    }
+    .dark .page-sub {
+        color: var(--color-night-muted);
+    }
+    .page-actions {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .band-card {
+        background-color: color-mix(in srgb, #ffffff 16%, transparent);
+        border-radius: var(--radius-xl);
+        border: none;
+        color: #ffffff;
+    }
+    /* A pill on the band — the "Бонус: 0,00 TJS" chip. */
+    .band-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.375rem;
+        padding: 0.375rem 0.75rem;
+        border-radius: 999px;
+        background-color: color-mix(in srgb, #ffffff 18%, transparent);
+        font-size: var(--text-body-sm);
+        font-weight: 500;
+        color: #ffffff;
+    }
+
+    /* --- Floating material ------------------------------------------------
+       Dropdowns, modals, toasts, tooltips. These are the ONE place elevation
+       survives: material genuinely floating above the page has to detach from
+       it, and on a flat surface a border cannot do that job alone. The shadow
+       is cool-tinted and soft, and there is still no stroke. */
+    .panel {
+        background-color: var(--color-surface);
+        border-radius: var(--radius-xl);
+        border: none;
+        box-shadow: var(--shadow-e3);
+        padding: 0.375rem;
+    }
+    .dark .panel {
+        background-color: var(--color-night-card);
+        box-shadow:
+            0 1px 2px rgba(0, 0, 0, 0.5),
+            0 12px 28px -12px rgba(0, 0, 0, 0.8);
+    }
+    /* A row inside a dropdown. Same language as a list row, tighter. */
+    .panel-item {
+        display: flex;
+        align-items: center;
+        gap: 0.625rem;
+        width: 100%;
+        padding: 0.5rem 0.75rem;
+        border-radius: var(--radius-sm);
+        font-size: var(--text-body-sm);
+        font-weight: 500;
+        color: var(--color-ink);
+        text-align: left;
+        transition: background-color 0.16s ease;
+    }
+    .panel-item:hover {
+        background-color: var(--color-azure-50);
+    }
+    .panel-item-active {
+        background-color: var(--color-brand-circle);
+        color: var(--color-brand-strong);
+    }
+    .dark .panel-item {
+        color: var(--color-night-ink);
+    }
+    .dark .panel-item:hover {
+        background-color: var(--color-night-raised);
+    }
+    .dark .panel-item-active {
+        background-color: color-mix(in srgb, var(--color-azure-900) 60%, var(--color-night-card));
+        color: var(--color-brand-light);
+    }
+
+    /* The modal: a bigger radius than a card, because it is a sheet rather than
+       a tile, and a plain dim behind it rather than a blur — the reference's
+       sheets sit on a flat scrim. */
+    .modal {
+        background-color: var(--color-surface);
+        border-radius: var(--radius-3xl);
+        border: none;
+        box-shadow: var(--shadow-e5);
+    }
+    .dark .modal {
+        background-color: var(--color-night-card);
+        box-shadow:
+            0 2px 8px rgba(0, 0, 0, 0.6),
+            0 40px 80px -32px rgba(0, 0, 0, 0.9);
+    }
+    .modal-scrim {
+        background-color: color-mix(in srgb, var(--color-slate-900) 45%, transparent);
+    }
+    .dark .modal-scrim {
+        background-color: color-mix(in srgb, #000000 65%, transparent);
+    }
+
+    /* Toast: a card that floats. Same 20px radius as everything else, so a
+       notification reads as part of the same product. */
+    .toast-surface {
+        background-color: var(--color-surface);
+        border-radius: var(--radius-2xl);
+        border: none;
+        box-shadow: var(--shadow-e4);
+        padding: 0.875rem 1rem;
+    }
+    .dark .toast-surface {
+        background-color: var(--color-night-card);
+        box-shadow:
+            0 2px 4px rgba(0, 0, 0, 0.5),
+            0 24px 48px -24px rgba(0, 0, 0, 0.85);
+    }
+
+    /* Tooltip: the one inverted surface in the system. Small, dark, tight
+       radius — a tooltip that matched the cards would read as a popover. */
+    .tooltip {
+        background-color: var(--color-slate-900);
+        color: #ffffff;
+        border-radius: var(--radius-sm);
+        padding: 0.375rem 0.625rem;
+        font-size: var(--text-caption);
+        font-weight: 500;
+        box-shadow: var(--shadow-e3);
+    }
+    .dark .tooltip {
+        background-color: var(--color-night-raised);
+        color: var(--color-night-ink);
+    }
+
+    /* --- Tables -----------------------------------------------------------
+       A table on this surface is a list that happens to have columns: no outer
+       border, no zebra, a quiet header, and thin rules between rows only. */
+    .table-flat {
+        width: 100%;
+        border-collapse: collapse;
+    }
+    .table-flat thead th {
+        padding: 0.75rem 1.25rem;
+        text-align: left;
+        font-size: var(--text-caption);
+        font-weight: 500;
+        color: var(--color-muted);
+        white-space: nowrap;
+    }
+    .dark .table-flat thead th {
+        color: var(--color-night-muted);
+    }
+    .table-flat tbody td {
+        padding: 0.875rem 1.25rem;
+        font-size: var(--text-body-sm);
+        color: var(--color-ink);
+        border-top: 1px solid var(--color-hairline);
+    }
+    .dark .table-flat tbody td {
+        color: var(--color-night-ink);
+        border-top-color: color-mix(in srgb, var(--color-night-ink) 10%, transparent);
+    }
+    .table-flat tbody tr {
+        transition: background-color 0.16s ease;
+    }
+    .table-flat tbody tr:hover {
+        background-color: var(--color-azure-50);
+    }
+    .dark .table-flat tbody tr:hover {
+        background-color: var(--color-night-raised);
+    }
+
+    /* --- Dividers ---------------------------------------------------------
+       The only stroke the system still draws: a thin rule INSIDE a card, to
+       separate two blocks that genuinely belong to one surface. Never around
+       anything. */
+    .rule {
+        border: none;
+        border-top: 1px solid var(--color-hairline);
+    }
+    .dark .rule {
+        border-top-color: color-mix(in srgb, var(--color-night-ink) 10%, transparent);
+    }
+
+    /* --- Charts -----------------------------------------------------------
+       WHAT REPLACED THE FAT BARS.
+
+       The messages chart was seven ~90px-wide blue slabs on a 160px-tall empty
+       field: the single loudest object on the page, carrying seven numbers. A
+       smooth area chart says the same thing quietly, reads as a trend rather
+       than as a tally, and leaves the card's area to the insight line and the
+       axis instead of to blue paint.
+
+       Drawn as inline SVG rather than with a charting library — the constraint
+       here is still Blade + Alpine and no build-time JS framework, and a
+       single-series area chart costs about twenty lines of path arithmetic.
+       The classes below are the shared skin so every chart in the product
+       (messages, response time, ratings) looks like one system. */
+    .chart {
+        display: block;
+        width: 100%;
+        overflow: visible;
+    }
+    /* Thin, quiet gridlines. Any heavier and they compete with the series. */
+    .chart-grid {
+        stroke: var(--color-hairline);
+        stroke-width: 1;
+        vector-effect: non-scaling-stroke;
+        shape-rendering: crispEdges;
+    }
+    .dark .chart-grid {
+        stroke: color-mix(in srgb, var(--color-night-ink) 12%, transparent);
+    }
+    /* `non-scaling-stroke` is load-bearing: the SVG is stretched horizontally
+       to fill its card, and without this the line would be ~1.5x thicker
+       horizontally than vertically — a subtly wrong, hand-drawn look. */
+    .chart-line {
+        fill: none;
+        stroke: var(--color-brand);
+        stroke-width: 2;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        vector-effect: non-scaling-stroke;
+    }
+    .dark .chart-line {
+        stroke: var(--color-brand-light);
+    }
+    /* The soft fill under the line. A gradient to transparent, so the area
+       reads as weight under the curve rather than as a solid shape.
+
+       The `fill` is deliberately NOT set here: each chart references its own
+       per-instance gradient id through the `fill` presentation attribute, and
+       a `fill` in CSS would override it — a CSS declaration always beats a
+       presentation attribute. Naming a fixed id here is what made the area
+       invisible on every chart but the first. */
+    .chart-area {
+        stroke: none;
+    }
+    /* A circle in a stretched SVG becomes an ellipse. Scaling the dot back on
+       its own axis is not possible in CSS, so the dots are drawn small enough
+       that the distortion is invisible and pinned to a non-scaling stroke so at
+       least the ring stays even. */
+    .chart-dot {
+        fill: var(--color-surface);
+        stroke: var(--color-brand);
+        stroke-width: 2;
+        vector-effect: non-scaling-stroke;
+    }
+    .dark .chart-dot {
+        fill: var(--color-night-card);
+        stroke: var(--color-brand-light);
+    }
+    /* Axis labels are HTML positioned around the SVG, not <text> inside it —
+       see the note in components/area-chart.blade.php. They therefore style
+       like ordinary type and are never stretched. */
+    .chart-axis-label {
+        font-size: 0.6875rem;
+        line-height: 1;
+        color: var(--color-muted);
+        font-variant-numeric: tabular-nums;
+    }
+    .dark .chart-axis-label {
+        color: var(--color-night-muted);
+    }
+    /* The invisible full-height column over each data point that catches the
+       hover — a 2px line is impossible to aim at. */
+    .chart-hit {
+        fill: transparent;
+        cursor: default;
+    }
+    .chart-hit:hover {
+        fill: color-mix(in srgb, var(--color-brand) 6%, transparent);
+    }
+
+    /* THE DRAW-IN. The line strokes itself on, the fill rises behind it, the
+       dots land last. `pathLength="1"` is set on the path in the markup, which
+       is what lets one dash length work for every chart regardless of its
+       real geometry.
+
+       ~700ms end to end, which is longer than the 150–250ms the rest of the
+       system moves in — deliberately. That budget is for STATE CHANGES, where
+       anything slower feels like lag because the user is waiting on a result
+       they asked for. This is a one-time entrance nobody is waiting on, and a
+       line that draws in 200ms may as well not animate at all. It is still
+       quick enough to be over before the eye finishes crossing the card, and
+       it is off entirely under prefers-reduced-motion. */
+    .chart-animate .chart-line {
+        stroke-dasharray: 1;
+        stroke-dashoffset: 1;
+        animation: chart-draw 650ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    }
+    .chart-animate .chart-area {
+        opacity: 0;
+        animation: chart-fill 400ms ease-out 250ms forwards;
+    }
+    .chart-animate .chart-dot {
+        opacity: 0;
+        animation: chart-fill 200ms ease-out 500ms forwards;
+    }
+    @keyframes chart-draw {
+        to {
+            stroke-dashoffset: 0;
+        }
+    }
+    @keyframes chart-fill {
+        to {
+            opacity: 1;
+        }
+    }
+
+    /* --- Sparklines -------------------------------------------------------
+       The small trend line inside a KPI card. Same ink as the chart, no axis,
+       no dots — it is texture, not a readable series, and it exists so a tile
+       showing "42" also shows how 42 was arrived at. */
+    .sparkline {
+        display: block;
+        width: 100%;
+        height: 2rem;
+        overflow: visible;
+    }
+    /* `currentColor`, not a token: the wrapper sets the accent (so the
+       gradient fill can inherit the same colour — see the component), and the
+       stroke follows it. One colour decision, made in one place. */
+    .sparkline path.spark-line {
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.75;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        vector-effect: non-scaling-stroke;
+    }
+    /* No `fill` here either, and for the same reason as `.chart-area`: the
+       gradient id is per-instance and arrives on the element's own attribute. */
+    .sparkline path.spark-area {
+        stroke: none;
+    }
+    /* A sparkline for a metric that is doing badly keeps the shape and only
+       changes hue, so a row of tiles stays scannable. The hue itself comes
+       from the `text-warning` the component puts on the same element. */
+
+    /* --- Skeletons --------------------------------------------------------
+       What a card shows while its data is in flight, instead of collapsing to
+       nothing and then snapping to full height. The shimmer is a moving
+       gradient rather than a pulsing opacity: it reads as loading rather than
+       as something broken and blinking. */
+    .skeleton {
+        position: relative;
+        overflow: hidden;
+        border-radius: var(--radius-sm);
+        background-color: var(--color-sunk);
+    }
+    .dark .skeleton {
+        background-color: var(--color-night-raised);
+    }
+    .skeleton::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        transform: translateX(-100%);
+        background: linear-gradient(
+            90deg,
+            transparent,
+            color-mix(in srgb, var(--color-surface) 70%, transparent),
+            transparent
+        );
+        animation: skeleton-sweep 1.4s ease-in-out infinite;
+    }
+    .dark .skeleton::after {
+        background: linear-gradient(
+            90deg,
+            transparent,
+            color-mix(in srgb, var(--color-night-ink) 7%, transparent),
+            transparent
+        );
+    }
+    @keyframes skeleton-sweep {
+        100% {
+            transform: translateX(100%);
+        }
+    }
+    .skeleton-text {
+        height: 0.75rem;
+        border-radius: 999px;
+    }
+    .skeleton-title {
+        height: 1.25rem;
+        width: 40%;
+        border-radius: 999px;
+    }
+    .skeleton-circle {
+        border-radius: 999px;
+    }
+
+    /* --- Stepper ----------------------------------------------------------
+       A LABELLED stepper for the agent wizard. The previous one was five bare
+       progress bars: it told the owner they were somewhere in five steps, and
+       nothing at all about what the five steps were or what was coming.
+
+       Each step now carries a numbered marker and its name. Completed steps
+       get a check, the current one gets the accent, and upcoming ones stay
+       grey. The connector between markers fills as progress is made.
+
+       Horizontal on desktop, where the wizard's side panel leaves room for it
+       to run across the top; the labels drop below `sm` and the markers alone
+       carry the position. */
+    .stepper {
+        display: flex;
+        align-items: flex-start;
+        gap: 0;
+    }
+    .stepper-step {
+        display: flex;
+        flex: 1 1 0;
+        align-items: flex-start;
+        gap: 0.625rem;
+        min-width: 0;
+    }
+    .stepper-step:last-child {
+        flex: 0 0 auto;
+    }
+    .stepper-marker {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 1.75rem;
+        height: 1.75rem;
+        flex: none;
+        border-radius: 999px;
+        font-size: 0.75rem;
+        font-weight: 500;
+        font-variant-numeric: tabular-nums;
+        background-color: var(--color-sunk);
+        color: var(--color-muted);
+        transition:
+            background-color 200ms var(--ease-out, ease),
+            color 200ms var(--ease-out, ease),
+            box-shadow 200ms var(--ease-out, ease);
+    }
+    .dark .stepper-marker {
+        background-color: var(--color-night-raised);
+        color: var(--color-night-muted);
+    }
+    .stepper-step[data-state='current'] .stepper-marker {
+        background-color: var(--color-brand-strong);
+        color: #ffffff;
+        /* The halo is what makes "you are here" readable at a glance across
+           five markers that are otherwise the same size. */
+        box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-brand-strong) 16%, transparent);
+    }
+    .stepper-step[data-state='done'] .stepper-marker {
+        background-color: var(--color-brand-circle);
+        color: var(--color-brand-strong);
+    }
+    .dark .stepper-step[data-state='done'] .stepper-marker {
+        background-color: color-mix(in srgb, var(--color-azure-900) 70%, var(--color-night-card));
+        color: var(--color-brand-light);
+    }
+    .stepper-label {
+        font-size: var(--text-caption);
+        font-weight: 500;
+        color: var(--color-muted);
+        line-height: 1.3;
+        padding-top: 0.3125rem;
+        min-width: 0;
+        transition: color 200ms var(--ease-out, ease);
+    }
+    .dark .stepper-label {
+        color: var(--color-night-muted);
+    }
+    .stepper-step[data-state='current'] .stepper-label {
+        color: var(--color-ink);
+    }
+    .dark .stepper-step[data-state='current'] .stepper-label {
+        color: var(--color-night-ink);
+    }
+    /* The connector. A flex spacer that grows, so the markers distribute
+       themselves across whatever width the stepper is given. */
+    .stepper-line {
+        flex: 1 1 auto;
+        height: 2px;
+        margin: 0.8125rem 0.625rem 0;
+        border-radius: 999px;
+        background-color: var(--color-hairline);
+        transition: background-color 240ms var(--ease-out, ease);
+    }
+    .dark .stepper-line {
+        background-color: color-mix(in srgb, var(--color-night-ink) 12%, transparent);
+    }
+    .stepper-step[data-state='done'] .stepper-line {
+        background-color: var(--color-brand-strong);
+    }
+    @media (max-width: 640px) {
+        .stepper-label {
+            display: none;
+        }
+    }
+
+    /* --- Attention rows ---------------------------------------------------
+       The "Требует внимания" list. Each row is an icon circle, a title, a
+       one-line description and a chevron — the same anatomy as every other
+       list in the product, rather than the bespoke two-tile layout that left
+       half the card white.
+
+       `.attn-row-warn` is the amber treatment, and price negotiations are the
+       one thing that gets it: a customer is sitting in a live chat waiting on
+       a number, which is a different kind of queue from a lead to ring back. */
+    .attn-row {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.75rem;
+        border-radius: var(--radius-xl);
+        transition: background-color 160ms var(--ease-out, ease);
+    }
+    a.attn-row:hover,
+    button.attn-row:hover {
+        background-color: var(--color-azure-50);
+    }
+    .dark a.attn-row:hover,
+    .dark button.attn-row:hover {
+        background-color: var(--color-night-raised);
+    }
+    .attn-row-warn {
+        background-color: color-mix(in srgb, var(--color-warning) 7%, transparent);
+    }
+    a.attn-row-warn:hover,
+    button.attn-row-warn:hover {
+        background-color: color-mix(in srgb, var(--color-warning) 13%, transparent);
+    }
+    .dark .attn-row-warn {
+        background-color: color-mix(in srgb, var(--color-warning-light) 10%, transparent);
+    }
+    .dark a.attn-row-warn:hover,
+    .dark button.attn-row-warn:hover {
+        background-color: color-mix(in srgb, var(--color-warning-light) 16%, transparent);
+    }
+    /* The count on the right of an attention row. Tabular so a column of them
+       does not jitter, and 600 because it is the row's headline. */
+    .attn-count {
+        font-size: 1.25rem;
+        font-weight: 600;
+        line-height: 1;
+        letter-spacing: -0.02em;
+        font-variant-numeric: tabular-nums;
+    }
+
+    /* --- Compact empty state ----------------------------------------------
+       `.empty-state` is the full-page version: 3rem of padding and a 72px
+       icon, right for a dashboard with no history at all. Inside a card that
+       simply has nothing to show this period, it is what turned widgets into
+       big white rectangles. This is the in-card version — one line, one small
+       icon, no drama. */
+    .empty-inline {
+        display: flex;
+        align-items: center;
+        gap: 0.625rem;
+        padding: 0.875rem 0.75rem;
+        border-radius: var(--radius-xl);
+        background-color: var(--color-sunk);
+        font-size: var(--text-body-sm);
+        color: var(--color-muted);
+    }
+    .dark .empty-inline {
+        background-color: color-mix(in srgb, var(--color-night-raised) 60%, transparent);
+        color: var(--color-night-muted);
+    }
+    .empty-inline > svg {
+        width: 1.125rem;
+        height: 1.125rem;
+        flex: none;
+        color: var(--color-faint);
     }
 }

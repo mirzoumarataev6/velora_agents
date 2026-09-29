@@ -9,7 +9,7 @@
 
 <div class="max-w-4xl space-y-4">
     {{-- Telegram — the primary channel, given its own full-width row --}}
-    <div class="rounded-2xl border border-black/10 bg-white p-5 transition-shadow hover:shadow-md dark:border-white/10 dark:bg-white/5"
+    <div class="card p-5 transition-shadow"
         x-data="telegramChannel({
             connectUrl: '{{ route('agents.channels.telegram.connect', $agent) }}',
             disconnectUrlBase: '{{ route('agents.channels.telegram.disconnect', ['agent' => $agent, 'channel' => '__ID__']) }}',
@@ -49,7 +49,7 @@
                 <span class="h-2.5 w-2.5 shrink-0 rounded-full"
                     :class="channel?.status === 'connected' ? 'bg-success' : (channel?.status === 'error' ? 'bg-danger' : 'bg-black/20 dark:bg-white/20')"></span>
                 <button type="button" @click="expanded = !expanded"
-                    class="flex items-center gap-1 rounded-full border border-black/10 px-3 py-1.5 text-xs font-semibold transition-colors hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/10">
+                    class="flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors hover:bg-sunk dark:hover:bg-night-raised">
                     <span x-text="channel?.status === 'connected' ? {{ Js::from(__('agents.channels.shared.manage')) }} : {{ Js::from(__('agents.channels.shared.connect')) }}"></span>
                     <svg class="h-3 w-3 transition-transform" :class="expanded ? 'rotate-90' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
                 </button>
@@ -61,16 +61,16 @@
                 <div>
                     <label class="text-xs font-medium uppercase tracking-wide text-muted dark:text-night-muted">{{ __('agents.channels.shared.webhook_url_label') }}</label>
                     <div class="mt-1 flex items-center gap-2">
-                        <code class="flex-1 truncate rounded-lg bg-black/5 px-3 py-2 text-xs dark:bg-white/10" x-text="channel?.webhook_url"></code>
+                        <code class="badge badge-neutral flex-1 truncate" x-text="channel?.webhook_url"></code>
                         <button type="button" @click="navigator.clipboard.writeText(channel.webhook_url); window.showToast?.(@json(__('agents.channels.shared.copied')), 'success')"
-                            class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-black/10 text-muted transition-colors hover:bg-black/5 dark:border-white/10 dark:text-night-muted dark:hover:bg-white/10">
+                            class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted transition-colors hover:bg-sunk dark:text-night-muted dark:hover:bg-night-raised">
                             <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
                         </button>
                     </div>
                 </div>
 
                 <button type="button" @click="disconnect()" :disabled="disconnecting"
-                    class="rounded-full border border-danger/30 px-4 py-2 text-sm font-semibold text-danger transition-all hover:-translate-y-0.5 hover:bg-danger/5 disabled:opacity-60 dark:text-danger-light">
+                    class="btn btn-danger-soft">
                     <span x-show="!disconnecting">{{ __('agents.channels.shared.disconnect') }}</span>
                     <span x-show="disconnecting" class="spinner"></span>
                 </button>
@@ -81,8 +81,8 @@
                     <label for="bot_token" class="text-sm font-medium">{{ __('agents.channels.telegram.token_label') }}</label>
                     <div class="flex flex-col gap-2 sm:flex-row">
                         <input id="bot_token" x-model="botToken" type="text" required placeholder="{{ __('agents.channels.telegram.token_placeholder') }}"
- class="field flex-1 rounded-xl px-4 py-2.5 font-mono text-sm" />
-                        <button type="submit" :disabled="connecting" class="shrink-0 rounded-xl bg-brand px-5 py-2.5 text-sm font-semibold text-on-accent transition-all hover:-translate-y-0.5 hover:bg-brand-hover disabled:opacity-60">
+ class="field flex-1 px-4 py-2.5 font-mono text-sm" />
+                        <button type="submit" :disabled="connecting" class="btn btn-primary shrink-0 disabled:opacity-60">
                             <span x-show="!connecting">{{ __('agents.channels.shared.connect') }}</span>
                             <span x-show="connecting" class="spinner"></span>
                         </button>
@@ -90,7 +90,7 @@
                     <p x-show="errors.bot_token" x-text="errors.bot_token?.[0]" class="text-xs text-danger"></p>
                 </form>
 
-                <button type="button" @click="showInstructions = !showInstructions" class="mt-3 flex items-center gap-1 text-xs font-medium text-muted hover:text-brand dark:text-night-muted">
+                <button type="button" @click="showInstructions = !showInstructions" class="mt-3 flex items-center gap-1 text-xs font-medium text-muted hover:text-brand-strong dark:text-night-muted">
                     <svg class="h-3 w-3 transition-transform" :class="showInstructions ? 'rotate-90' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
                     {{ __('agents.channels.telegram.instructions_toggle') }}
                 </button>
@@ -107,7 +107,7 @@
          Instagram/Instagram), collapsing to one column under 640px. --}}
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
         {{-- WhatsApp (Cloud API) card --}}
-        <div class="rounded-2xl border border-black/10 bg-white p-5 transition-shadow hover:shadow-md dark:border-white/10 dark:bg-white/5"
+        <div class="card p-5 transition-shadow"
             x-data="metaChannel({
                 connectUrl: '{{ route('agents.channels.whatsapp.connect', $agent) }}',
                 disconnectUrlBase: '{{ route('agents.channels.whatsapp.disconnect', ['agent' => $agent, 'channel' => '__ID__']) }}',
@@ -151,7 +151,7 @@
                     <span class="h-2.5 w-2.5 shrink-0 rounded-full"
                         :class="channel?.status === 'connected' ? 'bg-success' : (channel?.status === 'error' ? 'bg-danger' : 'bg-black/20 dark:bg-white/20')"></span>
                     <button type="button" @click="expanded = !expanded"
-                        class="flex items-center gap-1 rounded-full border border-black/10 px-3 py-1.5 text-xs font-semibold transition-colors hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/10">
+                        class="flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors hover:bg-sunk dark:hover:bg-night-raised">
                         <span x-text="channel?.status === 'connected' ? {{ Js::from(__('agents.channels.shared.manage')) }} : {{ Js::from(__('agents.channels.shared.connect')) }}"></span>
                         <svg class="h-3 w-3 transition-transform" :class="expanded ? 'rotate-90' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
                     </button>
@@ -163,9 +163,9 @@
                     <div>
                         <label class="text-xs font-medium uppercase tracking-wide text-muted dark:text-night-muted">{{ __('agents.channels.shared.callback_url_label') }}</label>
                         <div class="mt-1 flex items-center gap-2">
-                            <code class="flex-1 truncate rounded-lg bg-black/5 px-3 py-2 text-xs dark:bg-white/10" x-text="channel?.webhook_url"></code>
+                            <code class="badge badge-neutral flex-1 truncate" x-text="channel?.webhook_url"></code>
                             <button type="button" @click="copy(channel.webhook_url)"
-                                class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-black/10 text-muted transition-colors hover:bg-black/5 dark:border-white/10 dark:text-night-muted dark:hover:bg-white/10">
+                                class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted transition-colors hover:bg-sunk dark:text-night-muted dark:hover:bg-night-raised">
                                 <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
                             </button>
                         </div>
@@ -173,16 +173,16 @@
                     <div>
                         <label class="text-xs font-medium uppercase tracking-wide text-muted dark:text-night-muted">{{ __('agents.channels.shared.verify_token_label') }}</label>
                         <div class="mt-1 flex items-center gap-2">
-                            <code class="flex-1 truncate rounded-lg bg-black/5 px-3 py-2 text-xs dark:bg-white/10" x-text="channel?.verify_token"></code>
+                            <code class="badge badge-neutral flex-1 truncate" x-text="channel?.verify_token"></code>
                             <button type="button" @click="copy(channel.verify_token)"
-                                class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-black/10 text-muted transition-colors hover:bg-black/5 dark:border-white/10 dark:text-night-muted dark:hover:bg-white/10">
+                                class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted transition-colors hover:bg-sunk dark:text-night-muted dark:hover:bg-night-raised">
                                 <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
                             </button>
                         </div>
                     </div>
 
                     <button type="button" @click="disconnect()" :disabled="disconnecting"
-                        class="rounded-full border border-danger/30 px-4 py-2 text-sm font-semibold text-danger transition-all hover:-translate-y-0.5 hover:bg-danger/5 disabled:opacity-60 dark:text-danger-light">
+                        class="btn btn-danger-soft">
                         <span x-show="!disconnecting">{{ __('agents.channels.shared.disconnect') }}</span>
                         <span x-show="disconnecting" class="spinner"></span>
                     </button>
@@ -193,30 +193,30 @@
                         <div>
                             <label for="wa_phone_number_id" class="text-sm font-medium">{{ __('agents.channels.whatsapp.phone_id_label') }}</label>
                             <input id="wa_phone_number_id" x-model="form.phone_number_id" type="text" required placeholder="123456789012345"
- class="field mt-1 w-full rounded-xl px-4 py-2.5 font-mono text-sm" />
+ class="field mt-1 w-full px-4 py-2.5 font-mono text-sm" />
                             <p x-show="errors.phone_number_id" x-text="errors.phone_number_id?.[0]" class="mt-1 text-xs text-danger"></p>
                         </div>
                         <div>
                             <label for="wa_access_token" class="text-sm font-medium">{{ __('agents.channels.whatsapp.access_token_label') }}</label>
                             <input id="wa_access_token" x-model="form.access_token" type="text" required placeholder="EAAG..."
- class="field mt-1 w-full rounded-xl px-4 py-2.5 font-mono text-sm" />
+ class="field mt-1 w-full px-4 py-2.5 font-mono text-sm" />
                             <p x-show="errors.access_token" x-text="errors.access_token?.[0]" class="mt-1 text-xs text-danger"></p>
                         </div>
                         <div>
                             <label for="wa_verify_token" class="text-sm font-medium">{{ __('agents.channels.shared.verify_token_label') }}</label>
                             <input id="wa_verify_token" x-model="form.verify_token" type="text" required
- class="field mt-1 w-full rounded-xl px-4 py-2.5 font-mono text-sm" />
+ class="field mt-1 w-full px-4 py-2.5 font-mono text-sm" />
                             <p class="mt-1 text-xs text-muted dark:text-night-muted">{{ __('agents.channels.shared.verify_token_help') }}</p>
                             <p x-show="errors.verify_token" x-text="errors.verify_token?.[0]" class="mt-1 text-xs text-danger"></p>
                         </div>
                         <div>
                             <label for="wa_app_secret" class="text-sm font-medium">{{ __('agents.channels.shared.app_secret_label') }}</label>
                             <input id="wa_app_secret" x-model="form.app_secret" type="password" required autocomplete="off"
- class="field mt-1 w-full rounded-xl px-4 py-2.5 font-mono text-sm" />
+ class="field mt-1 w-full px-4 py-2.5 font-mono text-sm" />
                             <p class="mt-1 text-xs text-muted dark:text-night-muted">{{ __('agents.channels.shared.app_secret_help') }}</p>
                             <p x-show="errors.app_secret" x-text="errors.app_secret?.[0]" class="mt-1 text-xs text-danger"></p>
                         </div>
-                        <button type="submit" :disabled="connecting" class="rounded-xl bg-brand px-5 py-2.5 text-sm font-semibold text-on-accent transition-all hover:-translate-y-0.5 hover:bg-brand-hover disabled:opacity-60">
+                        <button type="submit" :disabled="connecting" class="btn btn-primary disabled:opacity-60">
                             <span x-show="!connecting">{{ __('agents.channels.shared.connect') }}</span>
                             <span x-show="connecting" class="spinner"></span>
                         </button>
@@ -225,15 +225,15 @@
                     <div class="mt-3">
                         <label class="text-xs font-medium uppercase tracking-wide text-muted dark:text-night-muted">{{ __('agents.channels.shared.callback_meta_label') }}</label>
                         <div class="mt-1 flex items-center gap-2">
-                            <code class="flex-1 truncate rounded-lg bg-black/5 px-3 py-2 text-xs dark:bg-white/10" x-text="fallbackWebhookUrl"></code>
+                            <code class="badge badge-neutral flex-1 truncate" x-text="fallbackWebhookUrl"></code>
                             <button type="button" @click="copy(fallbackWebhookUrl)"
-                                class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-black/10 text-muted transition-colors hover:bg-black/5 dark:border-white/10 dark:text-night-muted dark:hover:bg-white/10">
+                                class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted transition-colors hover:bg-sunk dark:text-night-muted dark:hover:bg-night-raised">
                                 <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
                             </button>
                         </div>
                     </div>
 
-                    <button type="button" @click="showInstructions = !showInstructions" class="mt-3 flex items-center gap-1 text-xs font-medium text-muted hover:text-brand dark:text-night-muted">
+                    <button type="button" @click="showInstructions = !showInstructions" class="mt-3 flex items-center gap-1 text-xs font-medium text-muted hover:text-brand-strong dark:text-night-muted">
                         <svg class="h-3 w-3 transition-transform" :class="showInstructions ? 'rotate-90' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
                         {{ __('agents.channels.whatsapp.instructions_toggle') }}
                     </button>
@@ -247,7 +247,7 @@
         </div>
 
         {{-- WhatsApp via Green API card --}}
-        <div class="rounded-2xl border border-black/10 bg-white p-5 transition-shadow hover:shadow-md dark:border-white/10 dark:bg-white/5"
+        <div class="card p-5 transition-shadow"
             x-data="{ ...metaChannel({
                 connectUrl: '{{ route('agents.channels.greenapi.connect', $agent) }}',
                 disconnectUrlBase: '{{ route('agents.channels.greenapi.disconnect', ['agent' => $agent, 'channel' => '__ID__']) }}',
@@ -293,7 +293,7 @@
                     <span class="h-2.5 w-2.5 shrink-0 rounded-full"
                         :class="channel?.status === 'connected' ? 'bg-success' : (channel?.status === 'error' ? 'bg-danger' : 'bg-black/20 dark:bg-white/20')"></span>
                     <button type="button" @click="expanded = !expanded"
-                        class="flex items-center gap-1 rounded-full border border-black/10 px-3 py-1.5 text-xs font-semibold transition-colors hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/10">
+                        class="flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors hover:bg-sunk dark:hover:bg-night-raised">
                         <span x-text="channel?.status === 'connected' ? {{ Js::from(__('agents.channels.shared.manage')) }} : {{ Js::from(__('agents.channels.shared.connect')) }}"></span>
                         <svg class="h-3 w-3 transition-transform" :class="expanded ? 'rotate-90' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
                     </button>
@@ -302,29 +302,29 @@
 
             <div x-show="expanded" x-transition.opacity.duration.200ms x-cloak class="mt-4">
                 <div x-show="channel?.status === 'connected'" class="space-y-3">
-                    <p x-show="channel?.state_instance && channel.state_instance !== 'authorized'" class="rounded-xl bg-danger/10 px-3 py-2 text-xs text-danger dark:text-danger-light">
+                    <p x-show="channel?.state_instance && channel.state_instance !== 'authorized'" class="badge badge-danger">
                         {{ __('agents.channels.greenapi.not_authorized') }} (<span x-text="channel?.state_instance"></span>)
                     </p>
 
                     <div>
                         <label class="text-xs font-medium uppercase tracking-wide text-muted dark:text-night-muted">{{ __('agents.channels.shared.webhook_url_label') }}</label>
                         <div class="mt-1 flex items-center gap-2">
-                            <code class="flex-1 truncate rounded-lg bg-black/5 px-3 py-2 text-xs dark:bg-white/10" x-text="channel?.webhook_url"></code>
+                            <code class="badge badge-neutral flex-1 truncate" x-text="channel?.webhook_url"></code>
                             <button type="button" @click="copy(channel.webhook_url)"
-                                class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-black/10 text-muted transition-colors hover:bg-black/5 dark:border-white/10 dark:text-night-muted dark:hover:bg-white/10">
+                                class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted transition-colors hover:bg-sunk dark:text-night-muted dark:hover:bg-night-raised">
                                 <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
                             </button>
                         </div>
                     </div>
 
-                    <p x-show="channel?.webhook_registered" class="rounded-xl bg-success/10 px-3 py-2 text-xs text-success">
+                    <p x-show="channel?.webhook_registered" class="badge badge-success">
                         ✓ {{ __('agents.channels.greenapi.webhook_auto_ok') }}
                     </p>
-                    <p x-show="channel && !channel.webhook_registered" class="rounded-xl bg-danger/10 px-3 py-2 text-xs text-danger dark:text-danger-light">
+                    <p x-show="channel && !channel.webhook_registered" class="badge badge-danger">
                         {{ __('agents.channels.greenapi.webhook_auto_failed') }} <span x-text="channel?.webhook_error"></span>
                     </p>
 
-                    <button type="button" x-show="channel?.webhook_registered" @click="showManual = !showManual" class="flex items-center gap-1 text-xs font-medium text-muted hover:text-brand dark:text-night-muted">
+                    <button type="button" x-show="channel?.webhook_registered" @click="showManual = !showManual" class="flex items-center gap-1 text-xs font-medium text-muted hover:text-brand-strong dark:text-night-muted">
                         <svg class="h-3 w-3 transition-transform" :class="showManual ? 'rotate-90' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
                         {{ __('agents.channels.greenapi.manual_toggle') }}
                     </button>
@@ -336,7 +336,7 @@
                     </ol>
 
                     <button type="button" @click="disconnect()" :disabled="disconnecting"
-                        class="rounded-full border border-danger/30 px-4 py-2 text-sm font-semibold text-danger transition-all hover:-translate-y-0.5 hover:bg-danger/5 disabled:opacity-60 dark:text-danger-light">
+                        class="btn btn-danger-soft">
                         <span x-show="!disconnecting">{{ __('agents.channels.shared.disconnect') }}</span>
                         <span x-show="disconnecting" class="spinner"></span>
                     </button>
@@ -347,23 +347,23 @@
                         <div>
                             <label for="ga_id_instance" class="text-sm font-medium">{{ __('agents.channels.greenapi.id_instance_label') }}</label>
                             <input id="ga_id_instance" x-model="form.id_instance" type="text" inputmode="numeric" required placeholder="710722736476"
- class="field mt-1 w-full rounded-xl px-4 py-2.5 font-mono text-sm" />
+ class="field mt-1 w-full px-4 py-2.5 font-mono text-sm" />
                             <p x-show="errors.id_instance" x-text="errors.id_instance?.[0]" class="mt-1 text-xs text-danger"></p>
                         </div>
                         <div>
                             <label for="ga_api_token_instance" class="text-sm font-medium">{{ __('agents.channels.greenapi.api_token_label') }}</label>
                             <input id="ga_api_token_instance" x-model="form.api_token_instance" type="password" required autocomplete="off"
- class="field mt-1 w-full rounded-xl px-4 py-2.5 font-mono text-sm" />
+ class="field mt-1 w-full px-4 py-2.5 font-mono text-sm" />
                             <p x-show="errors.api_token_instance" x-text="errors.api_token_instance?.[0]" class="mt-1 text-xs text-danger"></p>
                         </div>
                         <div>
                             <label for="ga_api_url" class="text-sm font-medium">{{ __('agents.channels.greenapi.api_url_label') }}</label>
                             <input id="ga_api_url" x-model="form.api_url" type="url" required
- class="field mt-1 w-full rounded-xl px-4 py-2.5 font-mono text-sm" />
+ class="field mt-1 w-full px-4 py-2.5 font-mono text-sm" />
                             <p class="mt-1 text-xs text-muted dark:text-night-muted">{{ __('agents.channels.greenapi.api_url_help') }}</p>
                             <p x-show="errors.api_url" x-text="errors.api_url?.[0]" class="mt-1 text-xs text-danger"></p>
                         </div>
-                        <button type="submit" :disabled="connecting" class="rounded-xl bg-brand px-5 py-2.5 text-sm font-semibold text-on-accent transition-all hover:-translate-y-0.5 hover:bg-brand-hover disabled:opacity-60">
+                        <button type="submit" :disabled="connecting" class="btn btn-primary disabled:opacity-60">
                             <span x-show="!connecting">{{ __('agents.channels.shared.connect') }}</span>
                             <span x-show="connecting" class="spinner"></span>
                         </button>
@@ -371,7 +371,7 @@
 
                     <p class="mt-3 text-xs text-muted dark:text-night-muted">{{ __('agents.channels.greenapi.unofficial_note') }}</p>
 
-                    <button type="button" @click="showInstructions = !showInstructions" class="mt-3 flex items-center gap-1 text-xs font-medium text-muted hover:text-brand dark:text-night-muted">
+                    <button type="button" @click="showInstructions = !showInstructions" class="mt-3 flex items-center gap-1 text-xs font-medium text-muted hover:text-brand-strong dark:text-night-muted">
                         <svg class="h-3 w-3 transition-transform" :class="showInstructions ? 'rotate-90' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
                         {{ __('agents.channels.greenapi.instructions_toggle') }}
                     </button>
@@ -385,7 +385,7 @@
         </div>
 
         {{-- Instagram DM via instagrapi card --}}
-        <div class="rounded-2xl border border-black/10 bg-white p-5 transition-shadow hover:shadow-md dark:border-white/10 dark:bg-white/5"
+        <div class="card p-5 transition-shadow"
             x-data="instagrapiChannel({
                 connectUrl: '{{ route('agents.channels.instagrapi.connect', $agent) }}',
                 disconnectUrlBase: '{{ route('agents.channels.instagrapi.disconnect', ['agent' => $agent, 'channel' => '__ID__']) }}',
@@ -422,7 +422,7 @@
                     <span class="h-2.5 w-2.5 shrink-0 rounded-full"
                         :class="channel?.status === 'connected' ? 'bg-success' : (channel?.status === 'error' ? 'bg-danger' : 'bg-black/20 dark:bg-white/20')"></span>
                     <button type="button" @click="expanded = !expanded"
-                        class="flex items-center gap-1 rounded-full border border-black/10 px-3 py-1.5 text-xs font-semibold transition-colors hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/10">
+                        class="flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors hover:bg-sunk dark:hover:bg-night-raised">
                         <span x-text="channel?.status === 'connected' ? {{ Js::from(__('agents.channels.shared.manage')) }} : {{ Js::from(__('agents.channels.shared.connect')) }}"></span>
                         <svg class="h-3 w-3 transition-transform" :class="expanded ? 'rotate-90' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
                     </button>
@@ -431,15 +431,15 @@
 
             <div x-show="expanded" x-transition.opacity.duration.200ms x-cloak class="mt-4">
                 <div x-show="channel?.status === 'connected'" class="space-y-3">
-                    <p x-show="channel?.instagram_status && channel.instagram_status !== 'ok'" class="rounded-xl bg-danger/10 px-3 py-2 text-xs text-danger dark:text-danger-light">
+                    <p x-show="channel?.instagram_status && channel.instagram_status !== 'ok'" class="badge badge-danger">
                         {{ __('agents.channels.instagrapi.not_ok') }} (<span x-text="channel?.instagram_status"></span>)
                     </p>
-                    <p class="rounded-xl bg-black/5 px-3 py-2 text-xs text-muted dark:bg-white/10 dark:text-night-muted">
+                    <p class="badge badge-neutral">
                         {{ __('agents.channels.instagrapi.how_it_works') }}
                     </p>
 
                     <button type="button" @click="disconnect()" :disabled="disconnecting"
-                        class="rounded-full border border-danger/30 px-4 py-2 text-sm font-semibold text-danger transition-all hover:-translate-y-0.5 hover:bg-danger/5 disabled:opacity-60 dark:text-danger-light">
+                        class="btn btn-danger-soft">
                         <span x-show="!disconnecting">{{ __('agents.channels.shared.disconnect') }}</span>
                         <span x-show="disconnecting" class="spinner"></span>
                     </button>
@@ -450,22 +450,22 @@
                         <div>
                             <label for="ig_username" class="text-sm font-medium">{{ __('agents.channels.instagrapi.username_label') }}</label>
                             <input id="ig_username" x-model="form.ig_username" type="text" required autocomplete="off" placeholder="my_shop"
- class="field mt-1 w-full rounded-xl px-4 py-2.5 font-mono text-sm" />
+ class="field mt-1 w-full px-4 py-2.5 font-mono text-sm" />
                             <p x-show="errors.ig_username" x-text="errors.ig_username?.[0]" class="mt-1 text-xs text-danger"></p>
                         </div>
                         <div>
                             <label for="ig_password" class="text-sm font-medium">{{ __('agents.channels.instagrapi.password_label') }}</label>
                             <input id="ig_password" x-model="form.ig_password" type="password" required autocomplete="new-password"
- class="field mt-1 w-full rounded-xl px-4 py-2.5 font-mono text-sm" />
+ class="field mt-1 w-full px-4 py-2.5 font-mono text-sm" />
                             <p x-show="errors.ig_password" x-text="errors.ig_password?.[0]" class="mt-1 text-xs text-danger"></p>
                         </div>
-                        <button type="submit" :disabled="connecting" class="rounded-xl bg-brand px-5 py-2.5 text-sm font-semibold text-on-accent transition-all hover:-translate-y-0.5 hover:bg-brand-hover disabled:opacity-60">
+                        <button type="submit" :disabled="connecting" class="btn btn-primary disabled:opacity-60">
                             <span x-show="!connecting">{{ __('agents.channels.shared.connect') }}</span>
                             <span x-show="connecting" class="spinner"></span>
                         </button>
                     </form>
 
-                    <p class="mt-3 rounded-xl bg-danger/10 px-3 py-2 text-xs text-danger dark:text-danger-light">
+                    <p class="badge badge-danger mt-3">
                         ⚠️ {{ __('agents.channels.instagrapi.unofficial_warning') }}
                     </p>
                 </div>
@@ -473,7 +473,7 @@
         </div>
 
         {{-- Instagram (official Graph API) card --}}
-        <div class="rounded-2xl border border-black/10 bg-white p-5 transition-shadow hover:shadow-md dark:border-white/10 dark:bg-white/5"
+        <div class="card p-5 transition-shadow"
             x-data="metaChannel({
                 connectUrl: '{{ route('agents.channels.instagram.connect', $agent) }}',
                 disconnectUrlBase: '{{ route('agents.channels.instagram.disconnect', ['agent' => $agent, 'channel' => '__ID__']) }}',
@@ -515,7 +515,7 @@
                     <span class="h-2.5 w-2.5 shrink-0 rounded-full"
                         :class="channel?.status === 'connected' ? 'bg-success' : (channel?.status === 'error' ? 'bg-danger' : 'bg-black/20 dark:bg-white/20')"></span>
                     <button type="button" @click="expanded = !expanded"
-                        class="flex items-center gap-1 rounded-full border border-black/10 px-3 py-1.5 text-xs font-semibold transition-colors hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/10">
+                        class="flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors hover:bg-sunk dark:hover:bg-night-raised">
                         <span x-text="channel?.status === 'connected' ? {{ Js::from(__('agents.channels.shared.manage')) }} : {{ Js::from(__('agents.channels.shared.connect')) }}"></span>
                         <svg class="h-3 w-3 transition-transform" :class="expanded ? 'rotate-90' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
                     </button>
@@ -527,9 +527,9 @@
                     <div>
                         <label class="text-xs font-medium uppercase tracking-wide text-muted dark:text-night-muted">{{ __('agents.channels.shared.callback_url_label') }}</label>
                         <div class="mt-1 flex items-center gap-2">
-                            <code class="flex-1 truncate rounded-lg bg-black/5 px-3 py-2 text-xs dark:bg-white/10" x-text="channel?.webhook_url"></code>
+                            <code class="badge badge-neutral flex-1 truncate" x-text="channel?.webhook_url"></code>
                             <button type="button" @click="copy(channel.webhook_url)"
-                                class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-black/10 text-muted transition-colors hover:bg-black/5 dark:border-white/10 dark:text-night-muted dark:hover:bg-white/10">
+                                class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted transition-colors hover:bg-sunk dark:text-night-muted dark:hover:bg-night-raised">
                                 <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
                             </button>
                         </div>
@@ -537,16 +537,16 @@
                     <div>
                         <label class="text-xs font-medium uppercase tracking-wide text-muted dark:text-night-muted">{{ __('agents.channels.shared.verify_token_label') }}</label>
                         <div class="mt-1 flex items-center gap-2">
-                            <code class="flex-1 truncate rounded-lg bg-black/5 px-3 py-2 text-xs dark:bg-white/10" x-text="channel?.verify_token"></code>
+                            <code class="badge badge-neutral flex-1 truncate" x-text="channel?.verify_token"></code>
                             <button type="button" @click="copy(channel.verify_token)"
-                                class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-black/10 text-muted transition-colors hover:bg-black/5 dark:border-white/10 dark:text-night-muted dark:hover:bg-white/10">
+                                class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted transition-colors hover:bg-sunk dark:text-night-muted dark:hover:bg-night-raised">
                                 <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
                             </button>
                         </div>
                     </div>
 
                     <button type="button" @click="disconnect()" :disabled="disconnecting"
-                        class="rounded-full border border-danger/30 px-4 py-2 text-sm font-semibold text-danger transition-all hover:-translate-y-0.5 hover:bg-danger/5 disabled:opacity-60 dark:text-danger-light">
+                        class="btn btn-danger-soft">
                         <span x-show="!disconnecting">{{ __('agents.channels.shared.disconnect') }}</span>
                         <span x-show="disconnecting" class="spinner"></span>
                     </button>
@@ -557,30 +557,30 @@
                         <div>
                             <label for="ig_business_account_id" class="text-sm font-medium">{{ __('agents.channels.instagram.business_id_label') }}</label>
                             <input id="ig_business_account_id" x-model="form.ig_business_account_id" type="text" required placeholder="17841400000000000"
- class="field mt-1 w-full rounded-xl px-4 py-2.5 font-mono text-sm" />
+ class="field mt-1 w-full px-4 py-2.5 font-mono text-sm" />
                             <p x-show="errors.ig_business_account_id" x-text="errors.ig_business_account_id?.[0]" class="mt-1 text-xs text-danger"></p>
                         </div>
                         <div>
                             <label for="ig_page_access_token" class="text-sm font-medium">{{ __('agents.channels.instagram.access_token_label') }}</label>
                             <input id="ig_page_access_token" x-model="form.page_access_token" type="text" required placeholder="{{ __('agents.channels.instagram.access_token_placeholder') }}"
- class="field mt-1 w-full rounded-xl px-4 py-2.5 font-mono text-sm" />
+ class="field mt-1 w-full px-4 py-2.5 font-mono text-sm" />
                             <p x-show="errors.page_access_token" x-text="errors.page_access_token?.[0]" class="mt-1 text-xs text-danger"></p>
                         </div>
                         <div>
                             <label for="ig_verify_token" class="text-sm font-medium">{{ __('agents.channels.shared.verify_token_label') }}</label>
                             <input id="ig_verify_token" x-model="form.verify_token" type="text" required
- class="field mt-1 w-full rounded-xl px-4 py-2.5 font-mono text-sm" />
+ class="field mt-1 w-full px-4 py-2.5 font-mono text-sm" />
                             <p class="mt-1 text-xs text-muted dark:text-night-muted">{{ __('agents.channels.shared.verify_token_help') }}</p>
                             <p x-show="errors.verify_token" x-text="errors.verify_token?.[0]" class="mt-1 text-xs text-danger"></p>
                         </div>
                         <div>
                             <label for="ig_app_secret" class="text-sm font-medium">{{ __('agents.channels.shared.app_secret_label') }}</label>
                             <input id="ig_app_secret" x-model="form.app_secret" type="password" required autocomplete="off"
- class="field mt-1 w-full rounded-xl px-4 py-2.5 font-mono text-sm" />
+ class="field mt-1 w-full px-4 py-2.5 font-mono text-sm" />
                             <p class="mt-1 text-xs text-muted dark:text-night-muted">{{ __('agents.channels.shared.app_secret_help') }}</p>
                             <p x-show="errors.app_secret" x-text="errors.app_secret?.[0]" class="mt-1 text-xs text-danger"></p>
                         </div>
-                        <button type="submit" :disabled="connecting" class="rounded-xl bg-brand px-5 py-2.5 text-sm font-semibold text-on-accent transition-all hover:-translate-y-0.5 hover:bg-brand-hover disabled:opacity-60">
+                        <button type="submit" :disabled="connecting" class="btn btn-primary disabled:opacity-60">
                             <span x-show="!connecting">{{ __('agents.channels.shared.connect') }}</span>
                             <span x-show="connecting" class="spinner"></span>
                         </button>
@@ -589,15 +589,15 @@
                     <div class="mt-3">
                         <label class="text-xs font-medium uppercase tracking-wide text-muted dark:text-night-muted">{{ __('agents.channels.shared.callback_meta_label') }}</label>
                         <div class="mt-1 flex items-center gap-2">
-                            <code class="flex-1 truncate rounded-lg bg-black/5 px-3 py-2 text-xs dark:bg-white/10" x-text="fallbackWebhookUrl"></code>
+                            <code class="badge badge-neutral flex-1 truncate" x-text="fallbackWebhookUrl"></code>
                             <button type="button" @click="copy(fallbackWebhookUrl)"
-                                class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-black/10 text-muted transition-colors hover:bg-black/5 dark:border-white/10 dark:text-night-muted dark:hover:bg-white/10">
+                                class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted transition-colors hover:bg-sunk dark:text-night-muted dark:hover:bg-night-raised">
                                 <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
                             </button>
                         </div>
                     </div>
 
-                    <button type="button" @click="showInstructions = !showInstructions" class="mt-3 flex items-center gap-1 text-xs font-medium text-muted hover:text-brand dark:text-night-muted">
+                    <button type="button" @click="showInstructions = !showInstructions" class="mt-3 flex items-center gap-1 text-xs font-medium text-muted hover:text-brand-strong dark:text-night-muted">
                         <svg class="h-3 w-3 transition-transform" :class="showInstructions ? 'rotate-90' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
                         {{ __('agents.channels.instagram.instructions_toggle') }}
                     </button>

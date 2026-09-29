@@ -5,6 +5,31 @@ return [
     'heading' => 'Аналитика',
     'subheading' => 'Что ваши ассистенты сделали за вас.',
 
+    'greeting' => 'Добрый день, :name',
+
+    'details' => [
+        'title' => 'Подробная аналитика',
+        'description' => 'Воронка, скорость ответов, спрос и работа агентов',
+    ],
+
+    'units' => [
+        'seconds' => 'с',
+        'ms' => 'мс',
+    ],
+
+    'range' => [
+        'label' => 'Период',
+    ],
+
+    // The trend pill's accessible name. The pill itself shows only "18%" — the
+    // arrow beside it is a decorative glyph that a screen reader skips, so the
+    // direction has to be spelled out here or the number means nothing.
+    'trend' => [
+        'up' => 'на :percent% больше, чем в предыдущем периоде',
+        'down' => 'на :percent% меньше, чем в предыдущем периоде',
+        'flat' => 'без изменений к предыдущему периоду',
+    ],
+
     'agent_filter' => [
         'label' => 'Агент',
         'all' => 'Все агенты',
@@ -21,11 +46,15 @@ return [
         'active_conversations' => 'Активные диалоги',
         'active_conversations_hint' => 'Не закрыты и были активны за последние 24 часа',
         'leads_today' => 'Заявки сегодня',
+        'leads_week_hint' => 'Заявки с начала недели; линия — по дням за период',
         'leads_week' => 'Заявки за неделю',
         'conversion' => 'Конверсия в заявку',
         'conversion_hint' => 'Доля диалогов, из которых получилась заявка',
         'response_time' => 'Среднее время ответа',
         'response_time_hint' => 'Сколько ассистент тратит на один ответ',
+        'messages' => 'Сообщения',
+        'messages_hint' => 'Все сообщения за выбранный период',
+        'of_total_conversations' => ':count диалог всего|:count диалога всего|:count диалогов всего',
     ],
 
     'after_hours' => [
@@ -66,6 +95,8 @@ return [
         'range_30' => '30 дней',
         'total' => 'Всего за период',
         'empty' => 'За этот период сообщений не было.',
+        'insight_channel' => 'Больше всего переписок принёс :channel — :percent% всех сообщений.',
+        'insight_peak' => 'Пик пришёлся на :day — :count сообщений за день.',
     ],
 
     'channels' => [
@@ -84,6 +115,11 @@ return [
         'price_approvals_hint' => 'Клиент ждёт вашего решения',
         'view' => 'Открыть',
         'clear' => 'Всё разобрано — открытых заявок нет.',
+        'negative_ratings' => 'Плохие оценки',
+        'negative_ratings_hint' => 'Ответы, которые клиенты отметили как неудачные',
+        'in_progress' => 'Заявки в работе',
+        'in_progress_hint' => 'Вы их уже взяли, но ещё не закрыли',
+        'view_all' => 'Все заявки',
     ],
 
     'funnel' => [

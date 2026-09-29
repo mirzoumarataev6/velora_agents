@@ -49,7 +49,7 @@
     :root {
         --bg: var(--color-cream-100);
         --bg-tint: var(--color-paper);
-        --surface: #ffffff;
+        --surface: var(--color-surface);
         --ink: var(--color-ink);
         --ink-2: color-mix(in srgb, var(--color-ink) 68%, transparent);
         --ink-3: color-mix(in srgb, var(--color-ink) 48%, transparent);
@@ -352,7 +352,7 @@
 <header id="hdr" class="fixed inset-x-0 top-0 z-50">
     <div class="mx-auto flex max-w-[1080px] items-center justify-between gap-4 px-6 py-4">
         <a href="{{ route('welcome') }}" class="flex shrink-0 items-center" aria-label="{{ __('common.brand') }}">
-            <img src="{{ asset('images/brand/gen/mark.webp') }}" width="32" height="32" alt="{{ __('common.brand') }}"
+            <img src="{{ asset('images/brand/gen/mark.webp') }}?v={{ config('agent.brand_mark_version') }}" width="32" height="32" alt="{{ __('common.brand') }}"
                 class="h-8 w-8 rounded-lg" fetchpriority="high" decoding="async" />
         </a>
 
@@ -708,7 +708,7 @@
     <div class="mx-auto max-w-[1080px]">
         <div class="flex flex-col justify-between gap-10 lg:flex-row">
             <div class="max-w-xs">
-                <img src="{{ asset('images/brand/gen/mark.webp') }}" width="28" height="28" alt="{{ __('common.brand') }}" class="h-7 w-7 rounded-lg" loading="lazy" decoding="async" />
+                <img src="{{ asset('images/brand/gen/mark.webp') }}?v={{ config('agent.brand_mark_version') }}" width="28" height="28" alt="{{ __('common.brand') }}" class="h-7 w-7 rounded-lg" loading="lazy" decoding="async" />
                 <p class="t-small mt-4" data-i18n="landing.footer.tagline">{{ __('landing.footer.tagline') }}</p>
             </div>
             <div class="flex flex-wrap gap-x-14 gap-y-8">

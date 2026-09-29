@@ -30,22 +30,60 @@ class AgentWizardStepsTest extends TestCase
         return $this->actingAs($this->user)->get(route('agents.create'));
     }
 
-    public function test_the_stepper_has_five_segments(): void
+    /**
+     * Five markers, and each one NAMED.
+     *
+     * The stepper used to be `<template x-for="n in 5">` over five identical
+     * bars, so this asserted the loop bound. It is a Blade loop over
+     * `agents.form.step_names` now, which is the change that made the thing
+     * legible: a bar told the owner they were somewhere in five steps and
+     * nothing about what the five were. Counting the rendered markers is also
+     * a stronger check than reading the loop's source.
+     */
+    public function test_the_stepper_has_five_named_segments(): void
     {
         $response = $this->wizard();
+        $content = $response->getContent();
 
         $response->assertOk();
-        $response->assertSee('x-for="n in 5"', false);
-        $response->assertDontSee('x-for="n in 4"', false);
+        $this->assertSame(5, substr_count($content, 'class="stepper-marker"'));
+        $this->assertSame(5, substr_count($content, 'class="stepper-label"'));
     }
 
-    public function test_all_five_step_headings_are_present_and_numbered(): void
+    /** Every step's name is on the page, in the stepper. */
+    public function test_all_five_step_names_are_present(): void
     {
         $response = $this->wizard();
 
         $response->assertOk();
-        foreach (['step1_heading', 'step2_heading', 'step3_heading', 'step4_heading', 'step5_heading'] as $key) {
-            $response->assertSee(__("agents.form.{$key}"), false);
+        $names = __('agents.form.step_names');
+        $this->assertCount(5, $names);
+
+        foreach ($names as $number => $name) {
+            $response->assertSee($name, false);
+            // Numbered, so "you are here" survives a glance at the markers
+            // alone on a narrow screen where the labels are hidden.
+            $response->assertSee('step = '.$number, false);
+        }
+    }
+
+    /**
+     * The side panel is what stopped this screen being a narrow card on an
+     * empty page: a live preview and a set of tips for the current step.
+     */
+    public function test_the_side_panel_carries_tips_for_every_step(): void
+    {
+        $response = $this->wizard();
+        $content = $response->getContent();
+
+        $response->assertOk();
+        $response->assertSee(__('agents.form.preview_title'), false);
+        $response->assertSee(__('agents.form.tips_title'), false);
+
+        foreach (__('agents.form.step_tips') as $tips) {
+            foreach ($tips as $tip) {
+                $this->assertStringContainsString(e($tip), $content);
+            }
         }
     }
 
@@ -101,6 +139,11 @@ class AgentWizardStepsTest extends TestCase
     /**
      * A validation bounce must reopen the step the bad field is on, or the
      * owner sees an untouched form with an error they cannot find.
+     *
+     * Asserted on `step: N,` rather than the whole `x-data="{ step: N }"`:
+     * the component now also carries the fields the side panel's live preview
+     * mirrors, so the step is the first key of a multi-line object rather
+     * than the only thing in a one-line one.
      */
     public function test_a_validation_error_reopens_the_step_it_belongs_to(): void
     {
@@ -112,21 +155,21 @@ class AgentWizardStepsTest extends TestCase
             ->from(route('agents.create'))
             ->followingRedirects()
             ->post(route('agents.store'), ['name' => ''] + $base)
-            ->assertSee('x-data="{ step: 1 }"', false);
+            ->assertSee('step: 1,', false);
 
         // `rules_instructions` is on step 2, so its error must open step 2.
         $this->actingAs($this->user)
             ->from(route('agents.create'))
             ->followingRedirects()
             ->post(route('agents.store'), ['rules_instructions' => str_repeat('a', 5001)] + $base)
-            ->assertSee('x-data="{ step: 2 }"', false);
+            ->assertSee('step: 2,', false);
 
         // And a step-3 field opens step 3.
         $this->actingAs($this->user)
             ->from(route('agents.create'))
             ->followingRedirects()
             ->post(route('agents.store'), ['max_length' => 999999] + $base)
-            ->assertSee('x-data="{ step: 3 }"', false);
+            ->assertSee('step: 3,', false);
     }
 
     // ---------------------------------------------------------------

@@ -51,6 +51,17 @@ return [
         'empty_description' => 'Дар ҳеҷ паём «:term» нест. Дархости дигарро санҷед.',
     ],
 
+    /* One line per filter, shown in the inbox's unopened thread pane.
+     * The filters are the only non-obvious part of that screen, and the
+     * pane is two thirds of it — so the space explains them instead of
+     * staying blank. */
+    'filter_help' => [
+        'needs_human' => 'Ассистент сӯҳбатро ба одам супурд — мизоҷ оператор пурсид ё сӯҳбат хуб нарафт.',
+        'has_lead' => 'Аз мукотиба дархост баромад: ном, тамос ва он чи ба одам лозим аст.',
+        'rated_down' => 'Мизоҷ ҷавобро нобарор донист. Ягона аломати ҷавоби нодурусти боварибахш.',
+        'unread' => 'Паёми нав омад, ки шумо ҳанӯз накушодед.',
+    ],
+
     'filters' => [
         'all' => 'Ҳама',
         'unread' => 'Хонданашуда',

@@ -27,14 +27,14 @@
          Focusing a display:none input is a no-op, so the other tabs are
          unaffected. --}}
     x-effect="if (tab === 'playground') focusComposer()"
-    class="flex h-[32rem] flex-col overflow-hidden rounded-2xl border border-black/10 dark:border-white/10">
+    class="flex h-[32rem] flex-col overflow-hidden rounded-2xl">
 
-    <div class="flex items-center justify-between border-b border-black/10 bg-white/60 px-4 py-3 dark:border-white/10 dark:bg-white/5">
+    <div class="flex items-center justify-between border-b border-hairline bg-white/60 px-4 py-3 dark:border-white/10 dark:bg-night-raised">
         <div>
             <p class="text-sm font-semibold">{{ __('agents.playground.heading') }}</p>
             <p class="text-xs text-muted dark:text-night-muted">{{ __('agents.playground.subheading') }}</p>
         </div>
-        <button type="button" @click="resetConversation()" class="flex items-center gap-1.5 rounded-full border border-black/10 px-3 py-1.5 text-xs font-medium transition-colors hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/10">
+        <button type="button" @click="resetConversation()" class="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors hover:bg-sunk dark:hover:bg-night-raised">
             <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
             {{ __('agents.playground.clear') }}
         </button>
@@ -55,12 +55,12 @@
                      customer typed is shown verbatim, while the agent's reply is
                      markdown the model wrote and has to be rendered. --}}
                 <template x-if="msg.role === 'user'">
-                    <div class="max-w-[80%] rounded-2xl bg-brand px-4 py-2.5 text-sm whitespace-pre-wrap text-on-accent"
+                    <div class="max-w-[80%] rounded-2xl bg-brand-strong px-4 py-2.5 text-sm whitespace-pre-wrap text-on-accent"
                         :class="msg._fresh && 'pg-msg-in'"
                         x-text="msg.content"></div>
                 </template>
                 <template x-if="msg.role !== 'user'">
-                    <div class="pg-prose max-w-[80%] rounded-2xl bg-black/5 px-4 py-2.5 text-sm dark:bg-white/10"
+                    <div class="pg-prose max-w-[80%] rounded-2xl bg-sunk px-4 py-2.5 text-sm dark:bg-night-raised"
                         :class="msg._fresh && 'pg-msg-in'"
                         x-html="renderMarkdown(msg.content)"></div>
                 </template>
@@ -68,23 +68,23 @@
                 {{-- Same marker the Диалоги inbox uses, so a transcript reads the
                      same way in both places. --}}
                 <div x-show="msg.source_type === 'voice'" x-cloak
-                    class="mt-1 flex items-center gap-1 rounded-full bg-brand/10 px-2 py-0.5 text-[10px] font-medium text-brand">
+                    class="badge badge-brand mt-1">
                     <span aria-hidden="true">🎤</span>
                     <span>{{ __('conversations.thread.voice_note') }}</span>
                 </div>
 
                 <template x-if="msg.role === 'assistant' && msg.meta">
                     <div class="mt-1 max-w-[80%] text-xs text-muted dark:text-night-muted">
-                        <button type="button" @click="msg._sourcesOpen = !msg._sourcesOpen" class="flex items-center gap-1 hover:text-brand" x-show="(msg.meta.retrieved_chunks || []).length > 0">
+                        <button type="button" @click="msg._sourcesOpen = !msg._sourcesOpen" class="flex items-center gap-1 hover:text-brand-strong" x-show="(msg.meta.retrieved_chunks || []).length > 0">
                             <svg class="h-3 w-3 transition-transform" :class="msg._sourcesOpen ? 'rotate-90' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
                             <span x-text="sourcesLabel + ' (' + (msg.meta.retrieved_chunks || []).length + ')'"></span>
                         </button>
                         <div x-show="msg._sourcesOpen" x-cloak x-transition.opacity.duration.200ms class="mt-1.5 space-y-1.5">
                             <template x-for="src in (msg.meta.retrieved_chunks || [])" :key="src.id">
-                                <div class="rounded-xl border border-black/10 bg-white/60 p-2.5 dark:border-white/10 dark:bg-white/5">
+                                <div class="rounded-xl bg-white/60 p-2.5 dark:bg-night-raised">
                                     <div class="flex items-center justify-between gap-2">
                                         <span class="font-medium text-ink dark:text-white" x-text="src.source_name || kbFallback"></span>
-                                        <span class="shrink-0 rounded-full bg-success/10 px-2 py-0.5 font-mono text-[10px] font-semibold text-success dark:text-success-light" x-text="Math.round(src.score * 100) + '%'"></span>
+                                        <span class="badge badge-success shrink-0 font-mono" x-text="Math.round(src.score * 100) + '%'"></span>
                                     </div>
                                     <p class="mt-1 line-clamp-3 text-muted dark:text-night-muted" x-text="src.content"></p>
                                 </div>
@@ -102,7 +102,7 @@
              reads as the same object settling rather than a new one appearing
              somewhere else. --}}
         <div x-show="sending" x-cloak class="flex flex-col items-start">
-            <div class="pg-msg-in flex items-center gap-1.5 rounded-2xl bg-black/5 px-4 py-3.5 dark:bg-white/10"
+            <div class="pg-msg-in flex items-center gap-1.5 rounded-2xl bg-sunk px-4 py-3.5 dark:bg-night-raised"
                 role="status" aria-live="polite" aria-label="{{ __('agents.playground.typing') }}">
                 <span class="pg-typing-dot h-1.5 w-1.5 rounded-full bg-current opacity-35"></span>
                 <span class="pg-typing-dot h-1.5 w-1.5 rounded-full bg-current opacity-35"></span>
@@ -111,7 +111,7 @@
         </div>
     </div>
 
-    <div class="border-t border-black/10 dark:border-white/10">
+    <div class="border-t border-hairline dark:border-white/10">
         {{-- Recording / transcribing / error, in the strip above the composer so
              nothing in the row below shifts as the state changes. --}}
         <div x-show="recording || transcribing || voiceError" x-cloak
@@ -137,7 +137,7 @@
         <form @submit.prevent="sendMessage()" class="flex items-center gap-2 p-3">
             <input type="text" x-model="input" x-ref="messageInput" :disabled="sending || recording || transcribing"
                 placeholder="{{ __('agents.playground.placeholder') }}"
-                class="field flex-1 rounded-full px-4 py-2.5 text-sm" />
+                class="field flex-1 px-4 py-2.5 text-sm" />
 
             {{-- Mic: idle vs recording. One button that swaps role, so focus is
                  never lost mid-recording. --}}
@@ -148,14 +148,14 @@
                 :title="recording ? voiceLabels.stop : voiceLabels.record"
                 :class="recording
                     ? 'bg-danger text-white animate-pulse'
-                    : 'border border-black/10 text-muted hover:text-brand dark:border-white/10 dark:text-night-muted'"
+                    : 'border border-black/10 text-muted hover:text-brand-strong dark:border-white/10 dark:text-night-muted'"
                 class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-all disabled:pointer-events-none disabled:opacity-50">
                 <svg x-show="!recording" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15a3 3 0 003-3V6a3 3 0 00-6 0v6a3 3 0 003 3z"/><path stroke-linecap="round" stroke-linejoin="round" d="M19 11a7 7 0 01-14 0M12 18v3"/></svg>
                 <svg x-show="recording" x-cloak class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
             </button>
 
             <button type="submit" :disabled="sending || recording || transcribing || !input.trim()"
-                class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand text-on-accent transition-all hover:bg-brand-hover disabled:pointer-events-none disabled:opacity-50">
+                class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-strong text-on-accent transition-all hover:bg-brand-hover disabled:pointer-events-none disabled:opacity-50">
                 <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19V5m0 0l-6 6m6-6l6 6"/></svg>
             </button>
         </form>

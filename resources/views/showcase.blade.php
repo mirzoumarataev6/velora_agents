@@ -201,11 +201,20 @@ html, body { margin: 0; padding: 0; }
     --ease: cubic-bezier(.22, 1, .36, 1);
     --nav-h: 80px; /* island height incl. its outer padding — anchor offset */
 
-    /* The product's two families, self-hosted and shared with the dashboard:
-       the sans carries body and UI, the serif carries the display range. Both
-       are verified per glyph for Tajik by scripts/verify-font-coverage.mjs. */
-    --font: Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    --serif: 'Source Serif 4', 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, ui-serif, serif;
+    /* ONE FAMILY — Onest, self-hosted, the same face the dashboard sets.
+       Declared in partials/fonts.blade.php, which this page includes.
+
+       This page used to name two families that no longer ship: Geist for the
+       sans and Source Serif 4 for the display range. Neither was ever
+       downloaded once the product moved off them, so every heading on the
+       landing was rendering in the browser's default serif — the hero read as
+       Times on a page whose whole argument is that the product is modern.
+
+       `--serif` is kept only as a compatibility alias — nothing in this file
+       reaches for it any more, and there is no serif anywhere in this
+       system. */
+    --font: Onest, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    --serif: var(--font);
 
     --t-xs:   .8125rem;
     --t-sm:   .875rem;
@@ -214,6 +223,13 @@ html, body { margin: 0; padding: 0; }
     --t-lg:   1.0625rem;
 
     --section-y: clamp(4.5rem, 9vw, 7.5rem);
+
+    /* THE WEIGHT CEILING, 600, matching the rest of the product. The display
+       rules below were drawn for a book serif at 400 and a grotesque at 500;
+       on Onest the display range needs 600 to hold, and nothing needs more. */
+    --w-body: 400;
+    --w-ui: 500;
+    --w-display: 600;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -353,17 +369,22 @@ body::after {
    4 · Type — two voices
 
    The display range (hero, section titles, the pull quote, the big figures)
-   is set in the serif; body, UI, buttons and labels stay on the sans. Weight
-   drops to 400 in the serif and the tracking eases back from the grotesque's
-   -.035em: a book serif is drawn with its spacing built in, and pulling it as
-   tight as a sans makes the serifs collide at display size.
+   is Onest at 600, like every other heading in the product.
+
+   It used to be a book serif at 400, and the two changes travel together: a
+   serif carries authority through its shape, so 400 was right for it, and the
+   tracking was eased back to -.018em because a serif's spacing is drawn in.
+   A grotesque at 400 and 5.75rem just looks thin and unfinished. So weight
+   goes to the system's 600 ceiling and the tracking tightens again — which is
+   the single most reliable way to make a grotesque look drawn at display
+   size rather than defaulted.
    ═══════════════════════════════════════════════════════════════════════ */
 .display {
     font-family: var(--serif);
-    font-size: clamp(2.6rem, 7.4vw, 5.75rem);
-    line-height: 1.06;
-    letter-spacing: -.018em;
-    font-weight: 400;
+    font-size: clamp(2.4rem, 6.4vw, 4.75rem);
+    line-height: 1.07;
+    letter-spacing: -.028em;
+    font-weight: var(--w-display);
     margin: 0;
     text-wrap: balance;
 }
@@ -373,37 +394,35 @@ body::after {
 }
 
 /* ── the hero lockup ────────────────────────────────────────────────────
-   "Velora Agents" was set in the page's UI sans at one flat ink colour, so
-   it read as a heading that happens to contain the name, not as the name.
-   Both words now carry the same wordmark treatment — the serif at display
-   size, cut from a vertical ink gradient so the letterforms have depth
-   instead of a single flat fill — so the two read as one name rather than
-   a name with a label bolted on. The single saturated colour on the page
-   stays on the rotating line below, so the two never compete. */
+   "Velora Agents" reads as the name rather than as a heading that happens to
+   contain it: both words at display size, cut from a vertical ink gradient so
+   the letterforms have depth instead of a single flat fill. The single
+   saturated colour on the page stays on the rotating line below, so the two
+   never compete. */
 .wordmark {
     display: block;
-    font-family: var(--serif);
-    /* 400, not 500: the fallback stacks (Iowan, Palatino, Georgia) have no
-       500, so browsers were already rendering this at regular. Naming it
-       keeps the lockup identical now that a real 500-capable webfont is
-       loaded, instead of silently getting heavier. */
-    font-weight: 400; letter-spacing: -.022em;
+    font-family: var(--font);
+    /* The wordmark is the one place the ceiling is load-bearing rather than
+       stylistic: this is the brand name set large, and at 700 it would be the
+       heaviest thing in the product by a wide margin. */
+    font-weight: var(--w-display); letter-spacing: -.032em;
     background: linear-gradient(178deg, var(--fg) 22%, var(--fg-2) 96%);
     -webkit-background-clip: text; background-clip: text; color: transparent;
     /* background-clip:text paints only inside the element's own box, and the
-       display line-height (1.02) cuts that box off at the baseline — which
-       sliced the tail off the serif's deep "g" descender. The padding grows
-       the paint box; the negative margin gives the space straight back so
-       the rotating line below does not move. */
+       display line-height cuts that box off at the baseline — which sliced
+       the tail off the "g" descender. The padding grows the paint box; the
+       negative margin gives the space straight back so the rotating line
+       below does not move. Onest's descender is shallower than the serif's
+       was, but not shallow enough to drop this. */
     padding-bottom: .2em; margin-bottom: -.2em;
 }
-/* The gap is set here, not with a text space: the serif's own word space is
-   loose at display size and would break the lockup apart. */
+/* The gap is set here, not with a text space: a word space at display size
+   is loose enough to break the lockup into two words. */
 .wm-suffix { margin-left: .26em; }
 h2.title {
-    font-family: var(--serif);
-    font-size: clamp(1.85rem, 3.9vw, 2.85rem);
-    line-height: 1.2; letter-spacing: -.014em; font-weight: 400;
+    font-family: var(--font);
+    font-size: clamp(1.6rem, 3.1vw, 2.25rem);
+    line-height: 1.22; letter-spacing: -.022em; font-weight: var(--w-display);
     margin: 0; text-wrap: balance;
 }
 .lede {
@@ -756,12 +775,12 @@ h2.title {
        across the whole column rather than resizing with the typed text. */
     display: grid; align-items: start;
     min-height: 1.05em; margin-top: .12em;
-    /* Deliberately the SANS while the name above is the serif. The lockup is
-       the name; this is a claim being typed about it, and the change of voice
-       is what keeps the two from reading as one run-on headline. Smaller and
-       lighter, too: the wordmark is the loudest thing in the hero. */
+    /* One family now, so the two are separated by SIZE and WEIGHT rather
+       than by a change of voice: the lockup is the name, this is a claim
+       being typed about it, and it must not read as one run-on headline.
+       Lighter and smaller — the wordmark is the loudest thing in the hero. */
     font-family: var(--font);
-    font-size: .74em; font-weight: 400; letter-spacing: -.028em;
+    font-size: .68em; font-weight: var(--w-ui); letter-spacing: -.028em;
 }
 .type-line > * { grid-area: 1 / 1; max-width: 100%; }
 /* Space reservation only — never painted, never read, never hit-tested. The
@@ -988,11 +1007,10 @@ section { position: relative; }
 .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 18px; overflow: hidden; }
 .stat { padding: 1.8rem 1.4rem; background: var(--surf); }
 .stat .n {
-    /* Big figures belong to the display voice. `lining-nums` matters here:
-       the serif's default figures are shorter and sit below the cap line,
-       which reads as a typo in a stat tile. */
-    font-family: var(--serif);
-    font-size: clamp(1.9rem, 3.8vw, 2.7rem); font-weight: 400; letter-spacing: -.02em; line-height: 1;
+    /* Big figures belong to the display voice. `tabular-nums` is what stops
+       a row of stat tiles jittering as the numbers change width. */
+    font-family: var(--font);
+    font-size: clamp(1.75rem, 3.2vw, 2.4rem); font-weight: var(--w-display); letter-spacing: -.024em; line-height: 1;
     background: var(--num-grad); -webkit-background-clip: text; background-clip: text; color: transparent;
     font-variant-numeric: lining-nums tabular-nums;
     font-feature-settings: 'lnum' 1, 'tnum' 1;
@@ -1021,9 +1039,9 @@ section { position: relative; }
 }
 .manifesto blockquote {
     position: relative; margin: 0 auto; max-width: 24ch;
-    font-family: var(--serif);
-    font-size: clamp(1.75rem, 4.4vw, 3rem); line-height: 1.28;
-    letter-spacing: -.014em; font-weight: 400; text-wrap: balance;
+    font-family: var(--font);
+    font-size: clamp(1.6rem, 3.6vw, 2.5rem); line-height: 1.3;
+    letter-spacing: -.024em; font-weight: var(--w-display); text-wrap: balance;
 }
 .manifesto blockquote .grad { background: var(--o-grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
 /* Not an attribution — the second beat of the statement, held quieter and
@@ -1113,7 +1131,7 @@ footer { border-top: 1px solid var(--line); padding: 3rem 0 2.2rem; background: 
 <header class="nav" id="nav">
     <div class="shell nav-in">
         <a href="#top" class="brand" data-i18n-al="landing.nav.home" aria-label="{{ __('landing.nav.home') }}">
-            <img src="{{ asset('images/brand/gen/mark.webp') }}" alt="" width="30" height="30" />
+            <img src="{{ asset('images/brand/gen/mark.webp') }}?v={{ config('agent.brand_mark_version') }}" alt="" width="30" height="30" />
         </a>
         <nav class="nav-links" data-i18n-al="landing.nav.menu" aria-label="{{ __('landing.nav.menu') }}">
             <a href="#product" data-i18n="landing.nav.product">{{ __('landing.nav.product') }}</a>
@@ -1488,7 +1506,7 @@ footer { border-top: 1px solid var(--line); padding: 3rem 0 2.2rem; background: 
         <div class="foot-grid">
             <div class="foot-brand">
                 <a href="#top" data-i18n-al="landing.nav.home" aria-label="{{ __('landing.nav.home') }}">
-                    <img src="{{ asset('images/brand/gen/mark.webp') }}" alt="" width="30" height="30" loading="lazy" />
+                    <img src="{{ asset('images/brand/gen/mark.webp') }}?v={{ config('agent.brand_mark_version') }}" alt="" width="30" height="30" loading="lazy" />
                 </a>
                 <p data-i18n="landing.footer.tagline">{{ __('landing.footer.tagline') }}</p>
             </div>

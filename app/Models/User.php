@@ -133,6 +133,26 @@ class User extends Authenticatable
         return $this->hasMany(Agent::class);
     }
 
+    /**
+     * The CRM's customer book. Hangs off the owner, not off an agent: the same
+     * person writing to two of the owner's agents is one customer.
+     */
+    public function customers(): HasMany
+    {
+        return $this->hasMany(Customer::class);
+    }
+
+    /** The sales pipeline. Like customers, it belongs to the owner, not an agent. */
+    public function deals(): HasMany
+    {
+        return $this->hasMany(Deal::class);
+    }
+
+    public function tasks(): HasMany
+    {
+        return $this->hasMany(Task::class);
+    }
+
     public function leads(): HasManyThrough
     {
         return $this->hasManyThrough(Lead::class, Agent::class);

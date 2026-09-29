@@ -11,7 +11,7 @@
 @php
     $telegramConnected = optional($agent->channels->firstWhere('type', 'telegram'))->status === 'connected';
 @endphp
-<div class="rounded-2xl border border-black/10 bg-white p-5 transition-shadow hover:shadow-md dark:border-white/10 dark:bg-white/5"
+<div class="card p-5 transition-shadow"
     x-data="leadNotify({
         linkUrl: {{ Js::from(route('agents.notify.telegram.link', $agent)) }},
         statusUrl: {{ Js::from(route('agents.notify.telegram.status', $agent)) }},
@@ -48,7 +48,7 @@
 
         <div class="flex items-center gap-2">
             <button type="button" x-show="!confirmingUnlink" @click="askUnlink()"
-                class="rounded-full border border-danger/30 px-3 py-1.5 text-xs font-semibold text-danger transition-colors hover:bg-danger/5 dark:text-danger-light">
+                class="btn btn-sm btn-danger-soft">
                 <span data-i18n="leads.notify.unlink">{{ __('leads.notify.unlink') }}</span>
             </button>
 
@@ -56,11 +56,11 @@
                 <div class="flex items-center gap-2">
                     <span class="text-xs font-medium text-muted dark:text-night-muted" data-i18n="leads.notify.unlink_confirm_inline">{{ __('leads.notify.unlink_confirm_inline') }}</span>
                     <button type="button" @click="unlink()"
-                        class="rounded-full bg-danger px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-danger-deep">
+                        class="btn btn-danger">
                         <span data-i18n="leads.notify.unlink_yes">{{ __('leads.notify.unlink_yes') }}</span>
                     </button>
                     <button type="button" @click="cancelUnlink()"
-                        class="rounded-full border border-black/10 px-3 py-1.5 text-xs font-semibold text-muted transition-colors hover:bg-black/5 dark:border-white/10 dark:text-night-muted dark:hover:bg-white/5">
+                        class="rounded-full px-3 py-1.5 text-xs font-semibold text-muted transition-colors hover:bg-sunk dark:text-night-muted dark:hover:bg-night-raised">
                         <span data-i18n="leads.notify.unlink_no">{{ __('leads.notify.unlink_no') }}</span>
                     </button>
                 </div>
@@ -77,13 +77,13 @@
         <template x-if="telegramConnected">
             <div>
                 <button type="button" @click="startLink()" :disabled="linking"
-                    class="rounded-xl bg-brand px-5 py-2.5 text-sm font-semibold text-on-accent transition-all hover:-translate-y-0.5 hover:bg-brand-hover disabled:opacity-60">
+                    class="btn btn-primary disabled:opacity-60">
                     <span x-show="!linking" data-i18n="leads.notify.link_button">{{ __('leads.notify.link_button') }}</span>
                     <span x-show="linking" class="spinner"></span>
                 </button>
                 <p x-show="deepLink" x-cloak class="mt-3 text-sm text-muted dark:text-night-muted">
                     <span data-i18n="leads.notify.waiting">{{ __('leads.notify.waiting') }}</span>
-                    <a :href="deepLink" target="_blank" class="font-medium text-brand hover:underline" data-i18n="leads.notify.open_telegram">{{ __('leads.notify.open_telegram') }}</a>
+                    <a :href="deepLink" target="_blank" class="font-medium text-brand-strong hover:underline" data-i18n="leads.notify.open_telegram">{{ __('leads.notify.open_telegram') }}</a>
                 </p>
             </div>
         </template>

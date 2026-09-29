@@ -139,8 +139,13 @@ class SidebarRailTest extends TestCase
         $response = $this->page();
 
         $response->assertOk();
-        // The toggle itself only appears from lg up...
-        $response->assertSee('dark:hover:bg-white/10 lg:flex', false);
+        // The toggle itself only appears from lg up. Asserted on the two
+        // classes that carry that FACT — `hidden` plus `lg:flex` — rather than
+        // on the whole class string: this previously pinned a hover colour
+        // alongside them, so a re-skin that changed nothing about the breakpoint
+        // failed the test and said nothing useful about why.
+        $response->assertSee('class="hidden h-8 w-8', false);
+        $response->assertSee('lg:flex"', false);
         // ...and every collapse rule is lg-prefixed.
         $response->assertDontSee("railCollapsed ? 'w-[4.75rem]'", false);
     }

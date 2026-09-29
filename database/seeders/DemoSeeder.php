@@ -6,11 +6,15 @@ use App\Jobs\ExtractTextJob;
 use App\Models\Agent;
 use App\Models\Channel;
 use App\Models\Conversation;
+use App\Models\Customer;
 use App\Models\Dataset;
 use App\Models\DatasetProduct;
+use App\Models\Deal;
+use App\Models\DealActivity;
 use App\Models\KnowledgeSource;
 use App\Models\Lead;
 use App\Models\Message;
+use App\Models\Task;
 use App\Models\User;
 use App\Services\Haggling\HagglingService;
 use Carbon\CarbonImmutable;
@@ -23,10 +27,9 @@ use Illuminate\Support\Str;
  * Five presentation agents from Khujand, with a month of chats, leads and
  * customer ratings behind them.
  *
- * Re-runnable by construction: every demo agent has a fixed `demo-*` slug, and
- * a run starts by deleting those agents — the foreign keys cascade to their
- * channels, conversations, messages, leads, catalog and knowledge. Nothing
- * outside those slugs is written, so the owner's real agents are untouched.
+ * Re-runnable by construction: every demo agent has a fixed `demo-*` slug.
+ * CRM rows created by this seeder carry an explicit marker; a rebuild leaves
+ * manually created or edited deals alone, even when attached to a demo agent.
  *
  * The script itself lives in data/demo.php; this class only turns it into rows
  * with believable timestamps and metadata.
@@ -41,6 +44,8 @@ class DemoSeeder extends Seeder
     /** Share of agent replies that carry a customer rating. */
     protected const RATED_SHARE = 0.30;
 
+    protected const DEAL_MARKER = 'Демонстрационные данные';
+
     /** Owner the agents belong to; null means the first user. */
     public ?string $ownerEmail = null;
 
@@ -51,6 +56,9 @@ class DemoSeeder extends Seeder
     protected array $sources = [];
 
     protected int $externalId = 0;
+
+    /** @var array<int, int> Customers that were attached to presentation threads before a rebuild. */
+    protected array $presentationCustomerIds = [];
 
     public function run(): void
     {
@@ -71,15 +79,18 @@ class DemoSeeder extends Seeder
         mt_srand(20260914);
 
         DB::transaction(function () use ($agents, $data, $owner) {
-            $this->purge(array_column($agents, 'slug'));
+            $this->purgePresentationCrm($owner, array_column($agents, 'slug'));
+            $this->purge($owner, array_column($agents, 'slug'));
+            $this->purgeOrphanedPresentationCustomers($owner);
 
             foreach ($agents as $spec) {
                 $this->seedAgent($owner, $spec);
             }
 
-            $this->seedPixelShopExtra($data['pixelshop_extra']);
+            $this->seedPixelShopExtra($owner, $data['pixelshop_extra']);
 
             $this->applyRatings();
+            $this->seedPresentationCrm($owner, $agents);
         });
 
         // After commit: the knowledge pipeline (extract → chunk → embed) runs on
@@ -92,12 +103,64 @@ class DemoSeeder extends Seeder
     }
 
     /** @param  array<int, string>  $slugs */
-    protected function purge(array $slugs): void
+    protected function purge(User $owner, array $slugs): void
     {
-        foreach (Agent::whereIn('slug', $slugs)->get() as $agent) {
+        foreach (Agent::where('user_id', $owner->id)->whereIn('slug', $slugs)->get() as $agent) {
             Storage::disk('local')->deleteDirectory("knowledge/{$agent->id}");
             $agent->delete();
         }
+    }
+
+    /**
+     * Clear only CRM rows that belong to the presentation agents before those
+     * agents are rebuilt. Conversations use null-on-delete relationships, so
+     * deleting agents alone would leave detached deals behind and make each
+     * subsequent demo run look more successful than the one before it.
+     *
+     * Customers are removed only when every linked record was presentation
+     * data. A customer shared with a non-demo agent or a manually created deal
+     * is deliberately left untouched.
+     *
+     * @param list<string> $slugs
+     */
+    protected function purgePresentationCrm(User $owner, array $slugs): void
+    {
+        $agentIds = Agent::where('user_id', $owner->id)->whereIn('slug', $slugs)->pluck('id');
+
+        if ($agentIds->isEmpty()) {
+            return;
+        }
+
+        $customerIds = Conversation::whereIn('agent_id', $agentIds)
+            ->whereNotNull('customer_id')->pluck('customer_id')->unique();
+        $this->presentationCustomerIds = $customerIds->map(fn ($id) => (int) $id)->all();
+
+        // A manually changed card is owner work, even if its thread came from
+        // a demo agent. Null-on-delete FKs preserve it after agent removal.
+        $this->purgeMarkedDeals(Deal::where('user_id', $owner->id)
+            ->whereIn('agent_id', $agentIds)
+            ->where('note', self::DEAL_MARKER)->get());
+
+        // One-time cleanup for the pre-marker presentation set. These are
+        // observer-created cards with a source thread and no signs of owner
+        // work; manually opened deals have no conversation_id at creation.
+        $this->purgeLegacyGeneratedDeals(Deal::where('user_id', $owner->id)
+            ->whereIn('agent_id', $agentIds)->whereNull('note')->get());
+    }
+
+    /** Remove only profiles made orphaned by the just-deleted demo agents. */
+    protected function purgeOrphanedPresentationCustomers(User $owner): void
+    {
+        if ($this->presentationCustomerIds === []) {
+            return;
+        }
+
+        Customer::where('user_id', $owner->id)->whereIn('id', $this->presentationCustomerIds)
+            ->whereDoesntHave('conversations')
+            ->whereDoesntHave('leads')
+            ->whereDoesntHave('deals')
+            ->whereDoesntHave('tasks')
+            ->delete();
     }
 
     /**
@@ -109,9 +172,9 @@ class DemoSeeder extends Seeder
      *
      * @param  array<int, array<string, mixed>>  $conversations
      */
-    protected function seedPixelShopExtra(array $conversations): void
+    protected function seedPixelShopExtra(User $owner, array $conversations): void
     {
-        $agent = Agent::where('slug', self::PIXELSHOP_SLUG)->first();
+        $agent = Agent::where('user_id', $owner->id)->where('slug', self::PIXELSHOP_SLUG)->first();
 
         if (! $agent) {
             return;
@@ -131,6 +194,14 @@ class DemoSeeder extends Seeder
         foreach ($conversations as $spec) {
             $this->seedConversation($agent, $channels, $spec, 'demo_v2');
         }
+
+        $ids = Message::where('external_message_id', 'like', 'demo_v2-%')
+            ->whereIn('conversation_id', $agent->conversations()->select('id'))
+            ->distinct()->pluck('conversation_id');
+        foreach (Deal::where('user_id', $owner->id)->whereIn('conversation_id', $ids)->get() as $deal) {
+            $deal->forceFill(['note' => self::DEAL_MARKER])->saveQuietly();
+            $this->markSeedActivities($deal);
+        }
     }
 
     /**
@@ -145,8 +216,52 @@ class DemoSeeder extends Seeder
             ->distinct()
             ->pluck('conversation_id');
 
+        $this->purgeMarkedDeals(Deal::where('user_id', $agent->user_id)
+            ->whereIn('conversation_id', $conversationIds)
+            ->where('note', self::DEAL_MARKER)->get());
+        $this->purgeLegacyGeneratedDeals(Deal::where('user_id', $agent->user_id)
+            ->whereIn('conversation_id', $conversationIds)->whereNull('note')->get());
+
         Lead::whereIn('conversation_id', $conversationIds)->delete();
         Conversation::whereIn('id', $conversationIds)->delete();
+    }
+
+    /** Only remove cards whose complete activity history was produced by this seeder. */
+    protected function purgeMarkedDeals($deals): void
+    {
+        foreach ($deals->load('activities') as $deal) {
+            if ($deal->stage_set_by_owner_at !== null || $deal->activities->isEmpty()) {
+                continue;
+            }
+
+            if ($deal->activities->every(fn (DealActivity $activity) => ($activity->data['demo_seed'] ?? false) === true)) {
+                $deal->delete();
+            }
+        }
+    }
+
+    /** Migrate away the original demo cards without touching owner-created work. */
+    protected function purgeLegacyGeneratedDeals($deals): void
+    {
+        foreach ($deals->load(['activities', 'conversation', 'tasks']) as $deal) {
+            if ($deal->conversation_id === null || $deal->conversation?->agent_id !== $deal->agent_id
+                || $deal->stage_set_by_owner_at !== null || $deal->tasks->isNotEmpty()
+                || $deal->activities->isEmpty()) {
+                continue;
+            }
+
+            if ($deal->activities->every(fn (DealActivity $activity) => in_array($activity->type, ['created', 'stage_changed'], true))) {
+                $deal->delete();
+            }
+        }
+    }
+
+    /** Distinguish scripted history from subsequent owner edits on a demo card. */
+    protected function markSeedActivities(Deal $deal): void
+    {
+        foreach ($deal->activities as $activity) {
+            $activity->forceFill(['data' => [...($activity->data ?? []), 'demo_seed' => true]])->save();
+        }
     }
 
     /** @param  array<string, mixed>  $spec */
@@ -516,6 +631,120 @@ class DemoSeeder extends Seeder
         return $prefix.'-'.(++$this->externalId);
     }
 
+    /**
+     * A small, coherent CRM pipeline for a live product demonstration.
+     * The inbox keeps its varied history, while CRM answers the concrete
+     * business question: what should the owner do next and what was sold.
+     *
+     * @param array<int, array<string, mixed>> $agents
+     */
+    protected function seedPresentationCrm(User $owner, array $agents): void
+    {
+        $agentIds = Agent::where('user_id', $owner->id)
+            ->whereIn('slug', array_column($agents, 'slug'))->pluck('id');
+
+        // The conversation and lead observers have already opened real cards.
+        // Fill their known product/price fields instead of deleting them and
+        // creating a second, disconnected account of the same sale.
+        foreach (Deal::where('user_id', $owner->id)->whereIn('agent_id', $agentIds)->with('conversation')->get() as $deal) {
+            $lead = Lead::where('conversation_id', $deal->conversation_id)->latest('id')->first();
+            $openedAt = $deal->conversation?->created_at ?? $deal->created_at;
+            $lastActivity = $deal->conversation?->last_message_at ?? $openedAt;
+            $deal->forceFill([
+                'title' => $deal->title ?: $lead?->items,
+                'amount' => $deal->amount ?? $lead?->approved_price ?? $lead?->listed_price,
+                'deal_date' => $openedAt?->toDateString(),
+                'stage_changed_at' => $deal->stage === 'haggling' ? ($lead?->created_at ?? $openedAt) : $openedAt,
+                'created_at' => $openedAt,
+                'updated_at' => $lastActivity,
+                'note' => self::DEAL_MARKER,
+            ])->saveQuietly();
+            $deal->activities()->where('type', 'created')->update(['created_at' => $openedAt]);
+        }
+
+        $profiles = [
+            ['agent' => 'demo-olami-kompiuterxo', 'customer' => 'Бобур', 'title' => 'Lenovo Legion 5', 'amount' => 17999, 'stage' => 'new_lead', 'status' => 'active', 'tags' => ['Игровой ноутбук', 'Кредит'], 'task' => 'Перезвонить по условиям кредита'],
+            ['agent' => 'demo-olami-kompiuterxo', 'customer' => 'Санобар Юсупова', 'title' => 'HP 15.6 Core i3', 'amount' => 4699, 'stage' => 'new_lead', 'status' => 'lead', 'tags' => ['Ноутбук', 'Самовывоз'], 'task' => 'Подтвердить визит в магазин'],
+            ['agent' => 'demo-afzal', 'customer' => 'Шаҳноза', 'title' => 'Тест уровня TOEFL', 'amount' => null, 'stage' => 'new_lead', 'status' => 'lead', 'tags' => ['Обучение'], 'task' => 'Напомнить о тесте уровня'],
+            ['agent' => 'demo-olami-kompiuterxo', 'customer' => 'Камол', 'title' => 'MacBook Pro 14 M5', 'amount' => 17200, 'stage' => 'haggling', 'status' => 'active', 'tags' => ['MacBook', 'Скидка согласована'], 'task' => 'Подтвердить визит в магазин'],
+            ['agent' => 'demo-olami-kompiuterxo', 'customer' => 'Сарвар', 'title' => 'HP OMEN 16', 'amount' => 14999, 'stage' => 'haggling', 'status' => 'active', 'tags' => ['Игровой ноутбук', 'Торг'], 'task' => 'Ответить на предложение по цене'],
+            ['agent' => 'demo-rohat', 'customer' => 'Нозима', 'title' => 'Аренда студии 34 м²', 'amount' => 1200, 'stage' => 'haggling', 'status' => 'active', 'tags' => ['Аренда', 'Торг'], 'task' => 'Обсудить срок аренды и цену'],
+            ['agent' => 'demo-olami-kompiuterxo', 'customer' => 'Камол Ҳасанов', 'title' => 'Игровой ноутбук для сына', 'amount' => null, 'stage' => 'new_lead', 'status' => 'lead', 'tags' => ['Рассрочка'], 'task' => 'Объяснить условия рассрочки'],
+            ['agent' => 'demo-olami-kompiuterxo', 'customer' => 'Баҳром Назаров', 'title' => 'HP OMEN 16', 'amount' => 14249, 'stage' => 'payment', 'status' => 'customer', 'tags' => ['Игровой ноутбук'], 'paid' => true, 'closed' => true],
+            ['agent' => 'demo-olami-kompiuterxo', 'customer' => 'Зебо Қодирова', 'title' => 'MacBook Air 13.6', 'amount' => 10499, 'stage' => 'payment', 'status' => 'customer', 'tags' => ['Учёба', 'MacBook'], 'paid' => true, 'closed' => true],
+            ['agent' => 'demo-olami-kompiuterxo', 'customer' => 'Фирӯз', 'title' => 'Монитор 27″ + HDD 1TB', 'amount' => 3098, 'stage' => 'payment', 'status' => 'customer', 'tags' => ['Самовывоз', 'Комплект'], 'paid' => true, 'closed' => true],
+            ['agent' => 'demo-olami-kompiuterxo', 'customer' => 'Умед Рашидов', 'title' => 'Монитор 27″ IPS curved', 'amount' => null, 'stage' => Deal::STAGE_CANCELLED, 'status' => 'lost', 'tags' => ['Монитор'], 'reason' => 'Нужной модели не было в наличии'],
+            ['agent' => 'demo-startcoding', 'customer' => 'Нозима', 'title' => 'Курс графического дизайна', 'amount' => 280, 'stage' => Deal::STAGE_CANCELLED, 'status' => 'lost', 'tags' => ['Дизайн'], 'reason' => 'Покупку отложили'],
+        ];
+
+        foreach ($profiles as $profile) {
+            $agent = Agent::where('user_id', $owner->id)->where('slug', $profile['agent'])->firstOrFail();
+            $conversation = Conversation::where('agent_id', $agent->id)
+                ->where('external_user_name', $profile['customer'])
+                ->latest('last_message_at')->firstOrFail();
+            $customer = Customer::where('user_id', $owner->id)->findOrFail($conversation->customer_id);
+            $deal = Deal::where('user_id', $owner->id)
+                ->where('conversation_id', $conversation->id)->where('note', self::DEAL_MARKER)->firstOrFail();
+
+            $lastActivity = CarbonImmutable::parse($conversation->last_message_at ?? now());
+            $openedAt = CarbonImmutable::parse($conversation->created_at);
+            $stageAt = $lastActivity;
+
+            // A phone may have merged the demo thread with a real contact.
+            // Keep that person's own status, tags and notes in that case.
+            if (! $customer->conversations()->whereNotIn('agent_id', $agentIds)->exists()
+                && ! $customer->deals()->where('note', '!=', self::DEAL_MARKER)->exists()) {
+                $customer->forceFill([
+                    'status' => $profile['status'],
+                    'tags' => $profile['tags'],
+                ])->saveQuietly();
+            }
+
+            $deal->forceFill([
+                'title' => $profile['title'],
+                'amount' => $profile['amount'],
+                'deal_date' => $openedAt->toDateString(),
+                'payment_status' => ! empty($profile['paid']) ? 'paid' : 'unpaid',
+                'stage' => $profile['stage'],
+                'stage_changed_at' => $stageAt,
+                'closed_at' => ! empty($profile['closed']) ? $stageAt : null,
+                'cancelled_reason' => $profile['reason'] ?? null,
+                'created_at' => $openedAt,
+                'updated_at' => $lastActivity,
+            ])->saveQuietly();
+
+            $deal->activities()->where('type', 'created')->update(['created_at' => $openedAt]);
+
+            if ($profile['stage'] !== 'new_lead') {
+                DealActivity::forceCreate([
+                    'user_id' => $owner->id,
+                    'deal_id' => $deal->id,
+                    'type' => 'stage_changed',
+                    'data' => ['from' => 'new_lead', 'to' => $profile['stage'], 'reason' => $profile['reason'] ?? null],
+                    'created_at' => $stageAt,
+                ]);
+            }
+
+            if (! empty($profile['task'])) {
+                Task::forceCreate([
+                    'user_id' => $owner->id,
+                    'customer_id' => $customer->id,
+                    'deal_id' => $deal->id,
+                    'title' => $profile['task'],
+                    'due_at' => CarbonImmutable::now(self::TIMEZONE)
+                        ->addDays($profile['stage'] === 'new_lead' ? 0 : 1)
+                        ->setTime(16, 0)->utc(),
+                    'created_at' => $openedAt,
+                    'updated_at' => $lastActivity,
+                ]);
+            }
+        }
+
+        foreach (Deal::where('user_id', $owner->id)->whereIn('agent_id', $agentIds)->get() as $deal) {
+            $this->markSeedActivities($deal);
+        }
+    }
+
     /** @param  array<int, string>  $slugs */
     protected function summary(User $owner, array $slugs): void
     {
@@ -523,7 +752,8 @@ class DemoSeeder extends Seeder
             return;
         }
 
-        $agents = Agent::whereIn('slug', $slugs)->withCount(['conversations', 'leads'])->get();
+        $agents = Agent::where('user_id', $owner->id)->whereIn('slug', $slugs)
+            ->withCount(['conversations', 'leads'])->get();
         $ids = $agents->pluck('id');
         $messages = Message::whereIn('conversation_id', Conversation::whereIn('agent_id', $ids)->select('id'));
 
@@ -542,7 +772,7 @@ class DemoSeeder extends Seeder
             ];
         })->all();
 
-        $pixelshop = Agent::where('slug', self::PIXELSHOP_SLUG)->first();
+        $pixelshop = Agent::where('user_id', $owner->id)->where('slug', self::PIXELSHOP_SLUG)->first();
         $pixelshopMsg = null;
 
         if ($pixelshop) {

@@ -21,7 +21,7 @@
 
 <div id="onboarding" x-data="onboardingCard({ dismissUrl: '{{ route('onboarding.dismiss') }}' })"
     x-show="visible" x-cloak
-    class="onboarding-card reveal is-visible mb-6 overflow-hidden rounded-3xl border border-black/10 bg-white/70 dark:border-white/10 dark:bg-white/5"
+    class="onboarding-card reveal is-visible mb-6 overflow-hidden rounded-3xl bg-white/70 dark:bg-night-raised"
     :class="leaving && 'is-leaving'">
 
     @if ($onboarding['celebrate'])
@@ -38,7 +38,7 @@
             <p data-i18n="onboarding.complete.body" class="relative mx-auto mt-2 max-w-md text-sm text-muted dark:text-night-muted">{{ __('onboarding.complete.body') }}</p>
 
             <button type="button" @click="collapse()" data-i18n="onboarding.complete.cta"
-                class="relative mt-6 rounded-full bg-brand px-5 py-2.5 text-sm font-semibold text-on-accent transition-all hover:-translate-y-0.5 hover:bg-brand-hover">
+                class="btn btn-primary relative mt-6">
                 {{ __('onboarding.complete.cta') }}
             </button>
         </div>
@@ -50,17 +50,17 @@
                     <p data-i18n="onboarding.checklist.subtitle" class="mt-0.5 text-sm text-muted dark:text-night-muted">{{ __('onboarding.checklist.subtitle') }}</p>
                 </div>
                 <div class="flex shrink-0 items-center gap-3">
-                    <span class="text-xs font-semibold tabular-nums text-brand">
+                    <span class="text-xs font-semibold tabular-nums text-brand-strong">
                         {{ __('onboarding.checklist.progress', ['done' => $onboarding['completed'], 'total' => $onboarding['total']]) }}
                     </span>
                     <button type="button" @click="skip()" data-i18n="onboarding.checklist.skip"
-                        class="rounded-full px-2.5 py-1 text-xs font-medium text-muted transition-colors hover:bg-black/5 dark:text-night-muted dark:hover:bg-white/10">
+                        class="rounded-full px-2.5 py-1 text-xs font-medium text-muted transition-colors hover:bg-sunk dark:text-night-muted dark:hover:bg-night-raised">
                         {{ __('onboarding.checklist.skip') }}
                     </button>
                 </div>
             </div>
 
-            <div class="mt-4 h-1.5 overflow-hidden rounded-full bg-black/5 dark:bg-white/10"
+            <div class="mt-4 h-1.5 overflow-hidden rounded-full bg-sunk dark:bg-night-raised"
                 role="progressbar" aria-valuemin="0" aria-valuemax="{{ $onboarding['total'] }}"
                 aria-valuenow="{{ $onboarding['completed'] }}">
                 <div class="h-full rounded-full bg-brand transition-[width] duration-500 ease-out" style="width: {{ $onboarding['percent'] }}%"></div>
@@ -100,7 +100,7 @@
                              rather than four competing ones. --}}
                         @if ($__isNext)
                             <a href="{{ $step['cta'] }}" data-i18n="onboarding.steps.{{ $step['key'] }}.cta"
-                                class="shrink-0 rounded-full bg-brand px-3.5 py-2 text-xs font-semibold text-on-accent transition-all hover:-translate-y-0.5 hover:bg-brand-hover">
+                                class="btn btn-primary shrink-0">
                                 {{ __("onboarding.steps.{$step['key']}.cta") }}
                             </a>
                         @endif

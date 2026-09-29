@@ -13,7 +13,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 {{-- Declares that this page has its own dark theme. Without it Samsung
      Internet's (and Chrome's auto) dark mode force-darkens the light theme,
-     turning the #E27551 terracotta into a dark red on those phones only. --}}
+     which turned the old terracotta accent dark red on those phones only. The
+     same forced-dark pass muddies the azure accent this scheme uses, so the
+     declaration matters just as much after the re-skin. --}}
 <meta name="color-scheme" content="light dark" />
 @include('partials.seo-meta', [
     'seoTitle' => ($seoTitle ?? __('common.brand')).' — '.__('common.brand'),
@@ -85,18 +87,18 @@
 </head>
 <body class="page-enter flex min-h-screen flex-col bg-paper text-ink antialiased transition-colors duration-300 dark:bg-night dark:text-night-ink">
 
-<a href="#main-content" class="skip-link rounded-full bg-brand px-4 py-2 text-sm font-semibold text-on-accent">{{ __('common.skip_to_content') }}</a>
+<a href="#main-content" class="btn btn-primary skip-link">{{ __('common.skip_to_content') }}</a>
 
 {{-- Slim top bar: logo on the left, locale switcher + theme toggle on the right. --}}
 <header class="flex h-16 shrink-0 items-center justify-between px-4 sm:px-6">
     <a href="{{ route('welcome') }}" data-transition aria-label="{{ __('common.brand') }}" class="flex items-center">
-        <img src="{{ asset('images/brand/gen/mark.webp') }}" width="32" height="32" alt="{{ __('common.brand') }}" class="h-8 w-8" decoding="async" />
+        <img src="{{ asset('images/brand/gen/mark.webp') }}?v={{ config('agent.brand_mark_version') }}" width="32" height="32" alt="{{ __('common.brand') }}" class="h-8 w-8" decoding="async" />
     </a>
 
     <div class="flex items-center gap-2">
         @include('partials.locale-switcher')
         <button id="theme-toggle" type="button" aria-label="{{ __('common.toggle_theme') }}" aria-pressed="false"
-            class="flex h-9 w-9 items-center justify-center rounded-full border border-black/10 bg-white/70 text-ink shadow-sm backdrop-blur-xl transition-all hover:-translate-y-0.5 hover:shadow-md dark:border-white/10 dark:bg-white/10 dark:text-night-ink">
+            class="flex h-9 w-9 items-center justify-center rounded-full bg-white/70 text-ink backdrop-blur-xl transition-all dark:bg-night-raised dark:text-night-ink">
             <svg class="h-4 w-4 dark:hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
             <svg class="hidden h-4 w-4 dark:block" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path stroke-linecap="round" d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
         </button>
@@ -110,7 +112,7 @@
 <main id="main-content" class="flex flex-1 items-center justify-center px-4 py-10 sm:px-6">
     <div class="reveal w-full max-w-md">
         @if (session('status'))
-            <div class="mb-6 rounded-2xl border border-brand/20 bg-brand/5 px-4 py-3 text-sm font-medium text-brand" role="status">
+            <div class="mb-6 rounded-2xl border-brand/20 bg-azure-50 px-4 py-3 text-sm font-medium text-brand-strong" role="status">
                 {{ session('status') }}
             </div>
         @endif

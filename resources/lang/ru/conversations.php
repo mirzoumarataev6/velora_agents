@@ -51,6 +51,17 @@ return [
         'empty_description' => 'Ни в одном сообщении нет «:term». Попробуйте другой запрос.',
     ],
 
+    /* One line per filter, shown in the inbox's unopened thread pane.
+     * The filters are the only non-obvious part of that screen, and the
+     * pane is two thirds of it — so the space explains them instead of
+     * staying blank. */
+    'filter_help' => [
+        'needs_human' => 'Ассистент передал разговор человеку — клиент просил оператора или разговор пошёл не так.',
+        'has_lead' => 'Из переписки получилась заявка: есть имя, контакт и что человеку нужно.',
+        'rated_down' => 'Клиент отметил ответ как неудачный. Единственный сигнал о неверном, но уверенном ответе.',
+        'unread' => 'Пришло новое сообщение, которое вы ещё не открывали.',
+    ],
+
     'filters' => [
         'all' => 'Все',
         'unread' => 'Непрочитанные',

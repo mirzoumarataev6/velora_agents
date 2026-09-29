@@ -30,8 +30,8 @@
     };
 @endphp
 
-<div class="rounded-2xl border border-black/10 bg-white p-5 dark:border-white/10 dark:bg-white/5">
-    <h2 class="text-base font-semibold">{{ __('dashboard.heatmap.title') }}</h2>
+<div class="card p-5">
+    <h2 class="section-head-title">{{ __('dashboard.heatmap.title') }}</h2>
     <p class="mt-0.5 text-xs text-muted dark:text-night-muted">{{ __('dashboard.heatmap.description') }}</p>
 
     {{-- Scrolls inside its own box on a phone rather than pushing the page
@@ -62,7 +62,7 @@
         </div>
     </div>
 
-    <div class="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-black/5 pt-3 dark:border-white/10">
+    <div class="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-hairline pt-3 dark:border-white/10">
         {{-- The hour columns are already converted to this timezone (see
              DashboardMetrics::heatmap() / local()) — this just says so, so an
              owner comparing it to their own clock isn't left guessing which

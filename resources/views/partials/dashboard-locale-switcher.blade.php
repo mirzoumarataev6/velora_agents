@@ -12,7 +12,7 @@
 <div x-data="localeSwitcher()" class="shrink-0">
     <button type="button" x-ref="trigger" @click.stop="toggle()" @keydown.down.prevent="open ? focusItem(0) : toggle()"
         :aria-expanded="open ? 'true' : 'false'" aria-haspopup="menu"
-        class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+        class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm transition-colors hover:bg-sunk dark:hover:bg-night-raised"
         aria-label="{{ __('nav.locale_switcher_label') }}">
         <span aria-hidden="true">{{ $__flags[app()->getLocale()] ?? '🌐' }}</span>
     </button>
@@ -30,7 +30,7 @@
             x-transition:leave="transition ease-in duration-100"
             x-transition:leave-start="opacity-100 scale-100"
             x-transition:leave-end="opacity-0 scale-95"
-            class="fixed z-[110] w-40 overflow-hidden rounded-2xl border border-black/10 bg-white py-1 shadow-xl dark:border-white/10 dark:bg-night-card">
+            class="card fixed z-[110] w-40 overflow-hidden py-1">
             @foreach ($__locales as $loc)
                 <form method="POST" action="{{ route('locale.update') }}">
                     @csrf

@@ -711,8 +711,21 @@ class PriceHagglingTest extends TestCase
         $form = $this->actingAs($agent->user)->get(route('agents.edit', $agent));
         $form->assertOk();
         // Its own step, not mixed into the response-settings card.
-        $form->assertSee(__('agents.form.step4_heading'), false);
+        //
+        // Asserted on the stepper's name for step 4 rather than the old
+        // `step4_heading`: the wizard's per-card headings were removed when
+        // the stepper started naming each step, and repeating the name inside
+        // the card it labels was the duplication that removal was for.
+        $form->assertSee(__('agents.form.step_names')[4], false);
         $form->assertSee('x-show="step === 4"', false);
+
+        // And the floor really is on step 4, not left behind on step 3 among
+        // the tone presets — which is the whole point of it having a step.
+        $html = $form->getContent();
+        $this->assertGreaterThan(
+            strpos($html, 'x-show="step === 4"'),
+            strpos($html, 'id="haggle_min_price_percent"'),
+        );
         $form->assertSee('name="haggling_enabled"', false);
         $form->assertSee('id="haggling_level"', false);
         $form->assertSee('id="haggling_instructions"', false);

@@ -34,13 +34,13 @@
          interpolates the owner's name, which the swap engine's plain text
          replacement cannot rebuild; the dashboard's switcher reloads. --}}
     <div x-data="{ shown: true }" x-show="shown" x-cloak role="status"
-        class="reveal is-visible mb-4 flex items-center gap-3 rounded-3xl border border-brand/20 bg-brand/10 px-5 py-4 sm:px-6">
-        <p class="min-w-0 flex-1 text-sm font-semibold text-brand">
+        class="reveal is-visible mb-4 flex items-center gap-3 rounded-3xl border-brand/20 bg-brand-circle px-5 py-4 sm:px-6">
+        <p class="min-w-0 flex-1 text-sm font-semibold text-brand-strong">
             {{ __('onboarding.welcome_greeting', ['name' => $__greetingName]) }}
         </p>
         <button type="button" @click="shown = false"
             aria-label="{{ __('onboarding.welcome.close') }}" data-i18n-al="onboarding.welcome.close"
-            class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-brand transition-colors hover:bg-brand/15">
+            class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-brand-strong transition-colors hover:bg-brand/15">
             <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
         </button>
     </div>

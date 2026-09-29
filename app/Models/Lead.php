@@ -2,20 +2,23 @@
 
 namespace App\Models;
 
+use App\Observers\LeadObserver;
 use App\Policies\LeadPolicy;
 use App\Services\Haggling\HagglingService;
 use Database\Factories\LeadFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Attributes\UsePolicy;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 #[Fillable([
-    'conversation_id', 'type', 'customer_name', 'phone', 'contact', 'items', 'note', 'source', 'status', 'seen_at',
+    'conversation_id', 'customer_id', 'type', 'customer_name', 'phone', 'contact', 'items', 'note', 'source', 'status', 'seen_at',
     'details', 'requested_price', 'listed_price', 'approved_price', 'negotiation_summary',
 ])]
 #[UsePolicy(LeadPolicy::class)]
+#[ObservedBy(LeadObserver::class)]
 class Lead extends Model
 {
     /** @use HasFactory<LeadFactory> */
@@ -97,5 +100,10 @@ class Lead extends Model
     public function conversation(): BelongsTo
     {
         return $this->belongsTo(Conversation::class);
+    }
+
+    public function customer(): BelongsTo
+    {
+        return $this->belongsTo(Customer::class);
     }
 }

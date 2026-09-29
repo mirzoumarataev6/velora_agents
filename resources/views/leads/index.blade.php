@@ -3,7 +3,8 @@
 @section('title', __('leads.index.title'))
 
 @section('content')
-<div class="mx-auto max-w-5xl" x-data="leadsBoard({
+{{-- The width cap lives in layouts/dashboard now, once, for every page. --}}
+<div x-data="leadsBoard({
         updateUrlBase: '{{ route('leads.update', ['lead' => '__ID__']) }}',
         deleteUrlBase: '{{ route('leads.destroy', ['lead' => '__ID__']) }}',
         approveUrlBase: '{{ route('leads.price.approve', ['lead' => '__ID__']) }}',
@@ -20,15 +21,16 @@
             'declineConfirm' => __('leads.haggle.decline_confirm'),
         ]) }},
     })">
-    <div class="flex flex-wrap items-end justify-between gap-4">
+    <div class="page-header">
         <div>
-            <h1 class="text-2xl font-semibold">{{ __('leads.index.heading') }}</h1>
-            <p class="mt-1 text-sm text-muted dark:text-night-muted">{{ __('leads.index.subheading') }}</p>
+            <h1 class="page-title">{{ __('leads.index.heading') }}</h1>
+            <p class="page-sub">{{ __('leads.index.subheading') }}</p>
         </div>
+        <div class="page-actions">
 
         @if ($agents->count() > 1)
             <select onchange="window.location.href = this.value"
-                class="field rounded-xl px-4 py-2 text-sm">
+                class="field px-4 py-2 text-sm">
                 @php $tab = $activeView === 'orders' ? null : $activeView; @endphp
                 <option value="{{ route('leads.index', array_filter(['view' => $tab, 'status' => $activeStatus, 'q' => $activeSearch])) }}" @selected(! $activeAgent)>{{ __('leads.index.all_agents') }}</option>
                 @foreach ($agents as $agentOption)
@@ -36,6 +38,7 @@
                 @endforeach
             </select>
         @endif
+        </div>
     </div>
 
     {{-- Tabs first, then the status chips WITHIN the active tab.
@@ -45,13 +48,13 @@
          decision with a customer waiting in a live chat. Filed together the
          urgent kind sinks under the routine kind — which is what the badge on
          the second tab exists to stop. --}}
-    <div class="mt-6 flex items-center gap-1 border-b border-black/10 dark:border-white/10">
+    <div class="tabs">
         @foreach (['orders', 'haggle'] as $viewKey)
             <a href="{{ route('leads.index', array_filter(['view' => $viewKey === 'orders' ? null : $viewKey, 'agent' => $activeAgent])) }}"
-                class="-mb-px flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-semibold transition-colors {{ $activeView === $viewKey ? 'border-brand text-brand' : 'border-transparent text-muted hover:text-body dark:text-night-muted' }}">
+                class="tab {{ $activeView === $viewKey ? 'tab-active' : '' }}">
                 {{ __("leads.views.$viewKey") }}
                 @if ($viewKey === 'haggle' && $pendingHaggleCount > 0)
-                    <span class="rounded-full bg-warning px-1.5 py-0.5 text-[11px] font-bold leading-none text-white">{{ $pendingHaggleCount }}</span>
+                    <span class="badge badge-warning tnum">{{ $pendingHaggleCount }}</span>
                 @endif
             </a>
         @endforeach
@@ -92,7 +95,7 @@
                 @search="search($event.target.value)"
                 placeholder="{{ __('leads.index.search_placeholder') }}" data-i18n-ph="leads.index.search_placeholder"
                 aria-label="{{ __('leads.index.search_placeholder') }}"
-                class="field w-full rounded-xl py-2 pl-9 pr-3 text-sm" />
+                class="field w-full py-2 pl-9 pr-3 text-sm" />
             <span x-show="searching" x-cloak class="spinner absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2"></span>
         </form>
     </div>

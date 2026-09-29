@@ -1,141 +1,72 @@
-@php
-    /**
-     * Font loading, tuned for first paint.
-     *
-     * `Vite::fonts()` is correct but preloads EVERY subset the plugin generated —
-     * dozens of files (7 unicode ranges × every weight/family pair), almost all
-     * of which a given visitor never renders: a Russian reader does not need the
-     * Greek or Vietnamese cut. Preloading them competes with CSS for bandwidth
-     * on the critical path, which is exactly backwards. With two families now
-     * shipping instead of one, that gap only widened.
-     *
-     * So: link the generated @font-face stylesheet as-is (it already carries
-     * font-display: swap and per-face unicode-range, so the browser downloads
-     * only the subsets it actually needs), and hand-pick the handful of preloads
-     * that matter above the fold — body text and the hero headline, in the
-     * script the current locale is written in.
-     *
-     * Dev/hot mode has no build manifest, so it falls back to Vite::fonts().
-     *
-     * Asks Vite rather than checking public/hot itself: a request from a phone
-     * through the tunnel is switched to the built assets even while the dev
-     * server runs (see ServeBuiltAssetsToRemoteClients), and the fonts have to
-     * follow the same decision as @vite() or they point at 127.0.0.1:5173.
-     */
-    $__manifestPath = public_path('build/fonts-manifest.json');
-    $__hot = \Illuminate\Support\Facades\Vite::isRunningHot();
-    $__manifest = (! $__hot && file_exists($__manifestPath))
-        ? json_decode(file_get_contents($__manifestPath), true)
-        : null;
+{{--
+    THE PRODUCT TYPEFACE — Onest 2.001, self-hosted. Declared and preloaded
+    here, in one partial, included by every layout.
 
-    $__preloads = [];
-    $__stylesheet = null;
+    WHY IT IS ALL IN ONE PLACE. The @font-face blocks started out in
+    resources/css/app.css, which is correct for the dashboard and the auth
+    pages and silently wrong for the landing: showcase.blade.php ships its own
+    self-contained stylesheet and no Tailwind, so it never loads app.css. It
+    therefore preloaded three woff2 files that no @font-face ever claimed, and
+    rendered the entire page in whatever the browser picked — the hero came out
+    in Times. Faces and preloads have to travel together or they drift, and
+    this partial is the one thing every layout already includes.
 
-    if (is_array($__manifest)) {
-        $__stylesheet = isset($__manifest['style']['file'])
-            ? asset('build/'.$__manifest['style']['file'])
-            : null;
+    WHY NOT THE VITE FONTS PLUGIN. It fetches from fonts.bunny.net, and Bunny
+    mirrors Google's subsetting of Onest, whose cyrillic-ext cut contains not
+    one Tajik letter. TG is a first-class locale here, which is why an earlier
+    pass recorded "Onest: no Tajik at all" and rejected the face outright. The
+    fault was the distributor, not the typeface — the foundry's own release
+    carries all six pairs (Ғғ Ққ Ҳҳ Ҷҷ Ӣӣ Ӯӯ), verified against the shipped
+    woff2's cmap by scripts/verify-font-coverage.mjs. Vendored and re-cut to
+    Latin + Cyrillic by scripts/vendor-onest.sh; ~26KB per weight.
 
-        // Probe codepoints: a subset is "the one we need" if its unicode-range
-        // covers the script this locale is written in.
-        //   Tajik adds the extended Cyrillic block (ғ қ ҳ ҷ ӣ ӯ), which lives in
-        //   a different subset file than the basic Cyrillic of Russian.
-        $__probes = match (app()->getLocale()) {
-            'ru' => [0x0410],
-            'tg' => [0x0410, 0x04E3],
-            default => [0x0041],
-        };
+    THREE WEIGHTS, AND NO MORE. 400 body · 500 labels, buttons, nav · 600
+    headings and KPI figures. The scheme before this ran to 700 and 800 and
+    read heavy and dated. No 700 file is shipped, so a stray `font-bold` gets
+    a synthesised smear rather than silently reinstating the old weight —
+    and app.css maps the bold utilities onto 600 so it does not even do that.
 
-        // Faces that render above the fold on every surface: body copy, and the
-        // display face the page title is set in.
-        //
-        // The alias is whatever the fonts plugin slugged the family to — a
-        // single-word family slugs to itself, a multi-word one gets kebabbed —
-        // so each lookup is defensive and falls back to preloading nothing
-        // (never to preloading the wrong file).
-        $__sans = isset($__manifest['style']['familyStyles']['geist'])
-            ? 'geist'
-            : 'Geist';
-        $__serif = isset($__manifest['style']['familyStyles']['source-serif-4'])
-            ? 'source-serif-4'
-            : null;
+    WHY PRELOAD when the faces are declared right here: a browser does not
+    fetch a @font-face's src until something on the page actually matches it,
+    which is after layout. The preloads start all three fetches immediately,
+    in parallel with the stylesheet. All three are always right — every locale
+    this product ships (en/ru/tg) needs Latin and Cyrillic on the same page.
 
-        // Sans 400 is body copy and 500 the heaviest UI weight above the fold.
-        // Serif 400 is every h1/hero on the product — the single most visible
-        // string on the page, and the one whose swap-in is most obvious if it
-        // arrives late. Serif 600 and sans 600 ship but render below the fold,
-        // so preloading them would spend bandwidth on faces nobody sees first.
-        $__wanted = [[$__sans, 400], [$__sans, 500]];
-        if ($__serif !== null) {
-            $__wanted[] = [$__serif, 400];
-        }
+    ?v= must match in both halves of this file, and is bumped when
+    scripts/vendor-onest.sh produces different bytes.
+--}}
+@php $__fontVersion = '2.001'; @endphp
 
-        $__covers = function (string $range, int $cp): bool {
-            foreach (explode(',', $range) as $part) {
-                $part = trim($part);
-                if ($part === '') {
-                    continue;
-                }
-                $part = ltrim($part, 'Uu+');
-                if (str_contains($part, '-')) {
-                    [$from, $to] = explode('-', $part, 2);
-                    if ($cp >= hexdec($from) && $cp <= hexdec($to)) {
-                        return true;
-                    }
-                } elseif (hexdec($part) === $cp) {
-                    return true;
-                }
-            }
+@foreach ([400, 500, 600] as $__weight)
+    <link rel="preload" as="font" type="font/woff2"
+        href="{{ asset('fonts/onest/onest-'.$__weight.'.woff2') }}?v={{ $__fontVersion }}"
+        crossorigin="anonymous" />
+@endforeach
 
-            return false;
-        };
-
-        foreach ($__wanted as [$__alias, $__weight]) {
-            $__css = $__manifest['style']['familyStyles'][$__alias] ?? '';
-            if ($__css === '') {
-                continue;
-            }
-
-            // Each @font-face block carries one src url and one unicode-range.
-            preg_match_all(
-                '#@font-face\s*\{(?<body>[^}]*)\}#s',
-                $__css,
-                $__blocks,
-                PREG_SET_ORDER
-            );
-
-            foreach ($__blocks as $__block) {
-                $__body = $__block['body'];
-
-                // woff2 only — woff is the legacy fallback and must not be preloaded.
-                if (! preg_match('#url\("([^"]+\.woff2)"\)#', $__body, $__url)) {
-                    continue;
-                }
-                if (! preg_match('#font-weight:\s*(\d+)#', $__body, $__w) || (int) $__w[1] !== $__weight) {
-                    continue;
-                }
-                if (! preg_match('#unicode-range:\s*([^;]+);#', $__body, $__r)) {
-                    continue;
-                }
-
-                foreach ($__probes as $__cp) {
-                    if ($__covers($__r[1], $__cp)) {
-                        $__preloads[$__url[1]] = true;
-                        break;
-                    }
-                }
-            }
-        }
+{{-- Inline rather than a stylesheet link: three @font-face blocks are under a
+     kilobyte, and a separate request here would sit on the critical path
+     ahead of the fonts it declares — the exact delay the preloads above exist
+     to remove. --}}
+<style>
+    @font-face {
+        font-family: 'Onest';
+        font-style: normal;
+        font-weight: 400;
+        font-display: swap;
+        src: url('{{ asset('fonts/onest/onest-400.woff2') }}?v={{ $__fontVersion }}') format('woff2');
     }
-@endphp
-
-@if ($__stylesheet)
-    @foreach (array_keys($__preloads) as $__href)
-        <link rel="preload" as="font" type="font/woff2" href="{{ $__href }}" crossorigin="anonymous" />
-    @endforeach
-    <link rel="stylesheet" href="{{ $__stylesheet }}" />
-@else
-    {{-- Dev server, or a build that predates the fonts manifest. --}}
-    {{ Vite::fonts() }}
-@endif
-
+    @font-face {
+        font-family: 'Onest';
+        font-style: normal;
+        font-weight: 500;
+        font-display: swap;
+        src: url('{{ asset('fonts/onest/onest-500.woff2') }}?v={{ $__fontVersion }}') format('woff2');
+    }
+    @font-face {
+        font-family: 'Onest';
+        font-style: normal;
+        font-weight: 600;
+        font-display: swap;
+        src: url('{{ asset('fonts/onest/onest-600.woff2') }}?v={{ $__fontVersion }}') format('woff2');
+    }
+</style>

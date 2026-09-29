@@ -34,22 +34,22 @@
             @dragover.prevent="dragging = true"
             @dragleave.prevent="dragging = false"
             @drop.prevent="dragging = false; handleFiles($event.dataTransfer.files)"
-            :class="dragging ? 'border-brand bg-brand/5' : 'border-black/15 dark:border-white/15'"
+            :class="dragging ? 'border-brand bg-azure-50' : 'border-black/15 dark:border-white/15'"
             class="flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed px-6 py-10 text-center transition-colors">
             <svg x-show="!uploading" class="h-8 w-8 text-muted dark:text-night-muted/70" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 16V4m0 0L7 9m5-5l5 5M4 16v3a2 2 0 002 2h12a2 2 0 002-2v-3"/></svg>
             <span x-show="uploading" class="spinner h-8 w-8"></span>
-            <p class="text-sm font-medium" x-show="!uploading">{{ __('agents.knowledge.drop_text') }} <button type="button" @click="$refs.fileInput.click()" class="text-brand hover:underline">{{ __('agents.knowledge.drop_browse') }}</button></p>
+            <p class="text-sm font-medium" x-show="!uploading">{{ __('agents.knowledge.drop_text') }} <button type="button" @click="$refs.fileInput.click()" class="text-brand-strong hover:underline">{{ __('agents.knowledge.drop_browse') }}</button></p>
             <p class="text-sm font-medium" x-show="uploading">{{ __('agents.knowledge.uploading') }}</p>
             <p class="text-xs text-muted dark:text-night-muted">{{ __('agents.knowledge.file_hint') }}</p>
             <input type="file" name="files[]" multiple x-ref="fileInput" @change="handleFiles($event.target.files); $event.target.value = ''" accept=".pdf,.docx,.xlsx,.csv,.xml,.png,.jpg,.jpeg,.webp" class="hidden" />
         </div>
 
         <div class="mt-3 flex flex-wrap gap-2">
-            <button type="button" @click="addTextOpen = true" class="flex items-center gap-1.5 rounded-full border border-black/10 px-4 py-2 text-sm font-medium transition-all hover:-translate-y-0.5 dark:border-white/10">
+            <button type="button" @click="addTextOpen = true" class="flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium transition-all">
                 <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h10M4 18h7"/></svg>
                 {{ __('agents.knowledge.add_text') }}
             </button>
-            <button type="button" @click="addUrlOpen = true" class="flex items-center gap-1.5 rounded-full border border-black/10 px-4 py-2 text-sm font-medium transition-all hover:-translate-y-0.5 dark:border-white/10">
+            <button type="button" @click="addUrlOpen = true" class="flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium transition-all">
                 <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M13.828 10.172a4 4 0 010 5.656l-3 3a4 4 0 01-5.656-5.656l1.5-1.5M10.172 13.828a4 4 0 010-5.656l3-3a4 4 0 015.656 5.656l-1.5 1.5"/></svg>
                 {{ __('agents.knowledge.add_link') }}
             </button>
@@ -57,17 +57,19 @@
     </div>
 
     {{-- Sources table --}}
-    <div class="overflow-hidden rounded-2xl border border-black/10 dark:border-white/10">
+    <div class="overflow-hidden rounded-2xl">
         <template x-if="sources.length === 0">
-            <div class="flex flex-col items-center justify-center gap-2 px-6 py-14 text-center">
-                <svg class="h-8 w-8 text-muted dark:text-night-muted/70" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.746 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
-                <p class="text-sm font-medium">{{ __('agents.knowledge.empty_title') }}</p>
-                <p class="max-w-sm text-xs text-muted dark:text-night-muted">{{ __('agents.knowledge.empty_description') }}</p>
+            <div class="empty-state">
+                <span class="empty-state-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.746 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
+                </span>
+                <p class="empty-state-title">{{ __('agents.knowledge.empty_title') }}</p>
+                <p class="empty-state-text">{{ __('agents.knowledge.empty_description') }}</p>
             </div>
         </template>
 
-        <table class="w-full text-left text-sm" x-show="sources.length > 0">
-            <thead class="bg-black/[0.03] text-xs uppercase tracking-wide text-muted dark:bg-white/5 dark:text-night-muted/70">
+        <table class="table-flat" x-show="sources.length > 0">
+            <thead>
                 <tr>
                     <th class="px-4 py-3 font-medium">{{ __('agents.knowledge.col_source') }}</th>
                     <th class="px-4 py-3 font-medium">{{ __('agents.knowledge.col_type') }}</th>
@@ -79,7 +81,7 @@
             </thead>
             <tbody>
                 <template x-for="source in sources" :key="source.id">
-                    <tr class="border-t border-black/5 dark:border-white/10">
+                    <tr class="border-t border-hairline dark:border-white/10">
                         <td class="max-w-xs truncate px-4 py-3 font-medium" x-text="source.name"></td>
                         <td class="px-4 py-3 text-muted dark:text-night-muted" x-text="typeLabels[source.type] || source.type"></td>
                         <td class="px-4 py-3">
@@ -97,7 +99,7 @@
                                 <button type="button" x-show="source.type === 'url'" @click="refetchSource(source)"
                                     :disabled="source._refetching || source.status === 'pending' || source.status === 'processing'"
                                     :title="@js(__('agents.knowledge.refetch'))" :aria-label="@js(__('agents.knowledge.refetch'))"
-                                    class="text-muted transition-colors hover:text-brand disabled:opacity-40 dark:text-night-muted/70">
+                                    class="text-muted transition-colors hover:text-brand-strong disabled:opacity-40 dark:text-night-muted/70">
                                     <svg class="h-4 w-4" :class="source._refetching && 'animate-spin'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
                                 </button>
                                 <button type="button" @click="deleteSource(source)" :disabled="source._deleting" class="text-muted transition-colors hover:text-danger disabled:opacity-40 dark:text-night-muted/70">
@@ -119,18 +121,18 @@
                 <div>
                     <label class="text-sm font-medium">{{ __('agents.knowledge.name_label') }}</label>
                     <input type="text" x-model="textForm.name" required placeholder="{{ __('agents.knowledge.name_placeholder') }}"
- class="field mt-1 w-full rounded-xl px-4 py-2.5 text-sm" />
+ class="field mt-1 w-full px-4 py-2.5 text-sm" />
                     <p x-show="textErrors.name" x-text="textErrors.name?.[0]" class="mt-1 text-xs text-danger"></p>
                 </div>
                 <div>
                     <label class="text-sm font-medium">{{ __('agents.knowledge.content_label') }}</label>
                     <textarea x-model="textForm.content" required rows="8" placeholder="{{ __('agents.knowledge.content_placeholder') }}"
- class="field mt-1 w-full rounded-xl px-4 py-2.5 text-sm"></textarea>
+ class="field mt-1 w-full px-4 py-2.5 text-sm"></textarea>
                     <p x-show="textErrors.content" x-text="textErrors.content?.[0]" class="mt-1 text-xs text-danger"></p>
                 </div>
                 <div class="flex justify-end gap-2 pt-1">
-                    <button type="button" @click="addTextOpen = false" class="rounded-full border border-black/10 px-4 py-2 text-sm font-semibold dark:border-white/10">{{ __('agents.knowledge.cancel') }}</button>
-                    <button type="submit" :disabled="textSubmitting" class="rounded-full bg-brand px-5 py-2 text-sm font-semibold text-on-accent hover:bg-brand-hover disabled:opacity-60">
+                    <button type="button" @click="addTextOpen = false" class="rounded-full px-4 py-2 text-sm font-semibold">{{ __('agents.knowledge.cancel') }}</button>
+                    <button type="submit" :disabled="textSubmitting" class="btn btn-primary disabled:opacity-60">
                         <span x-show="!textSubmitting">{{ __('agents.knowledge.add') }}</span>
                         <span x-show="textSubmitting" class="spinner"></span>
                     </button>
@@ -147,12 +149,12 @@
                 <div>
                     <label class="text-sm font-medium">{{ __('agents.knowledge.url_label') }}</label>
                     <input type="url" x-model="urlForm.url" required placeholder="{{ __('agents.knowledge.url_placeholder') }}"
- class="field mt-1 w-full rounded-xl px-4 py-2.5 text-sm" />
+ class="field mt-1 w-full px-4 py-2.5 text-sm" />
                     <p x-show="urlErrors.url" x-text="urlErrors.url?.[0]" class="mt-1 text-xs text-danger"></p>
                 </div>
                 <div class="flex justify-end gap-2 pt-1">
-                    <button type="button" @click="addUrlOpen = false" class="rounded-full border border-black/10 px-4 py-2 text-sm font-semibold dark:border-white/10">{{ __('agents.knowledge.cancel') }}</button>
-                    <button type="submit" :disabled="urlSubmitting" class="rounded-full bg-brand px-5 py-2 text-sm font-semibold text-on-accent hover:bg-brand-hover disabled:opacity-60">
+                    <button type="button" @click="addUrlOpen = false" class="rounded-full px-4 py-2 text-sm font-semibold">{{ __('agents.knowledge.cancel') }}</button>
+                    <button type="submit" :disabled="urlSubmitting" class="btn btn-primary disabled:opacity-60">
                         <span x-show="!urlSubmitting">{{ __('agents.knowledge.add') }}</span>
                         <span x-show="urlSubmitting" class="spinner"></span>
                     </button>

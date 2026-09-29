@@ -9,7 +9,7 @@
     <p class="mt-1 text-center text-sm text-muted dark:text-night-muted" data-i18n="auth.register.subtitle">{{ __('auth.register.subtitle') }}</p>
 
     <a id="google-auth-btn" href="{{ route('auth.google') }}"
-        class="mt-6 flex w-full items-center justify-center gap-3 rounded-full border border-black/10 bg-white px-4 py-2.5 text-sm font-semibold text-ink shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md">
+        class="btn btn-neutral btn-block btn-lg mt-6 gap-3">
         <svg viewBox="0 0 48 48" class="h-5 w-5" aria-hidden="true">
             <path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.9 32.5 29.4 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.6 6.1 29.6 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20c11 0 19.7-8 19.7-20 0-1.3-.1-2.3-.3-3.5z"/>
             <path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.6 15.1 18.9 12 24 12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.6 6.1 29.6 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/>
@@ -20,9 +20,9 @@
     </a>
 
     <div class="my-4 flex items-center gap-3 text-xs font-medium uppercase tracking-widest text-muted dark:text-night-muted/70">
-        <span class="h-px flex-1 bg-black/10 dark:bg-white/10"></span>
+        <span class="h-px flex-1 bg-hairline dark:bg-night-raised"></span>
         <span data-i18n="auth.register.divider">{{ __('auth.register.divider') }}</span>
-        <span class="h-px flex-1 bg-black/10 dark:bg-white/10"></span>
+        <span class="h-px flex-1 bg-hairline dark:bg-night-raised"></span>
     </div>
 
     <form id="registerForm" method="POST" action="/register" class="space-y-3" novalidate aria-label="{{ __('auth.register.title') }}">
@@ -32,7 +32,7 @@
                 <svg class="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"/></svg>
                 <input id="name" name="name" type="text" required autofocus autocomplete="name"
                     aria-required="true" aria-describedby="name-error"
- class="field peer w-full rounded-xl px-4 py-2.5 pl-11 text-sm" />
+ class="field peer w-full px-4 py-2.5 pl-11 text-sm" />
             </div>
             <p id="name-error" class="mt-1 min-h-[1rem] text-xs text-danger" aria-live="polite"></p>
         </div>
@@ -43,7 +43,7 @@
                 <svg class="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
                 <input id="email" name="email" type="email" required autocomplete="email"
                     aria-required="true" aria-describedby="email-error"
- class="field peer w-full rounded-xl px-4 py-2.5 pl-11 text-sm" />
+ class="field peer w-full px-4 py-2.5 pl-11 text-sm" />
             </div>
             <p id="email-error" class="mt-1 min-h-[1rem] text-xs text-danger" aria-live="polite"></p>
         </div>
@@ -54,15 +54,15 @@
                 <svg class="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-12V7a4 4 0 00-8 0v4h8z"/></svg>
                 <input id="password" name="password" type="password" required autocomplete="new-password"
                     aria-required="true" aria-describedby="password-error strength-label"
- class="field peer w-full rounded-xl px-4 py-2.5 pl-11 pr-11 text-sm" />
+ class="field peer w-full px-4 py-2.5 pl-11 pr-11 text-sm" />
                 <button type="button" data-toggle-password="password" aria-label="{{ __('auth.register.show_password') }}" aria-pressed="false"
-                    class="absolute right-3 top-1/2 -translate-y-1/2 text-muted transition-colors hover:text-brand">
+                    class="absolute right-3 top-1/2 -translate-y-1/2 text-muted transition-colors hover:text-brand-strong">
                     <svg class="icon-eye h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
                     <svg class="icon-eye-off hidden h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88"/></svg>
                 </button>
             </div>
             <div id="strength-meter" class="mt-2">
-                <div class="h-1.5 w-full overflow-hidden rounded-full bg-black/5 dark:bg-white/10">
+                <div class="h-1.5 w-full overflow-hidden rounded-full bg-sunk dark:bg-night-raised">
                     <div id="strength-bar" class="h-full w-0 rounded-full transition-all duration-300"></div>
                 </div>
                 <p id="strength-label" class="mt-1 text-xs text-muted dark:text-night-muted" aria-live="polite"></p>
@@ -76,9 +76,9 @@
                 <svg class="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                 <input id="password_confirmation" name="password_confirmation" type="password" required autocomplete="new-password"
                     aria-required="true" aria-describedby="password_confirmation-error"
- class="field peer w-full rounded-xl px-4 py-2.5 pl-11 pr-11 text-sm" />
+ class="field peer w-full px-4 py-2.5 pl-11 pr-11 text-sm" />
                 <button type="button" data-toggle-password="password_confirmation" aria-label="{{ __('auth.register.show_password') }}" aria-pressed="false"
-                    class="absolute right-3 top-1/2 -translate-y-1/2 text-muted transition-colors hover:text-brand">
+                    class="absolute right-3 top-1/2 -translate-y-1/2 text-muted transition-colors hover:text-brand-strong">
                     <svg class="icon-eye h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
                     <svg class="icon-eye-off hidden h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88"/></svg>
                 </button>
@@ -87,7 +87,7 @@
         </div>
 
         <button type="submit"
-            class="flex w-full items-center justify-center gap-2 rounded-full bg-brand px-4 py-2.5 text-sm font-semibold text-on-accent shadow-glow-ember transition-all duration-200 hover:-translate-y-0.5 hover:bg-brand-hover disabled:pointer-events-none disabled:opacity-70">
+            class="btn btn-primary btn-block disabled:pointer-events-none disabled:opacity-70">
             <span class="btn-label" data-i18n="auth.register.submit">{{ __('auth.register.submit') }}</span>
         </button>
     </form>
@@ -96,7 +96,7 @@
 
     <p class="mt-4 text-center text-sm text-muted dark:text-night-muted">
         <span data-i18n="auth.register.have_account">{{ __('auth.register.have_account') }}</span>
-        <a href="{{ route('login') }}" data-transition class="font-semibold text-brand hover:underline" data-i18n="auth.register.login_link">{{ __('auth.register.login_link') }}</a>
+        <a href="{{ route('login') }}" data-transition class="font-semibold text-brand-strong hover:underline" data-i18n="auth.register.login_link">{{ __('auth.register.login_link') }}</a>
     </p>
 @endsection
 

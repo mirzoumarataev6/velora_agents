@@ -186,3 +186,62 @@ if (previousBlade !== blade) {
 } else {
     console.log('palette: landing partial up to date');
 }
+
+/* --- The same tokens, reachable from PHP ---------------------------------
+   A CSS custom property cannot reach everywhere a colour is needed. `<meta
+   name="theme-color">` is the case that forces this: the browser paints the
+   phone's address bar from it, it takes a literal hex, and `var()` is not
+   resolved there. Left to itself that is a hardcoded colour in a Blade file,
+   which is exactly what this build step exists to prevent — and it is the kind
+   that rots silently, because nothing renders wrong on a desktop when it drifts.
+
+   So the palette is emitted a third time as a PHP config, and views ask for
+   `config('palette.paper')` instead of typing a hex. Same single source, same
+   regeneration, and tests/Feature/BrandConsistencyTest.php can assert the two
+   agree. */
+const phpPath = resolve(root, 'config/palette.php');
+
+const phpEntries = colorLines
+    .map((line) => {
+        const m = /^\s*--color-([a-z0-9-]+):\s*(.+);$/.exec(line);
+        if (!m) return null;
+
+        return `    '${m[1]}' => '${m[2]}',`;
+    })
+    .filter(Boolean);
+
+const php = `<?php
+
+/*
+ * GENERATED FILE — DO NOT EDIT.
+ *
+ * Written by scripts/build-palette.mjs from tailwind.config.js, which is the
+ * single place any design token in this product is authored.
+ *
+ * This exists for the handful of places a CSS custom property cannot reach —
+ * \`<meta name="theme-color">\` above all, which takes a literal hex and is what
+ * paints the address bar on a phone. Read a colour with \`config('palette.paper')\`
+ * rather than typing it.
+ *
+ * To change a token: edit tailwind.config.js and run \`npm run palette\`.
+ */
+
+return [
+${phpEntries.join('\n')}
+];
+`;
+
+let previousPhp = '';
+try {
+    previousPhp = readFileSync(phpPath, 'utf8');
+} catch {
+    // First run — no existing file.
+}
+
+if (previousPhp !== php) {
+    mkdirSync(dirname(phpPath), { recursive: true });
+    writeFileSync(phpPath, php, 'utf8');
+    console.log(`palette: wrote ${phpPath.replace(root, '.')}`);
+} else {
+    console.log('palette: php config up to date');
+}

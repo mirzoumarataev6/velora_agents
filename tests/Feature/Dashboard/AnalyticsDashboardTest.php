@@ -389,59 +389,100 @@ class AnalyticsDashboardTest extends TestCase
     }
 
     /**
-     * The bars have to be visible, not merely present.
+     * The chart has to plot the real series, not merely exist.
      *
-     * The first version sized them with a percentage height inside a flex item
-     * that `items-end` had left content-sized — a percentage against an
-     * indefinite height resolves to auto, so every bar rendered at zero and the
-     * chart looked empty while the total above it read 168. This asserts the
-     * rendered geometry rather than the numbers behind it: a day with messages
-     * gets a bar with a real, absolute height, the busiest day fills the track,
-     * and a silent day stays flat.
+     * This replaces a pair of tests that measured bar heights in rem. The
+     * chart is a smooth area chart now — seven fat bars on a mostly empty
+     * field were the loudest object on the dashboard and carried seven
+     * numbers — so the geometry being asserted is the path's own on-curve
+     * points instead. The guarantee is the same one and it still matters:
+     * the busiest day must sit at the top of the plot, a silent day must sit
+     * on the baseline, and a day in between must land proportionally.
+     *
+     * The original bug this guards against is worth restating, because the
+     * new implementation could reproduce it exactly: the first bar chart
+     * sized its bars with a percentage height against an indefinite parent,
+     * so every bar resolved to zero and the chart looked empty while the
+     * total above it read 168. Asserting the rendered coordinates rather than
+     * the metrics array is what catches that class of fault.
      */
-    public function test_days_with_messages_render_bars_with_a_real_height(): void
+    public function test_the_chart_plots_each_day_at_its_real_height(): void
     {
         $today = CarbonImmutable::now()->startOfDay()->addHours(12);
 
         $this->conversationWith(8, at: $today);
         $this->conversationWith(2, at: $today->subDays(2));
 
-        $bars = $this->renderedBars();
+        $chart = $this->renderedChart();
+        $points = $chart['points'];
 
-        $this->assertSame(0.0, $bars[$today->subDays(6)->format('d.m')], 'A day with no messages should be flat.');
-        $this->assertGreaterThan(0, $bars[$today->subDays(2)->format('d.m')], 'A day with messages must render a visible bar.');
+        /* The plot is drawn top-down in SVG coordinates — y=0 is the ceiling
+           and a bigger value is a SMALLER y — and it is inset by a few units
+           at top and bottom so the end dots and the stroke are not clipped by
+           the viewBox. So the baseline is wherever the empty days sit, not
+           literally the viewBox height, and every assertion below is relative
+           to it rather than to an absolute coordinate. That also keeps the
+           test from re-encoding the padding and the axis-ceiling rounding,
+           neither of which it is here to pin. */
+        $baseline = max($points);
 
-        // Two messages against a peak of eight is a quarter of the track.
-        $track = $bars['__track__'];
-        $this->assertEqualsWithDelta($track, $bars[$today->format('d.m')], 0.001, 'The busiest day should fill the track.');
-        $this->assertEqualsWithDelta($track / 4, $bars[$today->subDays(2)->format('d.m')], 0.001);
+        $this->assertEqualsWithDelta($baseline, $points[0], 0.01, 'A day with no messages should sit on the baseline.');
+        $this->assertLessThan($baseline, $points[4], 'A day with messages must be lifted off the baseline.');
+        $this->assertSame(min($points), $points[6], 'The busiest day should be the highest point on the chart.');
+
+        // Two messages against a peak of eight is a quarter of the height.
+        $this->assertEqualsWithDelta(
+            0.25,
+            ($baseline - $points[4]) / ($baseline - $points[6]),
+            0.001,
+            'Days must be plotted in proportion to each other.'
+        );
+
+        // And the values themselves are readable, exactly, on hover.
+        $this->assertSame(8, $chart['values'][$today->format('d.m')]);
+        $this->assertSame(2, $chart['values'][$today->subDays(2)->format('d.m')]);
+        $this->assertSame(0, $chart['values'][$today->subDays(6)->format('d.m')]);
     }
 
-    /** A single message against a busy peak still has to be seeable. */
-    public function test_a_barely_used_day_is_not_rounded_away(): void
+    /**
+     * A single message against a busy peak still has to be seeable.
+     *
+     * The bar chart met this with a minimum bar height, because a bar 1/200
+     * of a track tall rounds away to nothing. An area chart meets it
+     * differently and more honestly: the line is a 2px stroke at every point,
+     * so it is visible wherever it runs, the point is plotted at its true
+     * position rather than a floored one, and the exact count is in the
+     * hover label. What must NOT happen is the quiet day collapsing onto the
+     * baseline and reading as a day with no traffic at all.
+     */
+    public function test_a_barely_used_day_is_distinguishable_from_a_silent_one(): void
     {
         $today = CarbonImmutable::now()->startOfDay()->addHours(12);
 
         $this->conversationWith(200, at: $today);
         $this->conversationWith(1, at: $today->subDays(1));
 
-        $bars = $this->renderedBars();
+        $chart = $this->renderedChart();
 
-        $this->assertGreaterThanOrEqual(0.25, $bars[$today->subDays(1)->format('d.m')]);
+        $quiet = $chart['points'][5];
+        $baseline = max($chart['points']);
+
+        $this->assertEqualsWithDelta($baseline, $chart['points'][0], 0.01);
+        $this->assertLessThan($baseline, $quiet, 'A day with one message must not sit on the baseline with the empty days.');
+        $this->assertSame(1, $chart['values'][$today->subDays(1)->format('d.m')], 'The exact count must survive to the hover label.');
+        $this->assertSame(0, $chart['values'][$today->subDays(6)->format('d.m')]);
     }
 
     /**
-     * Every rendered bar height in rem, keyed by the day label the chart prints,
-     * plus `__track__` for the height of the fixed track they are measured
-     * against.
+     * The messages chart, read back out of the rendered SVG.
      *
-     * Heights are read in absolute units on purpose. Asserting on a percentage
-     * would have passed against the broken markup — the percentages were all
-     * there, they just had nothing to resolve against.
+     * Returns the on-curve y coordinate per day (oldest first), the plot
+     * height they are measured against, and the exact value each point
+     * carries in its hover label, keyed by the day label the chart prints.
      *
-     * @return array<string, float>
+     * @return array{points: list<float>, height: float, values: array<string, int>}
      */
-    protected function renderedBars(): array
+    protected function renderedChart(): array
     {
         $html = $this->actingAs($this->owner)->get(route('dashboard'))->assertOk()->getContent();
 
@@ -451,28 +492,55 @@ class AnalyticsDashboardTest extends TestCase
         libxml_clear_errors();
 
         $xpath = new \DOMXPath($document);
-        $columns = $xpath->query("//div[@title and contains(@class, 'group') and contains(@class, 'flex-col')]");
 
-        $this->assertNotNull($columns);
-        $this->assertGreaterThan(0, $columns->length, 'The chart rendered no columns at all.');
+        $line = $xpath->query("//*[contains(@class, 'chart-line')]")->item(0);
+        $this->assertInstanceOf(\DOMElement::class, $line, 'The chart rendered no series path at all.');
 
-        $heights = [];
+        $svg = $line->parentNode;
+        while ($svg instanceof \DOMElement && $svg->tagName !== 'svg') {
+            $svg = $svg->parentNode;
+        }
+        $this->assertInstanceOf(\DOMElement::class, $svg);
 
-        foreach ($columns as $column) {
-            /** @var \DOMElement $column */
-            [$label] = explode(' — ', $column->getAttribute('title'));
+        // "0 0 1000 200" — the height the coordinates are expressed against.
+        //
+        // Read case-insensitively: DOMDocument's HTML parser lowercases every
+        // attribute name, so the SVG's camelCase `viewBox` arrives as
+        // `viewbox` and getAttribute('viewBox') returns an empty string.
+        $viewBoxAttr = $svg->getAttribute('viewBox') ?: $svg->getAttribute('viewbox');
+        $this->assertNotSame('', $viewBoxAttr, 'The chart must declare a viewBox.');
 
-            $track = $xpath->query('./div', $column)->item(0);
-            $bar = $xpath->query('./div', $track)->item(0);
+        $viewBox = preg_split('/\s+/', trim($viewBoxAttr));
+        $this->assertCount(4, $viewBox, "Unparseable viewBox: {$viewBoxAttr}");
+        $height = (float) $viewBox[3];
+        $this->assertGreaterThan(0, $height, 'The chart must declare a viewBox for its points to mean anything.');
 
-            $trackHeight = $this->remHeight($track);
-            $this->assertGreaterThan(0, $trackHeight, 'The track must have a definite height for bars to be a fraction of.');
+        // The on-curve points of "M x,y C c1 c2 x,y C c1 c2 x,y …": the
+        // initial moveto, then the last coordinate pair of every curveto.
+        // The control points in between are smoothing and say nothing about
+        // the data.
+        $d = $line->getAttribute('d');
+        $this->assertNotSame('', $d, 'The series path is empty.');
 
-            $heights['__track__'] = $trackHeight;
-            $heights[$label] = $this->remHeight($bar);
+        preg_match('/^M\s*([\d.-]+),([\d.-]+)/', $d, $move);
+        $this->assertNotEmpty($move, "Unparseable path: {$d}");
+
+        $points = [(float) $move[2]];
+        preg_match_all('/C[^C]*?\s([\d.-]+),([\d.-]+)(?=C|$)/', $d, $curves, PREG_SET_ORDER);
+        foreach ($curves as $curve) {
+            $points[] = (float) $curve[2];
         }
 
-        return $heights;
+        // The hover targets carry "<label> — <value>" as their <title>.
+        $values = [];
+        foreach ($xpath->query("//*[contains(@class, 'chart-hit')]/*[local-name()='title']") as $title) {
+            [$label, $value] = array_pad(explode(' — ', $title->textContent, 2), 2, '0');
+            $values[trim($label)] = (int) trim($value);
+        }
+
+        $this->assertCount(count($values), $points, 'Every plotted point must have a hover label, and vice versa.');
+
+        return ['points' => $points, 'height' => $height, 'values' => $values];
     }
 
     /** The `height` of one element, in rem — and never in percent. */
@@ -595,10 +663,24 @@ class AnalyticsDashboardTest extends TestCase
         $this->assertSame(1, $pending['price_approvals']);
     }
 
+    /**
+     * Both queues are seeded, because the widget now hides a row whose count
+     * is zero rather than showing a lonely "0" — a card of noughts tells an
+     * owner nothing, and the empty case gets one compact "all clear" line
+     * instead. The contract under test is unchanged: a row links straight to
+     * its own filtered view, so clicking a count lands on those rows rather
+     * than making the owner filter for them again by hand.
+     */
     public function test_the_pending_widget_links_to_each_filtered_view(): void
     {
         $this->conversationWith();
-        $this->agent->leads()->create(['items' => 'a', 'source' => 'telegram', 'status' => 'new']);
+        $this->agent->leads()->create(['items' => 'a', 'source' => 'telegram', 'type' => 'order', 'status' => 'new']);
+        $this->agent->leads()->create([
+            'items' => 'b',
+            'source' => 'telegram',
+            'type' => HagglingService::TYPE,
+            'status' => HagglingService::STATUS_PENDING,
+        ]);
 
         $this->actingAs($this->owner)
             ->get(route('dashboard'))

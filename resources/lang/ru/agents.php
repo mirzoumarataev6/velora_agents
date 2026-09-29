@@ -5,6 +5,7 @@ return [
         'dashboard' => 'Аналитика',
         'agents' => 'Агенты',
         'conversations' => 'Диалоги',
+        'crm' => 'CRM',
         'leads' => 'Заявки',
         'settings' => 'Настройки',
         'logout' => 'Выйти',
@@ -16,6 +17,13 @@ return [
 
     'index' => [
         'title' => 'Агенты — Velora Agents',
+        /* Screen-reader names for the three counts on an agent card. They
+         * render as an icon and a number only; without these a reader
+         * hears "3 2 41" and learns nothing. */
+        'count' => ':count агент|:count агента|:count агентов',
+        'stat_knowledge' => 'источников знаний',
+        'stat_channels' => 'каналов',
+        'stat_conversations' => 'диалогов',
         'heading' => 'Агенты',
         'subheading' => 'Создавайте AI-агентов и подключайте их к каналам общения с клиентами.',
         'create' => 'Создать агента',
@@ -118,6 +126,75 @@ return [
         'haggling_instructions_help' => 'Своими словами: как торговаться, что говорить, на какие товары скидок нет вообще, что предлагать вместо скидки. Эти указания важнее пресета «манера торга» выше — но они не могут поднять порог: ассистент всё равно спросит вас, если цена ниже него.',
         'haggling_instructions_placeholder' => "Например:\n• На новинки и технику Apple скидок нет вообще — предлагай рассрочку.\n• Постоянным клиентам можно сразу идти навстречу, но цену всё равно уточняй у меня.\n• Вместо скидки предлагай бесплатную доставку по городу.\n• Не говори «это дёшево» — говори, что входит в цену.",
         'haggle_floor_authority' => 'Этот порог задаётся только здесь. Фраза в инструкциях выше («соглашайся на всё выше 3000») его не меняет — такие цены всё равно придут вам на согласование.',
+        /* The labelled stepper and its side panel.
+         *
+         * `step_names` are what the five bare progress bars never said: they
+         * told an owner they were somewhere in five steps, and nothing at all
+         * about what the five steps were or what was still coming.
+         *
+         * `step_tips` fill the panel beside the form. They answer the
+         * questions a first-time owner actually has at each step, before they
+         * ask them — which is also what stopped this screen being a narrow
+         * card floating in the middle of an empty page. Three per step: enough
+         * to be useful, few enough to be read. */
+        /* The side panel summarizes the current step from the owner's inputs.
+         * An unset greeting is stated as unset, never shown as sample copy. */
+        'preview_title' => 'Итог текущего шага',
+        'preview_placeholder_name' => 'Новый ассистент',
+        'preview_first_message' => 'Первое сообщение клиенту',
+        'preview_step_1' => 'Название, описание и тон агента',
+        'preview_step_2' => 'Правила и стиль, которые вы задали',
+        'preview_step_3' => 'Сообщения и поведение при отсутствии ответа',
+        'preview_step_4' => 'Условия торга и предел скидки',
+        'preview_step_5' => 'Проверьте настройки перед сохранением',
+        'preview_description_empty' => 'Описание пока не добавлено.',
+        'preview_empty' => 'Не заполнено — можно оставить пустым.',
+        'preview_greeting_empty' => 'Своё приветствие не задано.',
+        'preview_greeting_set' => 'Приветствие настроено.',
+        'preview_haggling_on' => 'Торг включён',
+        'preview_haggling_off' => 'Торг выключен',
+        'preview_floor_label' => 'Минимальная цена',
+        'preview_floor_help' => 'Доля от цены товара. Ниже этого порога ассистент запросит ваше подтверждение.',
+        'preview_name_missing' => 'Укажите название на первом шаге.',
+        'preview_after_save' => 'Каталог и каналы настраиваются на странице агента после сохранения.',
+
+        'step_word' => 'Шаг',
+        'tips_title' => 'Подсказки',
+        'step_names' => [
+            1 => 'О бизнесе',
+            2 => 'Инструкции',
+            3 => 'Ответы',
+            4 => 'Торг',
+            5 => 'Готово',
+        ],
+        'step_tips' => [
+            1 => [
+                'Название видят только вы — по нему вы найдёте агента в списке.',
+                'Опишите бизнес так, как объяснили бы новому сотруднику в первый день.',
+                'Тон — это быстрый пресет. На следующем шаге его можно переопределить своими словами.',
+            ],
+            2 => [
+                'Правила — это то, что ассистент обязан делать всегда: как здороваться, что уточнять, когда звать человека.',
+                'Системный промпт нужен редко. Начните с правил — их проще читать и править.',
+                'Не дублируйте каталог и базу знаний: ассистент видит их сам.',
+            ],
+            3 => [
+                'Если зададите приветствие, клиент увидит его первым сообщением в новом диалоге.',
+                '«Что делать, если не нашёл» — самый важный пункт: от него зависит, начнёт ли ассистент выдумывать.',
+                'Длина ответа считается в символах. 600 — это примерно абзац.',
+            ],
+            4 => [
+                'Порог цены — это граница полномочий. Ниже неё ассистент всегда спрашивает вас.',
+                'Инструкции к торгу — про стиль, а не про цифры. Цифра живёт только в поле порога.',
+                'Можно включить позже: торг не обязателен для запуска.',
+            ],
+            5 => [
+                'После создания подключите канал и загрузите каталог или базу знаний.',
+                'В песочнице можно проверить ответы, ничего не публикуя.',
+                'Все настройки редактируются в любой момент.',
+            ],
+        ],
+
         'back_button' => 'Назад',
 
         'step5_heading' => 'Шаг 5 · Готово',

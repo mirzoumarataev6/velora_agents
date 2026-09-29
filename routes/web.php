@@ -4,6 +4,9 @@ use App\Http\Controllers\AgentController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\ChannelController;
 use App\Http\Controllers\ConversationController;
+use App\Http\Controllers\Crm\CustomerController;
+use App\Http\Controllers\Crm\DealController;
+use App\Http\Controllers\Crm\TaskController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DatabaseConnectionController;
 use App\Http\Controllers\DatasetController;
@@ -63,6 +66,47 @@ Route::middleware(['auth', 'auth.session'])->group(function () {
     Route::post('leads/{lead}/price/approve', [LeadController::class, 'approvePrice'])->name('leads.price.approve');
     Route::post('leads/{lead}/price/decline', [LeadController::class, 'declinePrice'])->name('leads.price.decline');
     Route::delete('leads/{lead}', [LeadController::class, 'destroy'])->name('leads.destroy');
+
+    // CRM. Its own top-level section, distinct from the dashboard: the
+    // dashboard reports on the business, this is where the owner works the
+    // business. Customers are scoped to the OWNER, not to an agent, so one
+    // person writing to two agents is one profile.
+    Route::prefix('crm')->name('crm.')->group(function () {
+        // The board is the CRM's front page: it is where the work is.
+        Route::get('/', [DealController::class, 'index'])->name('board');
+        // Declared before the {deal} wildcard so it isn't bound as a model id.
+        Route::get('deals/poll', [DealController::class, 'poll'])->name('deals.poll');
+        Route::get('deals/{deal}/activity', [DealController::class, 'activity'])->name('deals.activity');
+        Route::post('deals', [DealController::class, 'store'])->name('deals.store');
+        // A drag is its own endpoint, not another field on update: moving a
+        // card reorders a whole column and stamps the manual override that
+        // holds the automation off.
+        Route::patch('deals/{deal}/move', [DealController::class, 'move'])->name('deals.move');
+        Route::patch('deals/{deal}', [DealController::class, 'update'])->name('deals.update');
+        Route::delete('deals/{deal}', [DealController::class, 'destroy'])->name('deals.destroy');
+
+        // Reminders, attached to a customer, a deal, both or neither.
+        Route::get('tasks', [TaskController::class, 'index'])->name('tasks.index');
+        Route::post('tasks', [TaskController::class, 'store'])->name('tasks.store');
+        Route::patch('tasks/{task}', [TaskController::class, 'update'])->name('tasks.update');
+        Route::delete('tasks/{task}', [TaskController::class, 'destroy'])->name('tasks.destroy');
+
+        // No customers.index: a standalone customer directory used to sit
+        // here as a peer of the deal list, competing with it for the same
+        // attention. A customer is reached FROM a deal now (the detail panel
+        // shows who they are inline) or from search — this route only
+        // survives as the deep-link target that opening one leads to.
+        // Declared before the {customer} wildcard so it isn't bound as a model
+        // id. Backs the "+ Новый клиент" phone check in the create-deal modal:
+        // does typing this number already belong to somebody in the book?
+        Route::get('customers/search', [CustomerController::class, 'search'])->name('customers.search');
+        Route::get('customers/lookup', [CustomerController::class, 'lookup'])->name('customers.lookup');
+        Route::get('customers/{customer}', [CustomerController::class, 'show'])->name('customers.show');
+        Route::patch('customers/{customer}', [CustomerController::class, 'update'])->name('customers.update');
+        // The manual override for the identities the data cannot match on its
+        // own — see CustomerResolver for why that case exists at all.
+        Route::post('customers/{customer}/merge', [CustomerController::class, 'merge'])->name('customers.merge');
+    });
 
     // Unified inbox across every agent and channel. `list` is declared before
     // the {conversation} wildcard so it isn't bound as a model id.

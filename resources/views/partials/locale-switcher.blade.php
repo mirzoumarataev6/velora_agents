@@ -11,12 +11,12 @@
 @endphp
 <details class="locale-switcher group relative">
     <summary
-        class="flex cursor-pointer list-none items-center gap-1.5 rounded-full border border-black/10 bg-white/70 px-3 py-1.5 text-sm font-medium text-ink backdrop-blur transition-colors hover:border-black/20 dark:border-white/10 dark:bg-white/10 dark:text-white [&::-webkit-details-marker]:hidden">
+        class="flex cursor-pointer list-none items-center gap-1.5 rounded-full bg-white/70 px-3 py-1.5 text-sm font-medium text-ink backdrop-blur transition-colors hover:border-black/20 dark:bg-night-raised dark:text-white [&::-webkit-details-marker]:hidden">
         <span aria-hidden="true">{{ $__flags[app()->getLocale()] ?? '🌐' }}</span>
         <span>{{ __('nav.locales.'.app()->getLocale()) }}</span>
         <svg class="h-3.5 w-3.5 text-muted transition-transform group-open:rotate-180" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 9l6 6 6-6"/></svg>
     </summary>
-    <div class="absolute right-0 z-50 mt-2 w-40 overflow-hidden rounded-2xl border border-black/10 bg-white py-1 shadow-xl dark:border-white/10 dark:bg-night-card">
+    <div class="card absolute right-0 z-50 mt-2 w-40 overflow-hidden py-1">
         @foreach (['ru', 'tg', 'en'] as $loc)
             @php
                 $segs = $__switcherSegments;

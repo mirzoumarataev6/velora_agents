@@ -26,7 +26,7 @@
         @click="dismiss()" aria-hidden="true"></div>
 
     <div x-ref="card" @keydown.tab="trapFocus($event)"
-        class="welcome-card relative w-full max-w-md overflow-hidden rounded-3xl border border-black/10 bg-paper shadow-2xl dark:border-white/10 dark:bg-night"
+        class="card welcome-card relative w-full max-w-md overflow-hidden"
         :class="entered && 'show'">
 
         {{-- The accent: a soft brand wash bled in from the top rather than a
@@ -36,16 +36,16 @@
 
         <button type="button" @click="dismiss()"
             aria-label="{{ __('onboarding.welcome.close') }}" data-i18n-al="onboarding.welcome.close"
-            class="absolute right-4 top-4 z-10 flex h-8 w-8 items-center justify-center rounded-full text-muted transition-colors hover:bg-black/5 dark:text-night-muted dark:hover:bg-white/10">
+            class="absolute right-4 top-4 z-10 flex h-8 w-8 items-center justify-center rounded-full text-muted transition-colors hover:bg-sunk dark:text-night-muted dark:hover:bg-night-raised">
             <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
         </button>
 
         <div class="relative px-6 pb-6 pt-8 sm:px-8 sm:pb-8">
-            <img src="{{ asset('images/brand/gen/mark.webp') }}" width="48" height="48"
+            <img src="{{ asset('images/brand/gen/mark.webp') }}?v={{ config('agent.brand_mark_version') }}" width="48" height="48"
                 alt="" class="h-12 w-12" decoding="async" aria-hidden="true" />
 
             <p data-i18n="onboarding.welcome.eyebrow"
-                class="mt-6 text-xs font-semibold uppercase tracking-[0.14em] text-brand">{{ __('onboarding.welcome.eyebrow') }}</p>
+                class="mt-6 text-xs font-semibold uppercase tracking-[0.14em] text-brand-strong">{{ __('onboarding.welcome.eyebrow') }}</p>
 
             {{-- Not tagged for the instant locale swap: it interpolates the
                  owner's name, which the swap engine's plain text replacement
@@ -59,11 +59,11 @@
 
             <div class="mt-7 flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:gap-3">
                 <button type="button" @click="dismiss()" data-i18n="onboarding.welcome.later"
-                    class="rounded-full px-4 py-2.5 text-sm font-medium text-muted transition-colors hover:bg-black/5 dark:text-night-muted dark:hover:bg-white/5">
+                    class="rounded-full px-4 py-2.5 text-sm font-medium text-muted transition-colors hover:bg-sunk dark:text-night-muted dark:hover:bg-night-raised">
                     {{ __('onboarding.welcome.later') }}
                 </button>
                 <button type="button" x-ref="primary" @click="start()" data-i18n="onboarding.welcome.cta"
-                    class="flex-1 rounded-full bg-brand px-5 py-2.5 text-sm font-semibold text-on-accent shadow-glow-ember transition-all hover:-translate-y-0.5 hover:bg-brand-hover">
+                    class="btn btn-primary flex-1">
                     {{ __('onboarding.welcome.cta') }}
                 </button>
             </div>

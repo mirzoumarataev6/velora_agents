@@ -19,7 +19,7 @@
      */
 @endphp
 
-<table class="w-full text-left text-xs">
+<table class="table-flat">
     <thead class="text-muted dark:text-night-muted/70">
         <tr>
             <template x-for="field in {{ $proposal }}.fields" :key="field">
@@ -35,7 +35,7 @@
     </thead>
     <tbody>
         <template x-for="(row, rowIndex) in {{ $proposal }}.preview" :key="rowIndex">
-            <tr class="border-t border-black/5 dark:border-white/10">
+            <tr class="border-t border-hairline dark:border-white/10">
                 <template x-for="field in {{ $proposal }}.fields" :key="field">
                     <td class="max-w-[14rem] truncate px-3 py-2" x-text="row[field] || '—'"></td>
                 </template>

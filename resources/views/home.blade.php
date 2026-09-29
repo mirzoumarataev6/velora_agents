@@ -17,7 +17,7 @@
     <form method="POST" action="{{ route('logout') }}" class="p-6">
         @csrf
         <button type="submit"
-            class="rounded-full bg-brand px-5 py-2.5 text-sm font-semibold text-on-accent transition-colors hover:bg-brand-hover">
+            class="btn btn-primary">
             {{ __('agents.nav.logout') }}
         </button>
     </form>

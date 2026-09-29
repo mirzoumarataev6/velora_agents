@@ -8,9 +8,8 @@ use Illuminate\Console\Command;
 /**
  * Rebuilds the five presentation agents and everything under them.
  *
- * Safe to run any number of times: the seeder owns its agents by slug and
- * replaces them wholesale, so real agents, customers and chats are never read
- * or written.
+ * Replaces only the fixed demo-* agents and demo_v2-tagged conversations.
+ * Seeded CRM rows are marked; owner edits are preserved on repeat runs.
  */
 class DemoDataCommand extends Command
 {

@@ -1,0 +1,97 @@
+<?php
+
+namespace App\Models;
+
+use App\Policies\TaskPolicy;
+use Database\Factories\TaskFactory;
+use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\UsePolicy;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+
+#[Fillable(['customer_id', 'deal_id', 'title', 'due_at', 'done_at'])]
+#[UsePolicy(TaskPolicy::class)]
+class Task extends Model
+{
+    /** @use HasFactory<TaskFactory> */
+    use HasFactory;
+
+    protected function casts(): array
+    {
+        return [
+            'due_at' => 'datetime',
+            'done_at' => 'datetime',
+        ];
+    }
+
+    /**
+     * @param  Builder<Task>  $query
+     * @return Builder<Task>
+     */
+    public function scopeOwnedBy(Builder $query, User $user): Builder
+    {
+        return $query->where('tasks.user_id', $user->id);
+    }
+
+    /**
+     * @param  Builder<Task>  $query
+     * @return Builder<Task>
+     */
+    public function scopeOpen(Builder $query): Builder
+    {
+        return $query->whereNull('tasks.done_at');
+    }
+
+    /**
+     * Past its time and still not done. A task with no due date can never be
+     * overdue — that is the point of leaving the date empty.
+     *
+     * @param  Builder<Task>  $query
+     * @return Builder<Task>
+     */
+    public function scopeOverdue(Builder $query): Builder
+    {
+        return $query->open()->whereNotNull('tasks.due_at')->where('tasks.due_at', '<', now());
+    }
+
+    /**
+     * Due before the end of today, including what is already late — because
+     * "today" on a to-do list means "deal with this today".
+     *
+     * @param  Builder<Task>  $query
+     * @return Builder<Task>
+     */
+    public function scopeDueToday(Builder $query): Builder
+    {
+        return $query->open()
+            ->whereNotNull('tasks.due_at')
+            ->where('tasks.due_at', '<=', now()->endOfDay());
+    }
+
+    public function isDone(): bool
+    {
+        return $this->done_at !== null;
+    }
+
+    public function isOverdue(): bool
+    {
+        return ! $this->isDone() && $this->due_at !== null && $this->due_at->isPast();
+    }
+
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class);
+    }
+
+    public function customer(): BelongsTo
+    {
+        return $this->belongsTo(Customer::class);
+    }
+
+    public function deal(): BelongsTo
+    {
+        return $this->belongsTo(Deal::class);
+    }
+}

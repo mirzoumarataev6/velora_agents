@@ -1,118 +1,129 @@
 {{--
-    Messages per day, stacked by channel.
+    Messages per day.
 
-    Drawn as div heights rather than with a charting library: the design
-    constraint is HTML + Tailwind only, and a bar chart is one of the few chart
-    types that loses nothing to it. The stack only appears when more than one
-    channel is connected — with a single channel a "breakdown" is a solid bar
-    wearing a legend.
+    WHAT THIS REPLACED: seven ~90px-wide blue slabs on a mostly empty 160px
+    field. Stacked bars made sense when the card had to carry a channel
+    breakdown as well as a volume, but at seven points on a two-thirds-width
+    card they were simply the loudest object on the page carrying the least
+    information per pixel.
+
+    Now: a smooth area chart for the shape, and the channel breakdown moved to
+    a row of shares underneath, where it reads as a ranked list rather than as
+    colour-matching against a legend. The card also gained the thing it most
+    needed — a sentence saying what the chart MEANS, computed from the same
+    series rather than written in.
 
     Expects: $metrics.
 --}}
+@include('partials.chart-helpers')
+
 @php
     $series = $metrics['series'];
     $range = $metrics['range'];
     $channels = $metrics['channels'];
-    $peak = max(1, max(array_column($series, 'total')));
     $periodTotal = array_sum(array_column($series, 'total'));
+    $values = array_column($series, 'total');
 
-    // A channel is only worth colouring separately when there is something to
-    // compare it against.
-    $stacked = count($channels) > 1;
+    $trend = velora_trend($values);
 
-    // Tints off the one accent rather than new hues — the palette has a single
-    // accent by design, and a second colour here would be inventing one.
-    $channelTint = [
-        'telegram' => 'bg-brand',
-        'whatsapp' => 'bg-brand/70',
-        'greenapi' => 'bg-brand/60',
-        'instagram' => 'bg-brand/45',
-        'playground' => 'bg-brand/25',
-    ];
+    /* THE INSIGHT LINE, computed three ways in priority order — whichever is
+       true gets said. Nothing here is invented: every number comes out of the
+       same $series the chart is drawn from.
 
-    // 30 columns in the same width as 7 need to lose their gaps and labels.
-    $dense = $range > 7;
+         1. The busiest channel, when more than one is connected. This is the
+            fact an owner acts on — it tells them where their customers
+            actually are.
+         2. The busiest single day, when only one channel is connected and
+            there is a clear peak.
+         3. The plain total, when neither of the above says anything. */
+    $byChannel = [];
+    foreach ($series as $day) {
+        foreach ($day['by_channel'] ?? [] as $channel => $count) {
+            $byChannel[$channel] = ($byChannel[$channel] ?? 0) + $count;
+        }
+    }
+    arsort($byChannel);
 
-    // Bars are sized in rem against a track of this exact height, not in
-    // percent. A percentage height only resolves against a parent with a
-    // definite height, and a flex item under `items-end` is sized by its
-    // content — so the percentages the first version emitted resolved to auto
-    // and every bar collapsed to nothing.
-    $trackRem = 10;
+    $insight = null;
+
+    if (count($byChannel) > 1 && $periodTotal > 0) {
+        $topChannel = array_key_first($byChannel);
+        $insight = __('dashboard.messages_chart.insight_channel', [
+            'channel' => __('dashboard.channels.'.$topChannel),
+            'percent' => (int) round($byChannel[$topChannel] / $periodTotal * 100),
+        ]);
+    } elseif ($periodTotal > 0) {
+        $peakDay = collect($series)->sortByDesc('total')->first();
+
+        // Only worth saying when the peak actually stands out; on a flat week
+        // "the busiest day was Tuesday" is noise dressed as a finding.
+        if ($peakDay && $peakDay['total'] > 0 && $peakDay['total'] >= $periodTotal / count($series) * 1.5) {
+            $insight = __('dashboard.messages_chart.insight_peak', [
+                'day' => $peakDay['label'],
+                'count' => $peakDay['total'],
+            ]);
+        }
+    }
 @endphp
 
-<div class="flex h-full flex-col rounded-2xl border border-black/10 bg-white p-5 dark:border-white/10 dark:bg-white/5">
+<div class="card card-lift flex h-full flex-col p-5">
     <div class="flex flex-wrap items-start justify-between gap-3">
-        <div>
-            <h2 class="text-base font-semibold">{{ __('dashboard.messages_chart.title') }}</h2>
-            <p class="mt-0.5 text-xs text-muted dark:text-night-muted">
-                {{ __('dashboard.messages_chart.total') }}: <span class="font-semibold text-ink dark:text-night-ink">{{ $periodTotal }}</span>
-            </p>
-        </div>
-
-        {{-- Plain links, not a JS toggle: the range belongs in the URL so it
-             survives a reload and can be linked to, and the page is one query
-             either way. --}}
-        <div class="flex rounded-full border border-black/10 p-0.5 dark:border-white/10">
-            @foreach (\App\Services\Analytics\DashboardMetrics::RANGES as $option)
-                {{-- array_filter drops agent_id when it's null rather than
-                     writing an empty "?agent_id=" — the selected agent must
-                     survive switching ranges the same way the range survives
-                     switching agents. --}}
-                <a href="{{ route('dashboard', array_filter(['range' => $option, 'agent_id' => $metrics['agent_id'] ?? null])) }}"
-                    class="rounded-full px-3 py-1 text-xs font-semibold transition-colors {{ $range === $option ? 'bg-brand/10 text-brand' : 'text-muted hover:text-ink dark:text-night-muted dark:hover:text-night-ink' }}">
-                    {{ __('dashboard.messages_chart.range_'.$option) }}
-                </a>
-            @endforeach
+        <div class="min-w-0">
+            <h2 class="section-head-title">{{ __('dashboard.messages_chart.title') }}</h2>
+            <div class="mt-1 flex flex-wrap items-center gap-2">
+                <span class="kpi-value kpi-value-sm" data-countup="{{ $periodTotal }}">{{ number_format($periodTotal, 0, '.', ' ') }}</span>
+                @if ($trend !== null)
+                    <span class="{{ $trend['direction'] === 'up' ? 'trend-up trend-good' : ($trend['direction'] === 'down' ? 'trend-down trend-bad' : 'trend-flat') }}"
+                        aria-label="{{ __('dashboard.trend.'.$trend['direction'], ['percent' => $trend['percent']]) }}">
+                        {{ $trend['percent'] }}%
+                    </span>
+                @endif
+                <span class="text-xs text-muted dark:text-night-muted">
+                    {{ __('dashboard.messages_chart.range_'.$range) }}
+                </span>
+            </div>
         </div>
     </div>
 
+    {{-- The insight. Deliberately above the chart, not below it: it is the
+         answer, and the chart is the working. --}}
+    @if ($insight)
+        <p class="mt-2 text-sm text-muted dark:text-night-muted">{{ $insight }}</p>
+    @endif
+
     @if ($periodTotal === 0)
-        <p class="mt-8 flex-1 text-center text-sm text-muted dark:text-night-muted">{{ __('dashboard.messages_chart.empty') }}</p>
+        <div class="mt-4 flex-1">
+            <div class="empty-inline">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M3 3v18h18M7 15l4-4 3 3 5-6"/></svg>
+                <span>{{ __('dashboard.messages_chart.empty') }}</span>
+            </div>
+        </div>
     @else
-        <div class="mt-5 flex items-end {{ $dense ? 'gap-0.5' : 'gap-1.5' }}">
-            @foreach ($series as $day)
-                @php
-                    // A day with a single message against a peak of 200 still
-                    // has to be visible, so bars carry a floor rather than
-                    // rounding themselves away.
-                    $height = $day['total'] === 0 ? 0 : max(0.25, round($day['total'] / $peak * $trackRem, 3));
-                @endphp
-                <div class="group flex flex-1 flex-col items-center gap-1.5"
-                    title="{{ $day['label'] }} — {{ $day['total'] }}">
-                    {{-- The track is what gives the bar a definite height to
-                         be a fraction of; without it the bar has nothing to
-                         measure itself against. --}}
-                    <div class="flex w-full flex-col justify-end" style="height: {{ $trackRem }}rem">
-                        <div class="flex w-full flex-col-reverse overflow-hidden rounded-t-md transition-opacity group-hover:opacity-80"
-                            style="height: {{ $height }}rem">
-                            @if ($stacked)
-                                @foreach ($channels as $channel)
-                                    @php $count = $day['by_channel'][$channel] ?? 0; @endphp
-                                    @if ($count > 0)
-                                        <div class="{{ $channelTint[$channel] ?? 'bg-brand/25' }}"
-                                            style="height: {{ round($count / max(1, $day['total']) * 100, 2) }}%"></div>
-                                    @endif
-                                @endforeach
-                            @else
-                                <div class="h-full bg-brand"></div>
-                            @endif
-                        </div>
-                    </div>
-                    @unless ($dense)
-                        <span class="text-[10px] text-muted dark:text-night-muted">{{ $day['label'] }}</span>
-                    @endunless
-                </div>
-            @endforeach
+        <div class="mt-4 flex-1">
+            <x-area-chart
+                :points="array_map(fn ($day) => ['label' => $day['label'], 'value' => $day['total']], $series)"
+                :height="200"
+                :aria-label="__('dashboard.messages_chart.title')" />
         </div>
 
-        @if ($stacked)
-            <div class="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-black/5 pt-3 dark:border-white/10">
-                @foreach ($channels as $channel)
-                    <span class="flex items-center gap-1.5 text-xs text-muted dark:text-night-muted">
-                        <span class="h-2.5 w-2.5 rounded-sm {{ $channelTint[$channel] ?? 'bg-brand/25' }}"></span>
-                        {{ __('dashboard.channels.'.$channel) }}
-                    </span>
+        {{-- The channel split, as ranked shares rather than as a stack. A
+             reader gets the ordering and the proportion without having to
+             match a colour to a legend entry. --}}
+        @if (count($byChannel) > 1)
+            <div class="rule mt-4 space-y-2 pt-4">
+                @foreach (array_slice($byChannel, 0, 4, true) as $channel => $count)
+                    @php $share = (int) round($count / max(1, $periodTotal) * 100); @endphp
+                    <div class="flex items-center gap-3">
+                        <span class="w-28 shrink-0 truncate text-xs text-muted dark:text-night-muted">{{ __('dashboard.channels.'.$channel) }}</span>
+                        <span class="h-1.5 flex-1 overflow-hidden rounded-full bg-sunk dark:bg-night-raised">
+                            {{-- Tints off the one accent rather than new hues:
+                                 the palette has a single accent by design, and
+                                 a second colour here would be inventing one. --}}
+                            <span class="block h-full rounded-full bg-brand transition-[width] duration-slow ease-out"
+                                style="width: {{ max(2, $share) }}%; opacity: {{ max(0.35, 1 - $loop->index * 0.2) }}"></span>
+                        </span>
+                        <span class="tnum w-14 shrink-0 text-right text-xs text-muted dark:text-night-muted">{{ $count }} · {{ $share }}%</span>
+                    </div>
                 @endforeach
             </div>
         @endif

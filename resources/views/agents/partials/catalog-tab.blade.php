@@ -35,7 +35,7 @@
 
     {{-- Intro + upload zone (hidden while mapping, so the owner has one job at a time) --}}
     <div x-show="!pending" x-cloak>
-        <div class="rounded-2xl border border-black/10 p-5 dark:border-white/10">
+        <div class="rounded-2xl p-5">
             <h3 class="text-sm font-semibold">{{ __('agents.catalog.intro_title') }}</h3>
             <p class="mt-1 text-xs leading-relaxed text-muted dark:text-night-muted">{{ __('agents.catalog.intro_description') }}</p>
         </div>
@@ -44,13 +44,13 @@
             @dragover.prevent="dragging = true"
             @dragleave.prevent="dragging = false"
             @drop.prevent="dragging = false; handleFile($event.dataTransfer.files[0])"
-            :class="dragging ? 'border-brand bg-brand/5' : 'border-black/15 dark:border-white/15'"
+            :class="dragging ? 'border-brand bg-azure-50' : 'border-black/15 dark:border-white/15'"
             class="mt-4 flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed px-6 py-10 text-center transition-colors">
             <svg x-show="!uploading" class="h-8 w-8 text-muted dark:text-night-muted/70" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M3 7h18M3 12h18M3 17h18M8 3v18"/></svg>
             <span x-show="uploading" class="spinner h-8 w-8"></span>
             <p class="text-sm font-medium" x-show="!uploading">
                 {{ __('agents.catalog.drop_text') }}
-                <button type="button" @click="$refs.fileInput.click()" class="text-brand hover:underline">{{ __('agents.catalog.drop_browse') }}</button>
+                <button type="button" @click="$refs.fileInput.click()" class="text-brand-strong hover:underline">{{ __('agents.catalog.drop_browse') }}</button>
             </p>
             <p class="text-sm font-medium" x-show="uploading" x-cloak>{{ __('agents.catalog.uploading') }}</p>
             <p class="text-xs text-muted dark:text-night-muted">{{ __('agents.catalog.file_hint', ['size' => $maxMb]) }}</p>
@@ -60,8 +60,8 @@
     </div>
 
     {{-- Column mapping — the confirmation step --}}
-    <div x-show="pending" x-cloak x-transition.opacity.duration.200ms class="rounded-2xl border border-black/10 dark:border-white/10">
-        <div class="border-b border-black/5 px-5 py-4 dark:border-white/10">
+    <div x-show="pending" x-cloak x-transition.opacity.duration.200ms class="rounded-2xl">
+        <div class="border-b border-hairline px-5 py-4 dark:border-white/10">
             <h3 class="text-sm font-semibold">{{ __('agents.catalog.mapping_title') }}</h3>
             <p class="mt-1 text-xs leading-relaxed text-muted dark:text-night-muted">{{ __('agents.catalog.mapping_description') }}</p>
             <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted dark:text-night-muted">
@@ -75,8 +75,8 @@
         </div>
 
         <div class="overflow-x-auto">
-            <table class="w-full text-left text-sm">
-                <thead class="bg-black/[0.03] text-xs uppercase tracking-wide text-muted dark:bg-white/5 dark:text-night-muted/70">
+            <table class="table-flat">
+                <thead>
                     <tr>
                         <th class="px-5 py-3 font-medium">{{ __('agents.catalog.mapping_col_file') }}</th>
                         <th class="px-5 py-3 font-medium">{{ __('agents.catalog.mapping_col_sample') }}</th>
@@ -85,12 +85,12 @@
                 </thead>
                 <tbody>
                     <template x-for="(column, index) in (pending?.columns ?? [])" :key="index">
-                        <tr class="border-t border-black/5 dark:border-white/10">
+                        <tr class="border-t border-hairline dark:border-white/10">
                             <td class="max-w-[14rem] truncate px-5 py-3 font-medium" x-text="column"></td>
                             <td class="max-w-xs truncate px-5 py-3 text-xs text-muted dark:text-night-muted" x-text="sampleFor(index)"></td>
                             <td class="px-5 py-3">
                                 <select :value="fieldFor(index)" @change="assign(index, $event.target.value)"
-                                    class="field w-full min-w-[11rem] rounded-xl px-3 py-2 text-sm">
+                                    class="field w-full min-w-[11rem] px-3 py-2 text-sm">
                                     <option value="">{{ $fieldLabels['ignore'] }}</option>
                                     @foreach (['name', 'price', 'stock', 'category', 'description', 'sku', 'url', 'extra'] as $field)
                                         <option value="{{ $field }}">{{ $fieldLabels[$field] }}</option>
@@ -103,13 +103,13 @@
             </table>
         </div>
 
-        <div class="flex justify-end gap-2 border-t border-black/5 px-5 py-4 dark:border-white/10">
+        <div class="flex justify-end gap-2 border-t border-hairline px-5 py-4 dark:border-white/10">
             <button type="button" @click="cancel()" :disabled="importing"
-                class="rounded-full border border-black/10 px-4 py-2 text-sm font-semibold disabled:opacity-60 dark:border-white/10">
+                class="rounded-full px-4 py-2 text-sm font-semibold disabled:opacity-60">
                 {{ __('agents.catalog.mapping_cancel') }}
             </button>
             <button type="button" @click="submitImport()" :disabled="importing"
-                class="rounded-full bg-brand px-5 py-2 text-sm font-semibold text-on-accent hover:bg-brand-hover disabled:opacity-60">
+                class="btn btn-primary disabled:opacity-60">
                 <span x-show="!importing">{{ __('agents.catalog.mapping_import') }}</span>
                 <span x-show="importing" x-cloak class="spinner"></span>
             </button>
@@ -119,7 +119,7 @@
     {{-- Current catalog --}}
     <div x-show="!pending" x-cloak>
         <template x-if="!dataset">
-            <div class="flex flex-col items-center justify-center gap-2 rounded-2xl border border-black/10 px-6 py-12 text-center dark:border-white/10">
+            <div class="flex flex-col items-center justify-center gap-2 rounded-2xl px-6 py-12 text-center">
                 <svg class="h-8 w-8 text-muted dark:text-night-muted/70" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
                 <p class="text-sm font-medium">{{ __('agents.catalog.empty_title') }}</p>
                 <p class="max-w-sm text-xs text-muted dark:text-night-muted">{{ __('agents.catalog.empty_description') }}</p>
@@ -128,11 +128,11 @@
 
         <template x-if="dataset">
             <div class="space-y-4">
-                <div class="rounded-2xl border border-black/10 p-5 dark:border-white/10">
+                <div class="rounded-2xl p-5">
                     <div class="flex flex-wrap items-start justify-between gap-3">
                         <div>
                             <div class="flex items-center gap-2">
-                                <span class="inline-flex items-center rounded-full bg-success/10 px-2.5 py-1 text-xs font-medium text-success dark:text-success-light">
+                                <span class="badge badge-success">
                                     {{ __('agents.catalog.status_title') }}
                                 </span>
                                 <span class="text-sm font-semibold" x-text="rowsLabel.replace(':count', dataset.row_count)"></span>
@@ -146,23 +146,23 @@
                         </div>
                         <div class="flex flex-wrap gap-2">
                             <button type="button" @click="replace()"
-                                class="flex items-center gap-1.5 rounded-full border border-black/10 px-4 py-2 text-sm font-medium transition-all hover:-translate-y-0.5 dark:border-white/10">
+                                class="flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium transition-all">
                                 <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
                                 {{ __('agents.catalog.status_replace') }}
                             </button>
                             <button type="button" @click="destroy()" :disabled="deleting"
-                                class="flex items-center gap-1.5 rounded-full border border-black/10 px-4 py-2 text-sm font-medium text-danger transition-all hover:-translate-y-0.5 disabled:opacity-60 dark:border-white/10">
+                                class="flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium text-danger transition-all disabled:opacity-60">
                                 {{ __('agents.catalog.status_delete') }}
                             </button>
                         </div>
                     </div>
 
                     {{-- The stored mapping, in the file's own column names --}}
-                    <div class="mt-4 border-t border-black/5 pt-4 dark:border-white/10">
+                    <div class="mt-4 border-t border-hairline pt-4 dark:border-white/10">
                         <p class="text-xs font-medium uppercase tracking-wide text-muted dark:text-night-muted/70">{{ __('agents.catalog.status_mapping') }}</p>
                         <div class="mt-2 flex flex-wrap gap-2">
                             <template x-for="entry in mappingSummary()" :key="entry.field">
-                                <span class="inline-flex items-center gap-1.5 rounded-full bg-black/[0.04] px-3 py-1 text-xs dark:bg-white/5">
+                                <span class="badge badge-neutral">
                                     <span class="font-medium" x-text="entry.label"></span>
                                     <span class="text-muted dark:text-night-muted">←</span>
                                     <span class="text-muted dark:text-night-muted" x-text="entry.column"></span>
@@ -172,16 +172,16 @@
                     </div>
                 </div>
 
-                <div class="overflow-hidden rounded-2xl border border-black/10 dark:border-white/10">
-                    <div class="flex flex-wrap items-center justify-between gap-2 border-b border-black/5 px-5 py-3 dark:border-white/10">
+                <div class="overflow-hidden rounded-2xl">
+                    <div class="flex flex-wrap items-center justify-between gap-2 border-b border-hairline px-5 py-3 dark:border-white/10">
                         <span class="text-xs font-medium uppercase tracking-wide text-muted dark:text-night-muted/70">
                             {{ __('agents.catalog.status_preview') }}
                         </span>
                         <span class="text-xs text-muted dark:text-night-muted" x-text="rangeLabel()"></span>
                     </div>
                     <div class="relative overflow-x-auto" :class="pageLoading && 'opacity-50 transition-opacity'">
-                        <table class="w-full text-left text-sm">
-                            <thead class="bg-black/[0.03] text-xs uppercase tracking-wide text-muted dark:bg-white/5 dark:text-night-muted/70">
+                        <table class="table-flat">
+                            <thead>
                                 {{-- Whatever the file actually has. A catalog with no
                                      stock or article column must not be shown two empty
                                      columns headed as if it had them. --}}
@@ -193,7 +193,7 @@
                             </thead>
                             <tbody>
                                 <template x-for="(product, index) in preview" :key="index">
-                                    <tr class="border-t border-black/5 dark:border-white/10">
+                                    <tr class="border-t border-hairline dark:border-white/10">
                                         <template x-for="column in previewColumns()" :key="column.key">
                                             <td class="px-5 py-3"
                                                 :class="column.key === 'name'
@@ -209,10 +209,10 @@
 
                     {{-- Pager. Hidden for a catalog that fits on one page. --}}
                     <div x-show="pagination.last_page > 1" x-cloak
-                        class="flex flex-wrap items-center justify-center gap-1 border-t border-black/5 px-5 py-3 dark:border-white/10">
+                        class="flex flex-wrap items-center justify-center gap-1 border-t border-hairline px-5 py-3 dark:border-white/10">
                         <button type="button" @click="goToPage(pagination.page - 1)"
                             :disabled="pagination.page <= 1 || pageLoading"
-                            class="flex items-center gap-1 rounded-full px-3 py-1.5 text-sm font-medium text-muted transition-colors hover:text-brand disabled:pointer-events-none disabled:opacity-40 dark:text-night-muted">
+                            class="flex items-center gap-1 rounded-full px-3 py-1.5 text-sm font-medium text-muted transition-colors hover:text-brand-strong disabled:pointer-events-none disabled:opacity-40 dark:text-night-muted">
                             <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
                             <span class="hidden sm:inline">{{ __('agents.catalog.pagination.prev') }}</span>
                         </button>
@@ -228,14 +228,14 @@
                                     ? 'cursor-default text-muted disabled:opacity-100 dark:text-night-muted/70'
                                     : (item.page === pagination.page
                                         ? 'bg-brand text-on-accent'
-                                        : 'text-muted hover:bg-black/[0.04] hover:text-ink dark:text-night-muted dark:hover:bg-white/5 dark:hover:text-white')"
+                                        : 'text-muted hover:bg-sunk hover:text-ink dark:text-night-muted dark:hover:bg-white/5 dark:hover:text-white')"
                                 class="min-w-[2rem] rounded-full px-2.5 py-1.5 text-sm font-medium transition-colors disabled:pointer-events-none"
                                 x-text="item.gap ? '…' : item.page"></button>
                         </template>
 
                         <button type="button" @click="goToPage(pagination.page + 1)"
                             :disabled="pagination.page >= pagination.last_page || pageLoading"
-                            class="flex items-center gap-1 rounded-full px-3 py-1.5 text-sm font-medium text-muted transition-colors hover:text-brand disabled:pointer-events-none disabled:opacity-40 dark:text-night-muted">
+                            class="flex items-center gap-1 rounded-full px-3 py-1.5 text-sm font-medium text-muted transition-colors hover:text-brand-strong disabled:pointer-events-none disabled:opacity-40 dark:text-night-muted">
                             <span class="hidden sm:inline">{{ __('agents.catalog.pagination.next') }}</span>
                             <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
                         </button>

@@ -41,9 +41,9 @@
 <meta name="color-scheme" content="light dark" />
 <title>@yield('title', __('common.brand'))</title>
 @include('partials.favicons')
-{{-- Self-hosted Inter. Previously the dashboard linked no webfont at all, so it
-     silently rendered in the system UI face while auth and the landing used a
-     downloaded one — the app looked like two different products. --}}
+{{-- Self-hosted Golos Text. Previously the dashboard linked no webfont at all,
+     so it silently rendered in the system UI face while auth and the landing
+     used a downloaded one — the app looked like two different products. --}}
 @include('partials.fonts')
 @vite(['resources/css/app.css', 'resources/js/app.js'])
 @stack('head')
@@ -79,11 +79,15 @@
             mobileNavOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0',
             railCollapsed ? 'lg:w-[4.75rem]' : 'lg:w-64',
         ]"
-        class="fixed inset-y-0 left-0 z-40 flex h-screen w-64 flex-col border-r border-black/10 bg-white/80 backdrop-blur-xl transition-[transform,width] duration-300 ease-out dark:border-white/10 dark:bg-night/95 lg:sticky lg:top-0 lg:translate-x-0">
+        {{-- Flat, and deliberately white rather than translucent: the re-skin's
+             surfaces separate by fill, not by stroke, so the rail is simply the
+             surface colour against the grey canvas the content sits on and the
+             old right-hand hairline is gone with every other border. --}}
+        class="fixed inset-y-0 left-0 z-40 flex h-screen w-64 flex-col bg-surface transition-[transform,width] duration-300 ease-out dark:bg-night-card lg:sticky lg:top-0 lg:translate-x-0">
         {{-- Icon only, no wordmark — see the landing header for the rationale. --}}
         <div class="flex h-16 shrink-0 items-center px-5" :class="railCollapsed && 'lg:justify-center lg:px-0'">
             <a href="{{ route('agents.index') }}" aria-label="{{ __('common.brand') }}" class="flex items-center">
-                <img src="{{ asset('images/brand/gen/mark.webp') }}" width="32" height="32"
+                <img src="{{ asset('images/brand/gen/mark.webp') }}?v={{ config('agent.brand_mark_version') }}" width="32" height="32"
                     alt="{{ __('common.brand') }}" class="h-8 w-8" decoding="async" />
             </a>
             {{-- No room for the bell beside the mark at rail width; the Заявки
@@ -105,29 +109,45 @@
                  either state. It carries data-i18n-al so the instant locale
                  swap updates it too. --}}
             <a href="{{ route('dashboard') }}" aria-label="{{ __('agents.nav.dashboard') }}" data-i18n-al="agents.nav.dashboard"
+                @if (request()->routeIs('dashboard')) aria-current="page" @endif
                 :class="railCollapsed && 'lg:justify-center'"
-                class="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors {{ request()->routeIs('dashboard') ? 'bg-brand/10 text-brand' : 'text-muted hover:bg-black/5 dark:text-night-muted dark:hover:bg-white/5' }}">
+                class="nav-item {{ request()->routeIs('dashboard') ? 'nav-item-active' : '' }}">
                 <svg class="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M3 3v18h18M7 15l4-4 3 3 5-6"/></svg>
                 <span data-i18n="agents.nav.dashboard" :class="railCollapsed && 'lg:hidden'">{{ __('agents.nav.dashboard') }}</span>
             </a>
 
             <a href="{{ route('agents.index') }}" aria-label="{{ __('agents.nav.agents') }}" data-i18n-al="agents.nav.agents"
+                @if (request()->routeIs('agents.*')) aria-current="page" @endif
                 :class="railCollapsed && 'lg:justify-center'"
-                class="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors {{ request()->routeIs('agents.*') ? 'bg-brand/10 text-brand' : 'text-muted hover:bg-black/5 dark:text-night-muted dark:hover:bg-white/5' }}">
+                class="nav-item {{ request()->routeIs('agents.*') ? 'nav-item-active' : '' }}">
                 <svg class="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 12a4 4 0 100-8 4 4 0 000 8zm0 0c-4.4 0-8 2.24-8 5v2h16v-2c0-2.76-3.6-5-8-5z"/></svg>
                 <span data-i18n="agents.nav.agents" :class="railCollapsed && 'lg:hidden'">{{ __('agents.nav.agents') }}</span>
             </a>
 
             <a href="{{ route('conversations.index') }}" aria-label="{{ __('agents.nav.conversations') }}" data-i18n-al="agents.nav.conversations"
+                @if (request()->routeIs('conversations.*')) aria-current="page" @endif
                 :class="railCollapsed && 'lg:justify-center'"
-                class="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors {{ request()->routeIs('conversations.*') ? 'bg-brand/10 text-brand' : 'text-muted hover:bg-black/5 dark:text-night-muted dark:hover:bg-white/5' }}">
+                class="nav-item {{ request()->routeIs('conversations.*') ? 'nav-item-active' : '' }}">
                 <svg class="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8-1.06 0-2.08-.16-3.02-.46L3 21l1.5-4.5C3.55 15.1 3 13.6 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
                 <span data-i18n="agents.nav.conversations" :class="railCollapsed && 'lg:hidden'">{{ __('agents.nav.conversations') }}</span>
             </a>
 
-            <a href="{{ route('leads.index') }}" aria-label="{{ __('agents.nav.leads') }}" data-i18n-al="agents.nav.leads"
+            {{-- CRM sits between the inbox and Заявки on purpose: it is what
+                 the conversations on the left turn INTO, and it is the section
+                 the owner works in rather than reads. Kept distinct from
+                 Аналитика at the top, which stays a pure report. --}}
+            <a href="{{ route('crm.board') }}" aria-label="{{ __('agents.nav.crm') }}" data-i18n-al="agents.nav.crm"
+                @if (request()->routeIs('crm.*')) aria-current="page" @endif
                 :class="railCollapsed && 'lg:justify-center'"
-                class="relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors {{ request()->routeIs('leads.*') ? 'bg-brand/10 text-brand' : 'text-muted hover:bg-black/5 dark:text-night-muted dark:hover:bg-white/5' }}">
+                class="nav-item {{ request()->routeIs('crm.*') ? 'nav-item-active' : '' }}">
+                <svg class="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 5h5v14H4zM10 5h5v9h-5zM16 5h4v6h-4z"/></svg>
+                <span data-i18n="agents.nav.crm" :class="railCollapsed && 'lg:hidden'">{{ __('agents.nav.crm') }}</span>
+            </a>
+
+            <a href="{{ route('leads.index') }}" aria-label="{{ __('agents.nav.leads') }}" data-i18n-al="agents.nav.leads"
+                @if (request()->routeIs('leads.*')) aria-current="page" @endif
+                :class="railCollapsed && 'lg:justify-center'"
+                class="nav-item relative {{ request()->routeIs('leads.*') ? 'nav-item-active' : '' }}">
                 <span class="relative shrink-0">
                     <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/></svg>
                     {{-- At rail width the pill has nowhere to sit, so the count
@@ -138,23 +158,24 @@
                 <span data-i18n="agents.nav.leads" :class="railCollapsed && 'lg:hidden'">{{ __('agents.nav.leads') }}</span>
                 <span x-show="count > 0" x-cloak x-text="count > 99 ? '99+' : count"
                     :class="railCollapsed && 'lg:hidden'"
-                    class="ml-auto min-w-[20px] rounded-full bg-brand px-1.5 py-0.5 text-center text-[10px] font-bold text-on-accent"></span>
+                    class="btn btn-primary ml-auto min-w-[20px] text-[10px]"></span>
             </a>
 
             <a href="{{ route('settings.index') }}" aria-label="{{ __('agents.nav.settings') }}" data-i18n-al="agents.nav.settings"
+                @if (request()->routeIs('settings.*')) aria-current="page" @endif
                 :class="railCollapsed && 'lg:justify-center'"
-                class="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors {{ request()->routeIs('settings.*') ? 'bg-brand/10 text-brand' : 'text-muted hover:bg-black/5 dark:text-night-muted dark:hover:bg-white/5' }}">
+                class="nav-item {{ request()->routeIs('settings.*') ? 'nav-item-active' : '' }}">
                 <svg class="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
                 <span data-i18n="agents.nav.settings" :class="railCollapsed && 'lg:hidden'">{{ __('agents.nav.settings') }}</span>
             </a>
         </nav>
 
-        <div class="shrink-0 border-t border-black/10 p-3 dark:border-white/10">
+        <div class="rule shrink-0 p-3">
             <div class="flex items-center gap-2 rounded-xl px-2 py-2" :class="railCollapsed && 'lg:flex-col lg:gap-1 lg:px-0'">
                 <a href="{{ route('settings.index') }}" aria-label="{{ auth()->user()->name }}"
                     :class="railCollapsed && 'lg:flex-none'"
                     class="flex min-w-0 flex-1 items-center gap-2 rounded-lg transition-opacity hover:opacity-80">
-                    <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand/10 text-xs font-semibold text-brand">
+                    <div class="icon-circle icon-circle-sm shrink-0 text-xs font-semibold">
                         {{ auth()->user()->initials() }}
                     </div>
                     <div class="min-w-0 flex-1" :class="railCollapsed && 'lg:hidden'">
@@ -168,7 +189,7 @@
                     @include('partials.dashboard-locale-switcher')
                 </div>
                 <button id="theme-toggle" type="button" aria-label="{{ __('agents.nav.toggle_theme') }}" data-i18n-al="agents.nav.toggle_theme"
-                    class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-black/5 dark:text-night-muted dark:hover:bg-white/10">
+                    class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-sunk hover:text-ink dark:text-night-muted dark:hover:bg-night-raised dark:hover:text-night-ink">
                     <svg class="h-4 w-4 dark:hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
                     <svg class="hidden h-4 w-4 dark:block" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path stroke-linecap="round" d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
                 </button>
@@ -181,7 +202,7 @@
                     :aria-expanded="(! railCollapsed).toString()"
                     :aria-label="railCollapsed ? @js(__('agents.nav.expand_sidebar')) : @js(__('agents.nav.collapse_sidebar'))"
                     :title="railCollapsed ? @js(__('agents.nav.expand_sidebar')) : @js(__('agents.nav.collapse_sidebar'))"
-                    class="hidden h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-black/5 dark:text-night-muted dark:hover:bg-white/10 lg:flex">
+                    class="hidden h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-sunk hover:text-ink dark:text-night-muted dark:hover:bg-night-raised dark:hover:text-night-ink lg:flex">
                     <svg class="h-4 w-4 transition-transform duration-300" :class="railCollapsed && 'rotate-180'"
                         viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
@@ -192,7 +213,7 @@
                 @csrf
                 <button type="submit" aria-label="{{ __('agents.nav.logout') }}" data-i18n-al="agents.nav.logout"
                     :class="railCollapsed && 'lg:justify-center'"
-                    class="flex w-full items-center gap-3 rounded-xl px-2 py-2 text-sm font-medium text-muted transition-colors hover:bg-black/5 dark:text-night-muted dark:hover:bg-white/5">
+                    class="nav-item w-full">
                     <svg class="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
                     <span data-i18n="agents.nav.logout" :class="railCollapsed && 'lg:hidden'">{{ __('agents.nav.logout') }}</span>
                 </button>
@@ -200,11 +221,11 @@
         </div>
     </aside>
 
-    <div x-show="mobileNavOpen" x-cloak @click="mobileNavOpen = false" class="fixed inset-0 z-30 bg-black/30 lg:hidden"></div>
+    <div x-show="mobileNavOpen" x-cloak @click="mobileNavOpen = false" class="modal-scrim fixed inset-0 z-30 lg:hidden"></div>
 
     {{-- Main --}}
     <div class="flex min-w-0 flex-1 flex-col">
-        <header class="flex h-16 items-center gap-3 border-b border-black/10 bg-white/70 px-4 backdrop-blur-xl dark:border-white/10 dark:bg-night/80 lg:hidden">
+        <header class="flex h-16 items-center gap-3 bg-surface px-4 dark:bg-night-card lg:hidden">
             <button @click="mobileNavOpen = true" type="button" aria-label="{{ __('agents.nav.open_menu') }}" data-i18n-al="agents.nav.open_menu" class="flex h-9 w-9 items-center justify-center rounded-lg text-ink dark:text-night-ink">
                 <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16"/></svg>
             </button>
@@ -214,9 +235,20 @@
             </div>
         </header>
 
-        <main class="flex-1 px-4 py-6 sm:px-6 lg:px-10 lg:py-8">
+        {{-- THE CONTENT COLUMN, and the single biggest reason the last pass
+             read as empty: every page set its own `max-w-6xl` (1152px) inside
+             this, so on a 1920px screen roughly 600px to the right of the
+             content was blank canvas — the dashboard looked like a phone
+             layout that had been stretched.
+
+             The cap lives here now, once, at 1600px: wide enough that a
+             five-across KPI row and a two-thirds chart have real room, narrow
+             enough that a line of body copy never runs an unreadable measure
+             (individual blocks still set their own `measure` where it matters).
+             Pages no longer set a width of their own. --}}
+        <main class="mx-auto w-full max-w-[100rem] flex-1 px-4 py-6 sm:px-6 lg:px-10 lg:py-8">
             @if (session('status') && ! ($statusAsToast ?? false))
-                <div class="reveal is-visible mb-6 rounded-2xl border border-brand/20 bg-brand/5 px-4 py-3 text-sm font-medium text-brand" role="status">
+                <div class="card-tinted reveal is-visible mb-6 px-4 py-3 text-sm font-medium" role="status">
                     {{ session('status') }}
                 </div>
             @endif

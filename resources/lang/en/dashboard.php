@@ -5,6 +5,31 @@ return [
     'heading' => 'Analytics',
     'subheading' => 'What your assistants did for you.',
 
+    'greeting' => 'Good afternoon, :name',
+
+    'details' => [
+        'title' => 'Detailed analytics',
+        'description' => 'Funnel, reply speed, demand and agent performance',
+    ],
+
+    'units' => [
+        'seconds' => 's',
+        'ms' => 'ms',
+    ],
+
+    'range' => [
+        'label' => 'Period',
+    ],
+
+    // The trend pill's accessible name. The pill itself shows only "18%" — the
+    // arrow beside it is a decorative glyph that a screen reader skips, so the
+    // direction has to be spelled out here or the number means nothing.
+    'trend' => [
+        'up' => ':percent% more than the previous period',
+        'down' => ':percent% less than the previous period',
+        'flat' => 'unchanged from the previous period',
+    ],
+
     'agent_filter' => [
         'label' => 'Agent',
         'all' => 'All agents',
@@ -21,11 +46,15 @@ return [
         'active_conversations' => 'Active conversations',
         'active_conversations_hint' => 'Not closed, and active in the last 24 hours',
         'leads_today' => 'Leads today',
+        'leads_week_hint' => 'Leads since the start of the week; the line is per day across the period',
         'leads_week' => 'Leads this week',
         'conversion' => 'Conversation → lead',
         'conversion_hint' => 'Share of conversations that produced a lead',
         'response_time' => 'Average reply time',
         'response_time_hint' => 'How long the assistant spends on one answer',
+        'messages' => 'Messages',
+        'messages_hint' => 'Every message in the selected period',
+        'of_total_conversations' => ':count conversation in total|:count conversations in total',
     ],
 
     'after_hours' => [
@@ -64,6 +93,8 @@ return [
         'range_30' => '30 days',
         'total' => 'Total for the period',
         'empty' => 'No messages in this period.',
+        'insight_channel' => ':channel brought the most traffic — :percent% of all messages.',
+        'insight_peak' => 'The peak was :day — :count messages in a day.',
     ],
 
     'channels' => [
@@ -82,6 +113,11 @@ return [
         'price_approvals_hint' => 'A customer is waiting on you',
         'view' => 'Open',
         'clear' => 'All clear — nothing is waiting.',
+        'negative_ratings' => 'Negative ratings',
+        'negative_ratings_hint' => 'Answers customers marked as unhelpful',
+        'in_progress' => 'Leads in progress',
+        'in_progress_hint' => 'Picked up, not closed yet',
+        'view_all' => 'All leads',
     ],
 
     'funnel' => [

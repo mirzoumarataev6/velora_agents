@@ -51,6 +51,17 @@ return [
         'empty_description' => 'No message contains “:term”. Try a different query.',
     ],
 
+    /* One line per filter, shown in the inbox's unopened thread pane.
+     * The filters are the only non-obvious part of that screen, and the
+     * pane is two thirds of it — so the space explains them instead of
+     * staying blank. */
+    'filter_help' => [
+        'needs_human' => 'The assistant handed the conversation to a person — the customer asked for one, or it went wrong.',
+        'has_lead' => 'The conversation produced a lead: a name, a contact and what the person wants.',
+        'rated_down' => 'The customer marked an answer unhelpful. The only signal for a confident but wrong reply.',
+        'unread' => 'A new message arrived that you have not opened yet.',
+    ],
+
     'filters' => [
         'all' => 'All',
         'unread' => 'Unread',
