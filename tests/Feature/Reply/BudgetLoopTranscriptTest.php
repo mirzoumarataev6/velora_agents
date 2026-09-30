@@ -178,7 +178,7 @@ class BudgetLoopTranscriptTest extends TestCase
         $this->assertStringContainsString('YOU HAVE JUST WRITTEN THE SAME REPLY AGAIN', $thirdTurnCorrection);
         $this->assertStringContainsString('Macbook Air 15** — 11999', $thirdTurnCorrection);
         $this->assertStringContainsString('nothing new to offer', $thirdTurnCorrection);
-        $this->assertStringContainsString('narrows the search', $thirdTurnCorrection);
+        $this->assertStringContainsString('only if it has not already been answered or declined', $thirdTurnCorrection);
     }
 
     public function test_the_search_hands_the_model_the_near_miss_first_and_honours_the_exclusion(): void

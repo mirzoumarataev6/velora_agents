@@ -109,6 +109,16 @@ class ReplyLanguageTest extends TestCase
         $this->assertStringContainsString('WRITE YOUR REPLY IN English', $prompts[0]);
     }
 
+    public function test_tajik_style_examples_do_not_inject_a_fictional_budget_or_specifications(): void
+    {
+        $prompt = $this->promptsFor(Agent::factory()->create(), ['Барои дарс ноутбук лозим аст.'])[0];
+
+        $this->assertStringContainsString('WRITE YOUR REPLY IN Tajik', $prompt);
+        foreach (['6000', '7000', '8GB', '512GB', 'Intel Core i5'] as $fictionalFact) {
+            $this->assertStringNotContainsString($fictionalFact, $prompt);
+        }
+    }
+
     /**
      * There is no longer such a thing as an agent pinned to one language: the
      * selector is gone from the form, and a stale value left in the column by

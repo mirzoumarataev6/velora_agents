@@ -79,7 +79,7 @@ class AgentReplyServiceTest extends TestCase
         $service->reply($conversation, 'Do you sell winter boots?');
 
         $this->assertStringContainsString('KNOWLEDGE BASE: (empty', $captured);
-        $this->assertStringContainsString("don't have that detail to hand", $captured);
+        $this->assertStringContainsString('which detail you cannot confirm', $captured);
 
         // An empty knowledge base still leaves general questions about the
         // field answerable — that is the whole point of the split.
@@ -264,7 +264,7 @@ class AgentReplyServiceTest extends TestCase
         $this->assertStringContainsString('START FROM THE NEED', $captured);
         $this->assertStringContainsString('RECOMMEND, DO NOT ENUMERATE', $captured);
         $this->assertStringContainsString("SAY WHY, IN THE CUSTOMER'S TERMS", $captured);
-        $this->assertStringContainsString('GIVE ONE HONEST TRADE-OFF PER RECOMMENDATION', $captured);
+        $this->assertStringContainsString('MENTION A RELEVANT TRADE-OFF WHEN KNOWN', $captured);
         $this->assertStringContainsString('ASK THE ONE QUESTION THAT NARROWS IT', $captured);
 
         // The two guardrails. Without the first this licenses invented

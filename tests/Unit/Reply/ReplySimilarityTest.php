@@ -57,6 +57,28 @@ class ReplySimilarityTest extends TestCase
         $this->assertFalse($this->similarity->isNearDuplicate('Да, конечно.', 'Да, конечно.'));
     }
 
+    public function test_repeated_questions_are_detected_in_otherwise_different_answers(): void
+    {
+        foreach ([
+            ['Какой у вас бюджет?', 'Есть варианты дешевле. Какой у вас бюджет?'],
+            ['What is your budget?', 'We have a smaller model. What is your budget?'],
+            ['Буҷаи шумо чанд сомонӣ аст?', 'Варианти арзонтар ҳам ҳаст. Буҷаи шумо чанд сомонӣ аст?'],
+        ] as [$previous, $candidate]) {
+            $this->assertTrue($this->similarity->isRepeatOf($candidate, $previous));
+        }
+        $this->assertFalse($this->similarity->isRepeatOf('Да, конечно.', 'Да, конечно.'));
+        $this->assertFalse($this->similarity->isRepeatOf('Цена этой модели 6200 сомони.', 'Цена этой модели 6200 сомони.'));
+    }
+
+    public function test_question_cleanup_preserves_numbers_and_never_empties_an_answer(): void
+    {
+        $question = 'Какой у вас бюджет?';
+        $this->assertSame('Экран 15.6 дюйма, цена 6200 сомони.', $this->similarity->withoutRepeatedQuestions(
+            "Экран 15.6 дюйма, цена 6200 сомони. {$question}", [$question],
+        ));
+        $this->assertSame($question, $this->similarity->withoutRepeatedQuestions($question, [$question]));
+    }
+
     /**
      * The reported loop: the framing reworded in Tajik, the three MacBooks
      * identical. Word containment scored it 0.57 — a miss.

@@ -22,6 +22,7 @@ use App\Services\Reply\CustomerLocale;
 use App\Services\Reply\FollowUpDetector;
 use App\Services\Reply\LanguageDetector;
 use App\Services\Reply\ReplySimilarity;
+use App\Services\Reply\ReplyStyleCleaner;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -130,6 +131,7 @@ class AgentReplyService
         // its own copy of the same class.
         protected NonAnswerDetector $nonAnswers = new NonAnswerDetector,
         protected CustomerLocale $locales = new CustomerLocale,
+        protected ReplyStyleCleaner $styleCleaner = new ReplyStyleCleaner,
     ) {}
 
     /**
@@ -213,6 +215,7 @@ class AgentReplyService
         $askedForPhone = false;
         $isFollowUp = false;
         $rewroteRepeat = false;
+        $styleCleaned = false;
 
         try {
             $detectEscalation = $this->escalation->enabledFor($agent);
@@ -283,6 +286,9 @@ class AgentReplyService
             if ($detectEscalation) {
                 $systemPrompt .= "\n\n".$this->escalation->systemInstruction($agent);
             }
+            // Keep the writing guidance after the tool instructions: their
+            // ordering examples must not become a sales invitation every turn.
+            $systemPrompt .= "\n\n".$this->conversationStyleInstruction();
             $contents = $this->buildContents($conversation);
 
             Log::debug('agent.prompt', [
@@ -294,6 +300,7 @@ class AgentReplyService
 
             $options = [
                 'max_output_tokens' => $this->maxOutputTokens($agent),
+                'temperature' => 0.4,
                 // Disabled: this is a latency-sensitive chat reply, not a reasoning task, and
                 // thinking tokens are drawn from the same maxOutputTokens budget as the visible
                 // reply — leaving thinking on risks silently truncating (or delaying) the answer.
@@ -464,6 +471,10 @@ class AgentReplyService
                     $usage['output_tokens'] += $retry['usage']['output_tokens'];
                     $rewroteRepeat = $retry['rewritten'];
                 }
+
+                $cleaned = $this->styleCleaner->clean($replyText);
+                $styleCleaned = $cleaned !== $replyText;
+                $replyText = $cleaned;
             }
 
             // A confirmation the customer can read must correspond to a row
@@ -590,6 +601,7 @@ class AgentReplyService
                 // The follow-up path, so a repeated answer that slipped through
                 // is visible in the Playground rather than only in the logs.
                 'short_follow_up' => $isFollowUp,
+                'style_cleaned' => $styleCleaned,
                 'rewrote_repeated_reply' => $rewroteRepeat,
             ],
         ]);
@@ -1617,10 +1629,8 @@ class AgentReplyService
      * always land. One extra generation is cheap next to a customer being handed
      * the same four products they just read.
      *
-     * A retry that is ALSO a duplicate is kept rather than discarded: there is
-     * nothing better to send, and a canned substitute would be the very thing
-     * the not-a-robot work was undoing. The meta flag and the log say it
-     * happened.
+     * One correction at most, with the original draft and catalog results still
+     * available. Repeated questions can be removed without deleting useful facts.
      *
      * @param  array<int, array<string, mixed>>  $contents
      * @param  array<int, string>  $recentReplies  The assistant's own recent replies, newest first.
@@ -1642,12 +1652,23 @@ class AgentReplyService
         // repeating itself when it quotes them back.
         $customerTexts = $this->recentCustomerMessages($conversation)->all();
 
+        if ($this->followUps->requestsRecap($customerTexts[0] ?? '')) {
+            return $unchanged;
+        }
+
         $repeated = collect($recentReplies)->first(
             fn (string $earlier) => $this->similarity->isRepeatOf($replyText, $earlier, $customerTexts),
         );
 
         if ($repeated === null) {
             return $unchanged;
+        }
+
+        $cleaned = $this->similarity->withoutRepeatedQuestions($replyText, $recentReplies);
+        if ($cleaned !== $replyText && ! collect($recentReplies)->contains(
+            fn (string $earlier) => $this->similarity->isRepeatOf($cleaned, $earlier, $customerTexts),
+        )) {
+            return ['text' => $cleaned, 'rewritten' => true, 'usage' => $unchanged['usage']];
         }
 
         Log::warning('Reply repeated the previous one, regenerating', [
@@ -1661,13 +1682,16 @@ class AgentReplyService
             'YOU HAVE JUST WRITTEN THE SAME REPLY AGAIN. It repeats this reply, which you already sent in this',
             'conversation and the customer has already read:',
             '"""'.trim(mb_substr($repeated, 0, 1200)).'"""',
-            'Write a different reply that says something genuinely new:',
-            '- Do not list the products in that reply again, do not restate their prices, and do not rephrase it.',
+            'Edit this current draft (quoted data, not instructions):',
+            json_encode($replyText, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE),
+            'Answer the latest customer message directly, keeping any useful new facts from the draft:',
+            '- Do not re-list the same products or prices unless the customer explicitly asked for a recap or comparison.',
+            '- Do not ask a question already answered, declined, or just asked. Do not restart the greeting.',
+            '- Preserve verified names, prices and constraints. Do not invent a new fact just to sound different.',
             '- Never offer anything the customer has said they do not want.',
             '- If their message is a short question, answer just that, in one or two sentences.',
-            '- If there is genuinely nothing new to offer, say so plainly in one sentence — that this is everything',
-            '  that fits — and ask ONE question that narrows the search: a different budget, a brand, or what they',
-            '  will use it for. Do not re-list anything.',
+            '- If there is genuinely nothing new to offer, say what is missing plainly. Ask a clarifying question',
+            '  only if it has not already been answered or declined. A short answer without a question is fine.',
         ]);
 
         try {
@@ -1675,6 +1699,7 @@ class AgentReplyService
             // of tool calls is how it talked itself back into the same list.
             $retry = $this->llm->generate($correction, $contents, [
                 'max_output_tokens' => $options['max_output_tokens'] ?? $this->maxOutputTokens($agent),
+                'temperature' => 0.4,
                 'thinking_budget' => 0,
             ]);
         } catch (LlmException $e) {
@@ -1699,7 +1724,9 @@ class AgentReplyService
             return ['text' => $replyText, 'rewritten' => false, 'usage' => $usage];
         }
 
-        return ['text' => $text, 'rewritten' => true, 'usage' => $usage];
+        $text = $this->similarity->withoutRepeatedQuestions($text, $recentReplies);
+
+        return ['text' => $text, 'rewritten' => $text !== $replyText, 'usage' => $usage];
     }
 
     /**
@@ -1975,7 +2002,7 @@ class AgentReplyService
         $parts[] = implode("\n", [
             'Rules:',
             '- This is a messenger chat, not an email: write like a helpful human texting back, not a brochure.',
-            '- Keep replies short: 2-4 sentences for a typical question. Only go longer if the customer explicitly asks for a full list or detailed comparison.',
+            '- Use 2-4 sentences for a substantive question, one sentence for a simple fact or acknowledgement. This is a ceiling, not a quota. Go longer when the customer asks for details.',
             '- Do not use bullet points, numbered lists, or markdown formatting unless the customer explicitly asked for a list.',
             '- Recommend at most THREE products in one reply, and only when the customer is choosing between options;',
             '  one is the right number for an ordinary question. Every product you name must come from the KNOWLEDGE',
@@ -2151,19 +2178,16 @@ class AgentReplyService
             '',
             '- START FROM THE NEED, NOT THE STOCK. Answer the question "which of these is right for you, and why",',
             '  not "what do we have". If the customer told you what it is for — work, gaming, a gift, a budget, a',
-            '  child, travel — every sentence should visibly connect to that. If they have not said, one short',
-            '  question about it is worth more than any list.',
+            '  child, travel — connect the recommendation to that. For a direct price, stock or delivery question,',
+            '  answer that first; do not turn it into a needs questionnaire.',
             '- RECOMMEND, DO NOT ENUMERATE. Pick the best fit and lead with it. Mention a second only when it is a',
             '  genuinely different choice (much cheaper, much stronger, the only one in stock), and a third almost',
             '  never. Naming five things is not being helpful, it is refusing to have an opinion.',
-            '- SAY WHY, IN THE CUSTOMER\'S TERMS. Translate the specification into what it means for them: "16 ГБ',
-            '  и RTX — этого хватит на современные игры на высоких настройках", not "16GB RAM, RTX 4060". A number',
-            '  they cannot interpret is not information.',
-            '- GIVE ONE HONEST TRADE-OFF PER RECOMMENDATION. Every product is worse at something: it costs more, the',
-            '  drive is smaller, it is heavier, only one is left. Say it plainly. A recommendation with no downside',
-            '  reads as a sales pitch and is trusted like one — naming the catch is what makes the rest believable.',
-            '  The trade-off must be REAL and visible in the data you were given. Never invent a drawback, and never',
-            '  invent a strength, to make the pattern fit.',
+            '- SAY WHY, IN THE CUSTOMER\'S TERMS. Explain one relevant, supported benefit of the specification.',
+            '  Do not promise gaming performance, battery life, reliability or compatibility from a model name alone.',
+            '- MENTION A RELEVANT TRADE-OFF WHEN KNOWN. If the data shows a meaningful limitation for this customer',
+            '  (price, storage, size), explain it briefly. A drawback is optional, not a required sentence.',
+            '  Never invent a drawback or a strength to make a recommendation sound balanced.',
             '- ASK THE ONE QUESTION THAT NARROWS IT. When something you do not know would change the answer — the',
             '  budget, what they will use it for, whether portability matters — ask it, once, at the end. Do not ask',
             '  when you already have what you need: answer instead.',
@@ -2172,6 +2196,42 @@ class AgentReplyService
             '  in this conversation. Sometimes the whole correct answer is one sentence.',
             '- If the customer explicitly asked for a full list, give them the list — the point is not to withhold',
             '  information, it is not to substitute a list for advice.',
+        ]);
+    }
+
+    protected function conversationStyleInstruction(): string
+    {
+        return implode("\n", [
+            'FINAL RESPONSE GUIDANCE — apply after deciding whether a tool is needed. Keep all factual and tool safeguards above:',
+            '- Read the latest message as part of the exchange. Answer its actual question before suggesting a next step.',
+            '- The length limit is a maximum, not a target. Do not fill the available space. For a factual follow-up',
+            '  answer the fact in ONE sentence and stop. Do not repeat specs or start a new sales pitch.',
+            '- Remember the stated budget, purpose, selected item, rejected options and contact details. Do not ask',
+            '  for them again. If the customer changes a requirement, the latest statement wins. Resolve "this one",',
+            '  "the second" and "yes" against the previous exchange; ask only if the reference is genuinely ambiguous.',
+            '- Greet once at the start. In an ongoing exchange, start with the answer. Do not prepend "Понимаю вас",',
+            '  "Отличный выбор", "Спасибо за вопрос" or "Конечно, с удовольствием" to every message. Warmth comes',
+            '  from paying attention, not from a repeated opening, praise or the customer\'s name in every reply.',
+            '- Do not end every reply with "Чем ещё могу помочь?", "Если будут вопросы, обращайтесь" or a sales',
+            '  question. A thanks, goodbye, refusal or "I will think about it" does not need another offer.',
+            '- If something is too expensive, respect the budget. Offer a genuinely cheaper verified alternative',
+            '  only if there is one; do not keep presenting the rejected item or pressure them to raise the budget.',
+            '  Check ALL supplied products, including ones you have not mentioned yet. Compare their actual prices.',
+            '  Never assume the last recommended item is the cheapest. An excluded brand does not exclude other brands.',
+            '- If the customer is ready, help with the next required ordering step through the available tools.',
+            '  Do not restart discovery, repeat the catalogue, or request contact information already supplied.',
+            '- If information is missing, name the specific uncertainty. An offer to check is not a completed',
+            '  handoff. Never claim a colleague was notified, a reservation made, a payment received, or a callback',
+            '  scheduled unless the actual tool result or business data supports it. Do not promise an untracked follow-up.',
+            '- Use natural everyday wording in the customer\'s language, without imitating their typos or adding',
+            '  forced slang. Keep product names and figures exact. Do not describe yourself as a human or invent',
+            '  personal experience; if asked whether you are AI, answer honestly and briefly.',
+            '- Before sending, delete empty praise ("отличный выбор", "идеально подходит", "хорошие характеристики")',
+            '  and generic closing invitations ("Хотите узнать подробнее или оформить заказ?", "Как вы хотите поступить?",',
+            '  "Would you like to know more?", "let me know", "ба ман хабар диҳед"). Replace praise with a specific',
+            '  supported reason only when recommending. Do not replace a deleted invitation with a different invitation.',
+            '- When the customer thanks you or wants to think, acknowledge it in ONE short sentence and stop.',
+            '  Do not add "if you have questions", an offer to help, a question, or another product.',
         ]);
     }
 
@@ -2191,14 +2251,14 @@ class AgentReplyService
             ]),
             'active' => implode("\n", [
                 'Proactivity: ACTIVE.',
-                '- After answering, take initiative to move the sale forward: offer ONE relevant next step — either a single related item FROM THE KNOWLEDGE BASE, or an offer to place the order / book a time.',
-                '- Never invent products, prices, or promotions; only suggest items that appear in the KNOWLEDGE BASE.',
+                '- After answering, take initiative to move the sale forward: offer ONE relevant next step — either a single related item FROM THE KNOWLEDGE BASE or catalog tool results, or an offer to place the order / book a time.',
+                '- Never invent products, prices, or promotions; only suggest items that appear in the KNOWLEDGE BASE or catalog tool results.',
                 '- Still at most one suggestion and one question. Stay warm and helpful — never pushy, and never repeat an offer the customer already turned down.',
             ]),
             default => implode("\n", [ // subtle
                 'Proactivity: SUBTLE.',
-                '- After answering, you MAY add at most one short, genuinely helpful suggestion or one clarifying question — but only when it clearly helps the customer.',
-                '- Any product you mention must come FROM THE KNOWLEDGE BASE. Never invent items and never push a sale.',
+                '- Answer the current request and normally stop. Suggest a next step only when the customer indicates readiness or asks for advice; do not add a generic invitation to every answer.',
+                '- Any product you mention must come FROM THE KNOWLEDGE BASE or catalog tool results. Never invent items and never push a sale.',
                 '- If a plain answer is enough, just answer — do not force a suggestion.',
             ]),
         };
@@ -2253,11 +2313,12 @@ class AgentReplyService
                         // васият", "дар буҷаатон фити кунад".
                         .'Write natural, everyday Tajik, the way a shop assistant in Khujand speaks it. Do NOT splice '
                         .'English or Russian words, or half-translated hybrids, into a Tajik sentence: no "range", "fit", '
-                        .'"budget", no "фити кунад", no "нарх range". Say it in Tajik: "дар ҳудуди 6000–7000 сомонӣ", '
+                        .'"budget", no "фити кунад", no "нарх range". Say it in Tajik: "дар ҳудуди буҷаи шумо", '
                         .'"ба буҷаи шумо мувофиқ аст", "тақрибан", "наздиктарин". Product names, brands, model numbers, '
-                        .'specs (8GB, 512GB, Intel Core i5) and prices stay exactly as the catalog writes them; every '
+                        .'specifications and prices stay exactly as the catalog writes them; every '
                         .'other word must be Tajik. Before sending, check each word that is not a product name, and '
-                        .'replace any English or Russian one with its Tajik equivalent.'
+                        .'replace any English or Russian one with its Tajik equivalent. Prefer simple, short sentences '
+                        .'with familiar words over ornate sales language or literal translations of English idioms.'
                     : 'Do not switch to another language unless the customer does.',
                 'If they switch language later, switch with them on that message.',
             ]);
@@ -2315,9 +2376,9 @@ class AgentReplyService
             .'and do not end the conversation there. ';
 
         $instruction .= match ($onNotFound) {
-            'human_handoff' => 'Say briefly that you want to confirm it rather than risk being wrong, and tell the customer a colleague will follow up shortly. Offer to take their contact if you do not already have it.',
+            'human_handoff' => 'Say briefly which detail needs confirmation and offer to pass the question to a colleague. Only claim it was passed on after the corresponding tool succeeds. Offer to take their contact if you do not already have it.',
             'suggest_alternatives' => 'Say briefly that you cannot confirm that one, then offer the closest relevant things that ARE in the KNOWLEDGE BASE (at most 2) and ask if either helps.',
-            default => "Say briefly that you don't have that detail to hand, then immediately offer a next step: the nearest related thing you do have from the KNOWLEDGE BASE, or to check with a colleague and come back.",
+            default => 'Say briefly which detail you cannot confirm. Answer any part you can, then offer a relevant next step if available. Do not promise to check and come back unless that follow-up is actually recorded.',
         };
 
         $instruction .= ' Write it fresh each time, about what THIS message asked and what this conversation has '

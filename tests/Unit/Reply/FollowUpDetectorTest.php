@@ -64,4 +64,16 @@ class FollowUpDetectorTest extends TestCase
         $this->assertFalse($this->detector->isShortFollowUp('да', false));
         $this->assertFalse($this->detector->isShortFollowUp('так да или нет', false));
     }
+
+    public function test_explicit_recap_is_distinguished_from_complaints_about_repetition(): void
+    {
+        foreach (['Повтори, пожалуйста, цены', 'Можете напомнить адрес?', 'Please repeat the options',
+            'Could you please remind me of the price?', 'Лутфан такрор кунед', 'Бори дигар гӯед'] as $text) {
+            $this->assertTrue($this->detector->requestsRecap($text), $text);
+        }
+        foreach (['Не повторяй одно и то же', 'Почему ты повторяешь?', "Don't repeat yourself", 'А подешевле?',
+            'Такрор накунед', 'Do you have another model?'] as $text) {
+            $this->assertFalse($this->detector->requestsRecap($text), $text);
+        }
+    }
 }

@@ -226,4 +226,84 @@ class FollowUpReplyTest extends TestCase
 
         $this->assertSame('Есть три модели, подскажу подробнее', $reply['assistant']->content);
     }
+
+    public function test_repeated_budget_question_is_removed_without_another_generation(): void
+    {
+        $captured = $this->fakeLlm([['text' => 'Acer Aspire стоит 6200 сомони и подходит для документов. Какой у вас бюджет?']]);
+        $conversation = Agent::factory()->create()->conversations()->create(['status' => 'ai']);
+        $conversation->messages()->create(['role' => 'assistant', 'content' => 'Какой у вас бюджет?']);
+
+        $reply = $this->app->make(AgentReplyService::class)->reply($conversation, 'До 7000 сомони, для документов.')['assistant'];
+
+        $this->assertSame('Acer Aspire стоит 6200 сомони и подходит для документов.', $reply->content);
+        $this->assertTrue($reply->meta['rewrote_repeated_reply']);
+        $this->assertCount(1, $captured->prompts);
+    }
+
+    public function test_short_canned_reply_is_rewritten_with_the_draft_available(): void
+    {
+        $original = 'Уточню этот вопрос у нашего менеджера.';
+        $captured = $this->fakeLlm([
+            ['text' => $original],
+            ['text' => 'По доставке пока нет подтверждения. Адрес магазина могу подсказать сейчас.'],
+        ]);
+        $conversation = Agent::factory()->create()->conversations()->create(['status' => 'ai']);
+        $conversation->messages()->create(['role' => 'assistant', 'content' => $original]);
+
+        $reply = $this->app->make(AgentReplyService::class)->reply($conversation, 'А что сейчас известно по доставке?')['assistant'];
+
+        $this->assertCount(2, $captured->prompts);
+        $this->assertStringContainsString(json_encode($original, JSON_UNESCAPED_UNICODE), $captured->prompts[1]);
+        $this->assertStringNotContainsString($original, $reply->content);
+        $this->assertTrue($reply->meta['rewrote_repeated_reply']);
+        $this->assertSame(20, $reply->meta['input_tokens']);
+        $this->assertSame(10, $reply->meta['output_tokens']);
+    }
+
+    public function test_requested_recap_is_allowed_without_rewriting_or_extra_cost(): void
+    {
+        $captured = $this->fakeLlm([['text' => self::PRODUCT_LIST]]);
+        $conversation = $this->conversationAfterAList(Agent::factory()->create());
+
+        $reply = $this->app->make(AgentReplyService::class)->reply($conversation, 'Повтори, пожалуйста, список с ценами.')['assistant'];
+
+        $this->assertSame(self::PRODUCT_LIST, $reply->content);
+        $this->assertFalse($reply->meta['rewrote_repeated_reply']);
+        $this->assertCount(1, $captured->prompts);
+    }
+
+    public function test_generic_sales_closing_is_removed_without_changing_the_verified_answer(): void
+    {
+        $captured = $this->fakeLlm([['text' => 'Доставка стоит 50 сомони. Как вы хотите поступить?']]);
+        $conversation = Agent::factory()->create()->conversations()->create(['status' => 'ai']);
+
+        $reply = $this->app->make(AgentReplyService::class)->reply($conversation, 'Сколько стоит доставка?')['assistant'];
+
+        $this->assertSame('Доставка стоит 50 сомони.', $reply->content);
+        $this->assertTrue($reply->meta['style_cleaned']);
+        $this->assertCount(1, $captured->prompts);
+    }
+
+    public function test_a_longer_exchange_keeps_the_original_budget_and_operator_reply_in_order(): void
+    {
+        $captured = $this->fakeLlm([['text' => 'В вашем бюджете подходит Acer, его и советую.']]);
+        $agent = Agent::factory()->create();
+        $conversation = $agent->conversations()->create(['status' => 'ai']);
+        $conversation->messages()->create(['role' => 'user', 'content' => 'Нужно до 7000, MacBook не предлагайте.']);
+        $conversation->messages()->create(['role' => 'operator', 'content' => 'Посмотрим варианты для документов.']);
+        for ($i = 0; $i < 6; $i++) {
+            $conversation->messages()->create(['role' => 'user', 'content' => "Уточнение о характеристиках {$i}"]);
+            $conversation->messages()->create(['role' => 'assistant', 'content' => "Ответ о характеристиках {$i}"]);
+        }
+        $other = $agent->conversations()->create(['status' => 'ai']);
+        $other->messages()->create(['role' => 'user', 'content' => 'PRIVATE: бюджет другого клиента']);
+
+        $this->app->make(AgentReplyService::class)->reply($conversation, 'Какой лучше взять с учетом моего бюджета?');
+
+        $history = $captured->contents[0];
+        $this->assertCount(15, $history);
+        $this->assertSame('Нужно до 7000, MacBook не предлагайте.', $history[0]['text']);
+        $this->assertSame(['role' => 'model', 'text' => 'Посмотрим варианты для документов.'], $history[1]);
+        $this->assertStringNotContainsString('PRIVATE', json_encode($history));
+    }
 }

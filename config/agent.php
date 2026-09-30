@@ -156,7 +156,9 @@ return [
         // agent then behaves exactly as it did before.
         'skip_for_product_questions' => env('RAG_SKIP_FOR_PRODUCT_QUESTIONS', true),
 
-        'history_length' => env('RAG_HISTORY_LENGTH', 10),
+        // Keep about ten exchanges so a budget or rejected option survives
+        // ordinary follow-up questions without a separate summarization call.
+        'history_length' => env('RAG_HISTORY_LENGTH', 20),
         'cache_ttl_seconds' => env('RAG_CACHE_TTL_SECONDS', 300),
     ],
 

@@ -28,6 +28,22 @@ class FollowUpDetector
         'and ', 'so ', 'but ', 'then ',
     ];
 
+    public function requestsRecap(string $message): bool
+    {
+        $text = $this->fold($message);
+
+        // Deliberately anchored: "не повторяй" / "don't repeat" are complaints,
+        // not permission to send the same answer again.
+        return preg_match('/^(?:(?:пожалуйста|please|лутфан)\s+)?(?:'
+            .'(?:повтори(?:те)?|напомни(?:те)?)(?:\s|$)'
+            .'|(?:можешь|можете)\s+(?:повторить|напомнить)(?:\s|$)'
+            .'|(?:repeat|remind me)(?:\s|$)'
+            .'|(?:can|could) you\s+(?:please\s+)?(?:repeat|remind)(?:\s|$)'
+            .'|такрор\s+(?:кун|кунед)(?:\s|$)'
+            .'|бори дигар\s+(?:гӯй|гӯед|гуй|гуед)(?:\s|$)'
+            .')/u', $text) === 1;
+    }
+
     // Определяет, является ли сообщение коротким уточняющим вопросом к предыдущему ответу
     public function isShortFollowUp(string $message, bool $hasPriorReply): bool
     {

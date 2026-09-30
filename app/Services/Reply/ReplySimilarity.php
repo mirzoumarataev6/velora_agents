@@ -54,7 +54,53 @@ class ReplySimilarity
     public function isRepeatOf(string $candidate, string $previous, array $ignore = []): bool
     {
         return $this->isNearDuplicate($candidate, $previous)
-            || $this->repeatsListing($candidate, $previous, $ignore);
+            || $this->repeatsListing($candidate, $previous, $ignore)
+            || $this->repeatedQuestions($candidate, $previous) !== []
+            || $this->isShortDuplicate($candidate, $previous);
+    }
+
+    /** @return list<string> Questions copied into an otherwise new answer. */
+    public function repeatedQuestions(string $candidate, string $previous): array
+    {
+        $previousQuestions = array_map(fn ($text) => $this->words($text), $this->questions($previous));
+
+        return array_values(array_filter($this->questions($candidate), fn ($question) => count($this->words($question)) >= 3
+            && in_array($this->words($question), $previousQuestions, true)
+        ));
+    }
+
+    /** Remove a redundant question only if a substantive answer remains. */
+    public function withoutRepeatedQuestions(string $candidate, array $previousReplies): string
+    {
+        $cleaned = $candidate;
+        foreach ($previousReplies as $previous) {
+            foreach ($this->repeatedQuestions($cleaned, $previous) as $question) {
+                $cleaned = str_replace($question, '', $cleaned);
+            }
+        }
+
+        $cleaned = trim((string) preg_replace('/[\h]{2,}/u', ' ', $cleaned));
+
+        return count($this->words($cleaned)) >= 3 ? $cleaned : $candidate;
+    }
+
+    protected function isShortDuplicate(string $candidate, string $previous): bool
+    {
+        $words = $this->words($candidate);
+
+        // Short acknowledgements and repeated figures can be correct answers.
+        return count($words) >= 4 && count($words) < self::MIN_WORDS
+            && ! preg_match('/\p{N}/u', $candidate)
+            && $words === $this->words($previous);
+    }
+
+    /** @return list<string> */
+    protected function questions(string $text): array
+    {
+        // Preserve decimal points inside sentences and support multi-line chat.
+        $sentences = preg_split('/(?<=[.!?。！？])\s+|\R/u', trim($text)) ?: [];
+
+        return array_values(array_filter($sentences, fn ($sentence) => preg_match('/[?？][!！]*$/u', $sentence)));
     }
 
     // Извлекает из текста числа длиной от 3 цифр (цены, объёмы и т.п.)
