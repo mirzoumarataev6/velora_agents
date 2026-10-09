@@ -138,7 +138,22 @@ class WikimediaImageSearch
         }
 
         if ($terms === []) {
-            return true;
+            // A query of ONLY generic/type words ("laptop") is a deliberate
+            // browse by product type, and returning true for any matching
+            // title is the intended, permissive behaviour.
+            //
+            // But a query that also had a short, SPECIFIC word too short to
+            // survive the filter above (a bare brand like "HP", left over
+            // once a model name was lost upstream) is a narrower request than
+            // "any laptop" — returning true unconditionally here is what let
+            // an unrelated same-type photo ("HP Laptop 14S") through for a
+            // request that should have stayed a specific model. Require that
+            // short word itself to appear in the title instead.
+            $shortSpecificTerms = array_values(array_filter($matches[0] ?? [], fn (string $term) => ! ctype_digit($term)
+                && mb_strlen($term) < 3 && ! in_array($term, self::GENERIC_QUERY_TERMS, true)
+            ));
+
+            return $shortSpecificTerms === [] || array_intersect($shortSpecificTerms, $titleTerms) !== [];
         }
 
         // Require the model as one sequence. Separate occurrences of "Omen"

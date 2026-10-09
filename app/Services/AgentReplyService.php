@@ -489,6 +489,7 @@ class AgentReplyService
                 $replyText = $this->honourAnyOrderClaim($agent, $conversation, $replyText, $capturedLeads);
             }
             $replyText = $this->removeFalsePhotoRefusal($replyText, $userMsg->content);
+            $replyText = $this->removeFalsePhotoConfirmation($replyText);
             $replyText = $this->rejectEmptyReply($agent, $conversation, $replyText);
 
             // Superseded generations (a turn the model spent calling
@@ -911,6 +912,28 @@ class AgentReplyService
         $cleaned = trim($this->styleCleaner->clean(trim($cleaned)));
 
         return $cleaned !== '' ? $cleaned : 'Какую модель хотите посмотреть?';
+    }
+
+    /**
+     * This method's reply path never sends a photo — only PhotoReplyService
+     * does, and it writes its own "sent"/"failed" text from code, not from a
+     * generation. A model that writes "Фото ... отправлено" (or invents a
+     * Wikimedia-style licence/attribution line) here is claiming a delivery,
+     * or a sourced image, that never happened; strip the claim rather than
+     * let the customer believe a photo is on its way.
+     */
+    protected function removeFalsePhotoConfirmation(string $replyText): string
+    {
+        $pattern = '/(?:вот\s+)?(?:фото|фотограф\w*|картинк\w*|изображен\w*)[^.!?\n]*?(?:отправлен\w*|прислал\w*|высла\w*|готов\w*)[^.!?\n]*?(?:[.!?](?=\s|$)|$)'
+            .'|(?:©[^\n]*?)?(?:cc\s*by[^\n]*|wikimedia[^\n]*|creative\s*commons[^\n]*)[^.!?\n]*?(?:[.!?](?=\s|$)|$)/iu';
+
+        if (preg_match($pattern, $replyText) !== 1) {
+            return $replyText;
+        }
+
+        $cleaned = trim($this->styleCleaner->clean(trim((string) preg_replace($pattern, '', $replyText))));
+
+        return $cleaned !== '' ? $cleaned : 'Уточняю фото для этой модели — одну минуту.';
     }
 
     /**

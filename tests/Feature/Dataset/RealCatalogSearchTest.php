@@ -101,7 +101,10 @@ class RealCatalogSearchTest extends TestCase
         $omen = DatasetProduct::where('name', 'OMEN 16')->sole();
         $office = DatasetProduct::where('price', '24999.00')->sole();
 
-        $this->assertSame(
+        // Followed by a skeleton-folded form of every word (see SearchSkeleton),
+        // so a Cyrillic query like "омен" also matches this Latin name — hence
+        // startsWith rather than a full exact match.
+        $this->assertStringStartsWith(
             'omen 16 ноутбук (игровой) процессор intel core ultra 7 255h озу 16gb память 1tb',
             $omen->search_text,
         );

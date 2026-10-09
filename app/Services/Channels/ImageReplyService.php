@@ -55,7 +55,14 @@ class ImageReplyService
                 || ! $this->nameContainsModel((string) ($candidate['name'] ?? ''), $requestedModel)) {
                 continue;
             }
-            $images[] = ['url' => $url, 'caption' => Str::limit((string) ($candidate['name'] ?? ''), 900, '')];
+            // Price alongside the name when the caller has it (PhotoReplyService,
+            // sending several of these in one "show me all of them" burst) —
+            // otherwise a run of photos with no price reads as one long product.
+            $label = (string) ($candidate['name'] ?? '');
+            if (($candidate['price'] ?? null) !== null && $candidate['price'] !== '') {
+                $label .= ' — '.$candidate['price'];
+            }
+            $images[] = ['url' => $url, 'caption' => Str::limit($label, 900, '')];
             if (count($images) === self::MAX_IMAGES) {
                 break;
             }

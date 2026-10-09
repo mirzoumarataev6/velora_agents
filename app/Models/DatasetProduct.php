@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\Dataset\SearchSkeleton;
 use Database\Factories\DatasetProductFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -49,11 +50,20 @@ class DatasetProduct extends Model
             }
         }
 
-        return mb_strtolower(trim((string) preg_replace(
-            '/\s+/u',
-            ' ',
-            implode(' ', array_filter($parts, fn ($part) => $part !== null && $part !== '')),
-        )));
+        $haystack = implode(' ', array_filter($parts, fn ($part) => $part !== null && $part !== ''));
+
+        // A skeleton form of every word, appended to the haystack: a Latin
+        // brand name ("MacBook", "VICTUS") and its Cyrillic loanword spelling
+        // ("макбук", "виктус") fold to the same skeleton — see SearchSkeleton.
+        // Without this, a catalog written in Latin is invisible to a customer
+        // typing the Cyrillic spelling, which is how these brand names are
+        // normally written in Russian and Tajik.
+        $haystack .= ' '.implode(' ', array_map(
+            SearchSkeleton::fold(...),
+            preg_split('/\s+/u', $haystack) ?: [],
+        ));
+
+        return mb_strtolower(trim((string) preg_replace('/\s+/u', ' ', $haystack)));
     }
 
     public static function categoryKey(?string $category): ?string

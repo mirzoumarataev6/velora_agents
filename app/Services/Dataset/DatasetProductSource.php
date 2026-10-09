@@ -58,7 +58,17 @@ class DatasetProductSource implements ProductSource
             }
 
             foreach ($terms as $term) {
-                $query->where('search_text', 'like', '%'.$term.'%');
+                // Either the term itself, or its skeleton — matching a Latin
+                // brand name's Cyrillic loanword spelling ("макбук" against
+                // the "makbuk" skeleton search_text stores for "MacBook").
+                // See SearchSkeleton and DatasetProduct::searchText().
+                $skeleton = SearchSkeleton::fold($term);
+                $query->where(function (Builder $q) use ($term, $skeleton) {
+                    $q->where('search_text', 'like', '%'.$term.'%');
+                    if ($skeleton !== '' && $skeleton !== $term) {
+                        $q->orWhere('search_text', 'like', '%'.$skeleton.'%');
+                    }
+                });
             }
         }
 
