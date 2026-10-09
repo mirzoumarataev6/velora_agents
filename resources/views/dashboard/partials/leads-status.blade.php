@@ -57,7 +57,7 @@
                         {{ __('dashboard.leads_status.statuses.'.$row['status']) }}
                     </span>
                     <span class="shrink-0 tnum font-medium">{{ $row['count'] }}</span>
-                    <span class="w-12 shrink-0 text-right text-[11px] tnum text-muted dark:text-night-muted">{{ $row['share'] }}%</span>
+                    <span class="w-12 shrink-0 text-right text-xs tnum text-muted dark:text-night-muted">{{ $row['share'] }}%</span>
                 </li>
             @endforeach
         </ul>

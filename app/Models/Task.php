@@ -11,10 +11,14 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-#[Fillable(['customer_id', 'deal_id', 'title', 'due_at', 'done_at'])]
+#[Fillable(['customer_id', 'deal_id', 'title', 'due_at', 'done_at', 'priority', 'type'])]
 #[UsePolicy(TaskPolicy::class)]
 class Task extends Model
 {
+    public const PRIORITIES = ['low', 'normal', 'high', 'urgent'];
+
+    public const TYPES = ['follow_up', 'call', 'message', 'meeting', 'internal'];
+
     /** @use HasFactory<TaskFactory> */
     use HasFactory;
 

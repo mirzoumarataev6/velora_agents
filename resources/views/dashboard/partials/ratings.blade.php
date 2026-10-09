@@ -152,7 +152,7 @@
                                 <div class="w-full rounded-b-sm bg-danger transition-opacity group-hover:opacity-75" style="height: {{ $downRem }}rem"></div>
                             </div>
                             @unless ($dense)
-                                <span class="text-[10px] text-muted dark:text-night-muted">{{ $day['label'] }}</span>
+                                <span class="text-xs text-muted dark:text-night-muted">{{ $day['label'] }}</span>
                             @endunless
                         </div>
                     @endforeach
@@ -174,7 +174,7 @@
                                     class="group -mx-2 flex items-start gap-2 rounded-lg px-2 py-1.5 transition-colors hover:bg-danger/[0.06]">
                                     <span class="mt-0.5 shrink-0 text-xs" aria-hidden="true">👎</span>
                                     <span class="min-w-0 flex-1 truncate text-xs text-muted group-hover:text-ink dark:text-night-muted dark:group-hover:text-night-ink">{{ $reply['excerpt'] }}</span>
-                                    <span class="shrink-0 text-[10px] tnum text-muted dark:text-night-muted">{{ $reply['at'] }}</span>
+                                    <span class="shrink-0 text-xs tnum text-muted dark:text-night-muted">{{ $reply['at'] }}</span>
                                 </a>
                             </li>
                         @endforeach

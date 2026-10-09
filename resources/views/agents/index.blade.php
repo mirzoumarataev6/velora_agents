@@ -69,21 +69,21 @@
                          description and one with three both end level in the
                          grid. Each count is labelled: three bare numbers
                          behind three small icons were a puzzle, not a stat. --}}
-                    <div class="rule mt-auto flex items-center gap-4 pt-4 text-xs text-muted dark:text-night-muted">
+                    <div class="rule mt-auto flex flex-wrap items-center gap-x-3 gap-y-1.5 pt-4 text-xs text-muted dark:text-night-muted">
                         <span class="flex items-center gap-1.5">
                             <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.746 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
                             <span class="tnum">{{ $agent->knowledge_sources_count }}</span>
-                            <span class="sr-only">{{ __('agents.index.stat_knowledge') }}</span>
+                            <span>{{ __('agents.index.stat_knowledge') }}</span>
                         </span>
                         <span class="flex items-center gap-1.5">
                             <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
                             <span class="tnum">{{ $agent->channels_count }}</span>
-                            <span class="sr-only">{{ __('agents.index.stat_channels') }}</span>
+                            <span>{{ __('agents.index.stat_channels') }}</span>
                         </span>
                         <span class="flex items-center gap-1.5">
                             <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8-1.06 0-2.08-.16-3.02-.46L3 21l1.5-4.5C3.55 15.1 3 13.6 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
                             <span class="tnum">{{ $agent->conversations_count }}</span>
-                            <span class="sr-only">{{ __('agents.index.stat_conversations') }}</span>
+                            <span>{{ __('agents.index.stat_conversations') }}</span>
                         </span>
                     </div>
                 </a>

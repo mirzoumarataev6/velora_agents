@@ -172,18 +172,16 @@ class DashboardWidgetsTest extends TestCase
     // The funnel's clarity problem
     // -----------------------------------------------------------------
 
-    public function test_the_funnel_explains_what_it_shows_and_what_each_stage_means(): void
+    public function test_the_advanced_analytics_roll_is_removed_from_the_dashboard(): void
     {
         $this->conversationWith();
 
-        $page = $this->page();
-
-        $page->assertSee(__('dashboard.funnel.description'), false);
-
-        // Every stage is defined, not only the last one.
-        $page->assertSee(__('dashboard.funnel.conversations_hint'), false);
-        $page->assertSee(__('dashboard.funnel.leads_hint'), false);
-        $page->assertSee(__('dashboard.funnel.confirmed_hint'), false);
+        $this->page()
+            ->assertSee(__('dashboard.funnel.description'), false)
+            ->assertSee(__('dashboard.funnel.conversations_hint'), false)
+            ->assertSee(__('dashboard.funnel.leads_hint'), false)
+            ->assertSee(__('dashboard.funnel.confirmed_hint'), false)
+            ->assertDontSee('analytics-more-toggle', false);
     }
 
     /** Neutral, analytical framing — a conversion rate, not a loss to act on. */
@@ -424,9 +422,6 @@ class DashboardWidgetsTest extends TestCase
         $this->conversationWith(1, ['total_ms' => 900], $today->subDays(2));
 
         $html = $this->page()->getContent();
-
-        // Constrained the same way every other chart here is: an explicit rem
-        // height on the drawing area.
         $this->assertStringContainsString('style="height: 7rem"', $html);
         $this->assertStringNotContainsString('style="min-height: 7rem"', $html);
     }
@@ -443,9 +438,7 @@ class DashboardWidgetsTest extends TestCase
         $this->conversationWith(1, ['total_ms' => 900], $today->subDays(2));
 
         $html = $this->page()->getContent();
-
         $this->assertMatchesRegularExpression('/rounded-full bg-brand"\s+style="left: [\d.]+%; top: [\d.]+%"/', $html);
-        // The old distorted dot, by its distinctive radius.
         $this->assertStringNotContainsString('r="3.5"', $html);
     }
 
@@ -456,17 +449,13 @@ class DashboardWidgetsTest extends TestCase
         $this->conversationWith(1, ['total_ms' => 400], $today);
 
         $html = $this->page()->getContent();
-
-        // The dot is there; the line and its fill are correctly absent.
         $this->assertMatchesRegularExpression('/rounded-full bg-brand"\s+style="left:/', $html);
         $this->assertStringNotContainsString('<polyline', $html);
-
-        // And the labels either side of the range survive.
         $this->assertStringContainsString(CarbonImmutable::now()->subDays(6)->format('d.m'), $html);
         $this->assertStringContainsString($today->format('d.m'), $html);
     }
 
-    public function test_the_response_trend_says_so_when_nothing_has_been_measured(): void
+    public function test_the_response_metrics_say_when_nothing_has_been_measured(): void
     {
         $this->conversationWith(1);
 
@@ -515,6 +504,7 @@ class DashboardWidgetsTest extends TestCase
 
         $this->assertSame(0, $this->metrics()['leads_by_status']['total']);
         $this->page()->assertSee(__('dashboard.leads_status.empty'), false);
+        $this->assertSame(0, $this->metrics()['leads_by_status']['total']);
     }
 
     // -----------------------------------------------------------------
@@ -543,7 +533,6 @@ class DashboardWidgetsTest extends TestCase
         $this->assertSame('Второй', $comparison[0]['name']);
         $this->assertSame(5, $comparison[0]['messages']);
         $this->assertSame(2, $comparison[1]['messages']);
-
         $this->page()->assertSee(__('dashboard.agents_compare.title'), false);
     }
 
@@ -563,7 +552,6 @@ class DashboardWidgetsTest extends TestCase
 
         $this->assertSame(71.4, $comparison['Второй']['share']);
         $this->assertSame(28.6, $comparison['Первый']['share']);
-
         $this->page()->assertSee(__('dashboard.agents_compare.share', ['percent' => 71.4]), false);
     }
 

@@ -1,6 +1,12 @@
 <?php
 
 return [
+    'journey' => [
+        'eyebrow' => 'from signal to result',
+        'signal' => 'A customer reaches out',
+        'dialogue' => 'The agent starts a conversation',
+        'result' => 'Your team sees the outcome',
+    ],
     'login' => [
         'title' => 'Log in',
         'subtitle' => 'Good to see you again. Log in to keep working with your agents.',
@@ -21,7 +27,7 @@ return [
     ],
     'register' => [
         'title' => 'Sign up',
-        'subtitle' => 'Create an account and launch your first agent in 5 minutes.',
+        'subtitle' => 'Create an account, configure your agent, and test its replies before launch.',
         'google_cta' => 'Continue with Google',
         'divider' => 'Or with email',
         'name_label' => 'Name',

@@ -31,10 +31,19 @@ class QueueHealthCommand extends Command
         }
 
         $this->newLine();
-        $this->components->twoColumnDetail('<fg=gray>Worker</>', $this->workerLine($report));
+
+        foreach ($report['workers'] as $pool => $worker) {
+            $this->components->twoColumnDetail("<fg=gray>Worker: {$pool}</>", $this->workerLine($worker));
+        }
+
         $this->components->twoColumnDetail('<fg=gray>Pending jobs</>', (string) $report['queue']['pending']);
         $this->components->twoColumnDetail('<fg=gray>Reserved (in flight)</>', (string) $report['queue']['reserved']);
         $this->components->twoColumnDetail('<fg=gray>Failed (all time)</>', (string) $report['queue']['failed']);
+
+        foreach ($report['queue']['by_queue'] as $queue => $pending) {
+            $this->components->twoColumnDetail("<fg=gray>  pending on {$queue}</>", (string) $pending);
+        }
+
         $this->components->twoColumnDetail('<fg=gray>Knowledge in progress</>', (string) $report['knowledge']['in_progress']);
         $this->components->twoColumnDetail('<fg=gray>Knowledge stuck</>', (string) $report['knowledge']['stuck']);
         $this->newLine();
@@ -60,16 +69,33 @@ class QueueHealthCommand extends Command
      */
     protected function report(WorkerHeartbeat $heartbeat): array
     {
-        $beat = $heartbeat->read();
-        $stall = $heartbeat->stallReason();
         $problems = [];
+        $workers = [];
 
-        if ($beat === null) {
-            $problems[] = 'No worker has checked in — nothing is processing the queue.';
-        } elseif ($stall !== null) {
-            $problems[] = 'Worker stalled: '.$stall;
-        } elseif (! $heartbeat->running()) {
-            $problems[] = 'The worker heartbeat is stale — the worker is not running.';
+        // Every pool is reported, and every pool's absence is its own problem: an
+        // alive `default` worker says nothing about whether BI imports are being
+        // picked up, and a health check that averaged the two would hide exactly
+        // the outage it exists to catch.
+        foreach (WorkerHeartbeat::pools() as $pool) {
+            $poolBeat = WorkerHeartbeat::for($pool);
+            $beat = $poolBeat->read();
+            $stall = $poolBeat->stallReason();
+
+            if ($beat === null) {
+                $problems[] = "No [{$pool}] worker has checked in — nothing is processing that queue.";
+            } elseif ($stall !== null) {
+                $problems[] = "Worker [{$pool}] stalled: ".$stall;
+            } elseif (! $poolBeat->running()) {
+                $problems[] = "The [{$pool}] worker heartbeat is stale — that worker is not running.";
+            }
+
+            $workers[$pool] = [
+                'state' => $beat['state'] ?? null,
+                'pid' => $beat['pid'] ?? null,
+                'job' => $beat['job'] ?? null,
+                'seconds_since_heartbeat' => $beat === null ? null : $poolBeat->secondsSince($beat['at'] ?? null),
+                'stall_reason' => $stall,
+            ];
         }
 
         $stuckKnowledge = $this->stuckKnowledgeCount();
@@ -81,17 +107,19 @@ class QueueHealthCommand extends Command
         return [
             'healthy' => $problems === [],
             'problems' => $problems,
-            'worker' => [
-                'state' => $beat['state'] ?? null,
-                'pid' => $beat['pid'] ?? null,
-                'job' => $beat['job'] ?? null,
-                'seconds_since_heartbeat' => $beat === null ? null : $heartbeat->secondsSince($beat['at'] ?? null),
-                'stall_reason' => $stall,
-            ],
+            'workers' => $workers,
             'queue' => [
                 'pending' => DB::table('jobs')->whereNull('reserved_at')->count(),
                 'reserved' => DB::table('jobs')->whereNotNull('reserved_at')->count(),
                 'failed' => DB::table('failed_jobs')->count(),
+                // Per queue, because "12 pending" tells an operator nothing about
+                // WHICH pool is behind.
+                'by_queue' => DB::table('jobs')
+                    ->whereNull('reserved_at')
+                    ->selectRaw('queue, count(*) as aggregate')
+                    ->groupBy('queue')
+                    ->pluck('aggregate', 'queue')
+                    ->all(),
             ],
             'knowledge' => [
                 'in_progress' => KnowledgeSource::whereIn('status', ['pending', 'processing'])->count(),
@@ -113,10 +141,11 @@ class QueueHealthCommand extends Command
             ->count();
     }
 
-    protected function workerLine(array $report): string
+    /**
+     * @param  array<string, mixed>  $worker  One pool's heartbeat summary.
+     */
+    protected function workerLine(array $worker): string
     {
-        $worker = $report['worker'];
-
         if ($worker['state'] === null) {
             return '<fg=red>absent</>';
         }

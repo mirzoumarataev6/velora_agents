@@ -61,6 +61,7 @@ class DatasetImporter
                 'description' => $description,
                 'sku' => $sku,
                 'url' => isset($mapping['url']) ? $this->values->url($row[$mapping['url']] ?? null) : null,
+                'image_url' => isset($mapping['image_url']) ? $this->values->url($row[$mapping['image_url']] ?? null) : null,
                 'search_text' => DatasetProduct::searchText($name, $description, $sku, $category, $extra),
                 'category_key' => DatasetProduct::categoryKey($category),
                 'extra' => $extra === [] ? null : json_encode($extra, JSON_UNESCAPED_UNICODE),

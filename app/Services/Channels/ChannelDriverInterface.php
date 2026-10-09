@@ -23,6 +23,9 @@ interface ChannelDriverInterface
     // Отправляет текстовое сообщение пользователю канала
     public function sendMessage(Channel $channel, string $externalUserId, string $text): void;
 
+    // Sends a single externally fetchable image with an optional short caption.
+    public function sendImage(Channel $channel, string $externalUserId, string $url, string $caption = ''): void;
+
     // Сообщает, поддерживает ли канал обратную связь по сообщениям (реакции)
     public function supportsMessageFeedback(): bool;
 

@@ -73,14 +73,14 @@
 @endphp
 
 <div class="card card-lift reveal is-visible mt-4 {{ $toneClasses['wash'] }}">
-    <div class="flex flex-wrap items-center gap-x-8 gap-y-4 p-5">
-        <span class="icon-circle {{ $toneClasses['circle'] }} shrink-0" aria-hidden="true">
+    <div class="flex flex-col items-stretch gap-4 p-5 sm:flex-row sm:items-center sm:gap-6">
+        <span class="icon-circle {{ $toneClasses['circle'] }} hidden shrink-0 sm:flex" aria-hidden="true">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">
                 <path stroke-linecap="round" stroke-linejoin="round" d="{{ $toneIcon }}" />
             </svg>
         </span>
 
-        <div class="min-w-0 flex-1">
+        <div class="min-w-0 w-full flex-1">
             <div class="flex items-center gap-2">
                 {{-- The one animated mark on the page allowed to loop, and only
                      when something is actually waiting: a pulse on "all clear"
@@ -104,7 +104,7 @@
                      right job: a closing remark on a good week, rather than a
                      hero card of its own. --}}
                 @if ($afterHours['messages'] > 0 && $afterHours['share'] !== null)
-                    <p class="mt-2 text-xs text-faint dark:text-night-muted">
+                    <p class="mt-2 text-xs text-muted dark:text-night-muted">
                         {{ __('dashboard.highlight.after_hours', [
                             'count' => $afterHours['messages'],
                             'percent' => $afterHours['share'],
@@ -120,7 +120,7 @@
         </div>
 
         @if ($copy !== null && $highlight['route'])
-            <a href="{{ route($highlight['route']) }}" class="btn btn-primary gap-2">
+            <a href="{{ route($highlight['route']) }}" class="btn btn-primary w-full gap-2 sm:w-auto">
                 {{ $copy['action'] }}
                 <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M5 12h14m-6-6 6 6-6 6"/></svg>
             </a>

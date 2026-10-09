@@ -49,7 +49,7 @@ class RelationResolver
      * first: the OpenCart shape (price here, name next door) is the case that
      * makes joining worth building at all.
      */
-    protected const JOINABLE_FIELDS = ['name', 'category', 'stock', 'price', 'description', 'sku', 'url'];
+    protected const JOINABLE_FIELDS = ['name', 'category', 'stock', 'price', 'description', 'sku', 'url', 'image_url'];
 
     /**
      * Fields an aggregated join may supply, and the function it folds them with.

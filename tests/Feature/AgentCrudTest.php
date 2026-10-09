@@ -53,10 +53,21 @@ class AgentCrudTest extends TestCase
         $this->assertSame([
             'on_not_found' => 'suggest_alternatives',
             'escalation' => config('agent.escalation.default_sensitivity'),
+            'internet_image_search' => false,
         ], $agent->behavior);
         $this->assertSame('Always ask for size.', $agent->custom_system_prompt);
         // The new step-2 field persists alongside the persona, not instead of it.
         $this->assertSame('Если клиент спрашивает про доставку — уточни город.', $agent->rules_instructions);
+    }
+
+    public function test_internet_image_search_requires_and_persists_the_explicit_owner_opt_in(): void
+    {
+        $user = User::factory()->create();
+        $payload = $this->validWizardPayload(['internet_image_search' => '1']);
+
+        $this->actingAs($user)->post(route('agents.store'), $payload)->assertRedirect();
+
+        $this->assertTrue(Agent::where('user_id', $user->id)->firstOrFail()->behavior['internet_image_search']);
     }
 
     /**
@@ -222,8 +233,8 @@ class AgentCrudTest extends TestCase
         // before any panel and the ordering check would pass or fail for
         // reasons that have nothing to do with where the field lives.
         $html = $response->getContent();
-        $step2Start = strpos($html, 'x-show="step === 2"');
-        $step3Start = strpos($html, 'x-show="step === 3"');
+        $step2Start = strpos($html, '<div x-show="step === 2" x-cloak x-transition.opacity.duration.200ms class="card');
+        $step3Start = strpos($html, '<div x-show="step === 3" x-cloak x-transition.opacity.duration.200ms class="card');
         $fieldPos = strpos($html, 'id="custom_system_prompt"');
 
         $this->assertNotFalse($step2Start);

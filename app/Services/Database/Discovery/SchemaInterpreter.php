@@ -43,7 +43,7 @@ class SchemaInterpreter
         Answer with JSON only, in exactly this shape:
         {"table": "<one of the given table names>",
          "mapping": {"name": "<column>", "price": "<column>", "stock": "<column>",
-                     "category": "<column>", "description": "<column>", "sku": "<column>", "url": "<column>"}}
+                     "category": "<column>", "description": "<column>", "sku": "<column>", "url": "<column>", "image_url": "<column>"}}
 
         Rules:
         - "table" MUST be one of the table names given to you. Do not invent one.

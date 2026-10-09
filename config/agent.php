@@ -436,4 +436,136 @@ return [
         ],
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Data to Dashboard (self-service BI)
+    |--------------------------------------------------------------------------
+    |
+    | The BI module ingests a file (or reads a live connection) and answers
+    | aggregate questions about it. Everything here is a budget rather than a
+    | feature toggle: each number is a ceiling that exists so one owner's 400MB
+    | export cannot take the worker, the disk or the database down with it.
+    |
+    | Two of them are load-bearing for safety rather than capacity:
+    |
+    |  - `query.max_rows` and `query.timeout_seconds` are what stop a compiled
+    |    SELECT from being a denial of service against our own database.
+    |  - `ingest.max_columns` bounds the width of a CREATE TABLE we issue at
+    |    runtime, which is the only DDL this product ever emits.
+    |
+    */
+    'bi' => [
+
+        'ingest' => [
+            // 100MB. Streaming readers mean the ceiling is disk and queue time
+            // rather than memory — except for .xls, capped separately below,
+            // which cannot be streamed at all.
+            'max_file_size_kb' => env('BI_MAX_FILE_SIZE_KB', 100 * 1024),
+
+            // Legacy BIFF (.xls) has no streaming reader in any PHP library:
+            // PhpSpreadsheet must build the whole workbook in memory. A low cap
+            // and an honest error beats an out-of-memory fatal on the worker.
+            'max_legacy_xls_size_kb' => env('BI_MAX_LEGACY_XLS_SIZE_KB', 15 * 1024),
+
+            'allowed_extensions' => ['csv', 'tsv', 'txt', 'xlsx', 'xls', 'ods', 'json', 'ndjson', 'jsonl'],
+
+            // Rows materialized per dataset. A longer file is loaded up to the
+            // cap and the owner is told it was truncated — the same bargain the
+            // product catalog already strikes, for the same reason.
+            'max_rows' => env('BI_MAX_ROWS', 2000000),
+
+            // Columns per dataset. This is the width of a runtime CREATE TABLE,
+            // so it is a hard refusal rather than a truncation: a 400-column
+            // file is an export nobody meant to analyze, and silently dropping
+            // the tail would hide whichever column mattered.
+            'max_columns' => env('BI_MAX_COLUMNS', 150),
+
+            // Sheets read from one workbook. Each becomes its own dataset.
+            'max_sheets' => env('BI_MAX_SHEETS', 25),
+
+            // Datasets one owner may hold. Each is a physical table, so this is
+            // also the ceiling on tables one account can make us create.
+            'max_datasets_per_owner' => env('BI_MAX_DATASETS_PER_OWNER', 25),
+
+            // Rows read before types are decided. Inference is a sampled pass,
+            // not a whole-file one: a 2M-row file would otherwise be read twice.
+            // Generous enough that a column which is empty for its first few
+            // hundred rows still gets classified from real values.
+            'inference_rows' => env('BI_INFERENCE_ROWS', 5000),
+
+            // Share of non-blank values that must parse as a type before the
+            // column is given it. Below this the column becomes text, which
+            // loses nothing — a mixed column is stored verbatim rather than
+            // having its minority values thrown away.
+            'inference_threshold' => env('BI_INFERENCE_THRESHOLD', 0.95),
+
+            // Distinct values tracked per column during inference. The count is
+            // what decides whether a column is a dimension worth indexing; the
+            // exact number above this cap is not interesting, only that it is
+            // "many", so the set stops growing here.
+            'max_distinct_tracked' => env('BI_MAX_DISTINCT_TRACKED', 1001),
+
+            // A text column is a dimension (groupable, indexed) only below this
+            // many distinct values. Above it the column is free text — indexing
+            // it would cost inserts and serve no GROUP BY anyone would write.
+            'dimension_distinct_limit' => env('BI_DIMENSION_DISTINCT_LIMIT', 1000),
+
+            // Longest text value stored in an indexable VARCHAR column. Longer
+            // and the column is materialized as TEXT and never indexed, rather
+            // than being truncated: losing the tail of a description is worse
+            // than losing the ability to group by it.
+            'indexable_text_length' => 512,
+
+            // Indexes one materialized table may carry. A 150-column file can
+            // easily have 100 columns that each look worth indexing, and 100
+            // indexes would make the insert pass several times slower to serve
+            // queries nobody writes. Time columns claim this budget first, then
+            // the lowest-cardinality dimensions — see SchemaInferrer.
+            'max_indexes' => env('BI_MAX_INDEXES', 24),
+
+            // Rows per NDJSON shard, and rows per INSERT statement. The shard
+            // size bounds how much work is lost if materialization is retried;
+            // the insert size is the usual throughput-versus-packet-size trade.
+            'shard_rows' => env('BI_SHARD_ROWS', 50000),
+            'insert_chunk' => env('BI_INSERT_CHUNK', 1000),
+
+            // Uploads per account per minute. Each one stages up to 100MB and
+            // queues minutes of worker time, so this is deliberately low.
+            'upload_rate_limit' => env('BI_UPLOAD_RATE_LIMIT', 6),
+
+            // Rows kept per column as a preview, so the schema editor can show
+            // the owner what they are re-typing.
+            'sample_values' => 5,
+        ],
+
+        'query' => [
+            // Hard ceiling on rows a compiled SELECT may return, whatever the
+            // spec asked for. A chart with 5000 points is already unreadable;
+            // this exists to bound memory, not to serve a design.
+            'max_rows' => env('BI_QUERY_MAX_ROWS', 5000),
+
+            // Server-side statement timeout for our OWN analytical queries.
+            'timeout_seconds' => env('BI_QUERY_TIMEOUT', 30),
+
+            // How long a widget result is reused. A file dataset is immutable
+            // until it is re-imported, and the cache key carries the dataset
+            // version, so this can be long and needs no invalidation. A live
+            // connection gets the short TTL below instead.
+            'cache_ttl_seconds' => env('BI_QUERY_CACHE_TTL', 3600),
+            'live_cache_ttl_seconds' => env('BI_LIVE_CACHE_TTL', 60),
+
+            // Dimensions plus measures in a single spec. Not a safety limit —
+            // every field is already validated against `bi_columns` — but a
+            // bound on the shape of the GROUP BY: each added dimension
+            // multiplies the number of buckets, and a chart grouped by six
+            // things is a spreadsheet nobody can read drawn slowly.
+            'max_fields' => env('BI_QUERY_MAX_FIELDS', 24),
+
+            // Board-layout writes per minute per account. Generous: the write
+            // is a few small UPDATEs and the limiter exists to bound a runaway
+            // client, not to ration a drag. See AppServiceProvider.
+            'layout_rate_limit' => env('BI_LAYOUT_RATE_LIMIT', 60),
+        ],
+    ],
+
 ];

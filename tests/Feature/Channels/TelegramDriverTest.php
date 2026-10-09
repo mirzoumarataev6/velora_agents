@@ -7,6 +7,7 @@ use App\Services\Channels\TelegramDriver;
 use App\Services\Llm\LlmProviderInterface;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
+use RuntimeException;
 use Tests\TestCase;
 
 class TelegramDriverTest extends TestCase
@@ -70,6 +71,31 @@ class TelegramDriverTest extends TestCase
         app(TelegramDriver::class)->sendMessage($channel, '555', 'Short reply.');
 
         Http::assertSentCount(1);
+    }
+
+    public function test_a_second_business_level_rejection_is_reported_as_a_send_failure(): void
+    {
+        Http::fake(['api.telegram.org/*' => Http::response([
+            'ok' => false,
+            'description' => 'bot was blocked by the user',
+        ], 200)]);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Telegram rejected [sendMessage]');
+
+        app(TelegramDriver::class)->sendMessage(Channel::factory()->create(), '555', 'Short reply.');
+    }
+
+    public function test_send_image_uses_the_bot_photo_endpoint_and_caps_caption(): void
+    {
+        Http::fake(['api.telegram.org/*' => Http::response(['ok' => true, 'result' => ['message_id' => 5]], 200)]);
+        $channel = Channel::factory()->create();
+
+        app(TelegramDriver::class)->sendImage($channel, '555', 'https://images.example.test/item.jpg', str_repeat('x', 1200));
+
+        Http::assertSent(fn ($request) => str_contains($request->url(), '/sendPhoto')
+            && $request['photo'] === 'https://images.example.test/item.jpg'
+            && mb_strlen($request['caption']) <= 900);
     }
 
     public function test_confidently_identified_photo_is_parsed_as_photo_type(): void

@@ -77,6 +77,15 @@ class LandingContentTest extends TestCase
         }
     }
 
+    public function test_language_stat_matches_the_locales_the_product_serves(): void
+    {
+        foreach (SetLocale::SUPPORTED_LOCALES as $locale) {
+            $stat = trans('landing.stats.items', [], $locale)[2];
+
+            $this->assertSame((string) count(SetLocale::SUPPORTED_LOCALES), $stat['value']);
+        }
+    }
+
     public function test_html_is_compressed_when_the_client_accepts_gzip(): void
     {
         $plain = $this->get('/ru')->assertOk();

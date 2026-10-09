@@ -88,6 +88,9 @@ return [
         'decline' => 'Decline',
         'approved' => 'Price approved — the customer has been told.',
         'declined' => 'The decline has been sent to the customer.',
+        'approve_confirm' => 'Approve the price :price and reply to the customer?',
+        'decline_counter_confirm' => 'Decline the requested price and offer the customer :price instead?',
+        'invalid_price' => 'Enter a positive price or leave the field empty.',
         'decline_confirm' => 'Decline this price? The customer gets a polite refusal. To offer a price of your own, type it in the box next to the buttons.',
     ],
 

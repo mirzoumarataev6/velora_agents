@@ -264,13 +264,13 @@ class AgentWizardStepsTest extends TestCase
         $this->assertStringNotContainsString('personality and style', $prompt);
     }
 
-    /** The markup of the step-2 panel, from its heading to the step-3 panel. */
+    /** The markup of the step-2 panel, excluding mobile stepper hints above it. */
     protected function stepTwoMarkup(string $content): string
     {
-        $start = strpos($content, 'x-show="step === 2"');
+        $start = strpos($content, '<div x-show="step === 2" x-cloak x-transition.opacity.duration.200ms class="card');
         $this->assertNotFalse($start, 'Step 2 is missing from the wizard.');
 
-        $end = strpos($content, 'x-show="step === 3"', $start);
+        $end = strpos($content, '<div x-show="step === 3" x-cloak x-transition.opacity.duration.200ms class="card', $start);
         $this->assertNotFalse($end, 'Step 3 should follow step 2.');
 
         return substr($content, $start, $end - $start);

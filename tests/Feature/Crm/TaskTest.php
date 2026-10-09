@@ -25,6 +25,20 @@ class TaskTest extends TestCase
             ->assertDontSee('Чужая задача');
     }
 
+    public function test_task_page_exposes_the_priority_color_preview_and_animated_completion_state(): void
+    {
+        $owner = User::factory()->create();
+
+        $this->actingAs($owner)->get(route('crm.tasks.index'))
+            ->assertOk()
+            ->assertSee("priorityOptionClass('urgent')", false)
+            ->assertSee('crm-task-title-text--done', false)
+            ->assertSee('crm-task-title-text', false)
+            ->assertSee(':aria-busy="task.busy === true"', false)
+            ->assertDontSee(':disabled="task.busy', false)
+            ->assertSee(__('crm.tasks.priorities.urgent'));
+    }
+
     public function test_the_filters_slice_the_list(): void
     {
         $owner = User::factory()->create();
@@ -46,6 +60,10 @@ class TaskTest extends TestCase
     /** Overdue work is still today's work, so "due today" includes it. */
     public function test_due_today_includes_what_is_already_late(): void
     {
+        // Freeze in the middle of the day. This assertion is about the query's
+        // day boundary, not which side of midnight the suite happens to run on.
+        $this->travelTo(now()->startOfDay()->addHours(12));
+
         $owner = User::factory()->create();
         Task::factory()->for($owner)->overdue()->create();
         Task::factory()->for($owner)->dueToday()->create();
@@ -82,6 +100,73 @@ class TaskTest extends TestCase
         $this->assertSame($customer->id, $task->customer_id);
         $this->assertSame($deal->id, $task->deal_id);
         $this->assertSame($owner->id, $task->user_id);
+    }
+
+    public function test_tasks_persist_priority_and_type_and_support_json_create_and_toggle(): void
+    {
+        $owner = User::factory()->create();
+
+        $created = $this->actingAs($owner)->postJson(route('crm.tasks.store'), [
+            'title' => 'Подтвердить доставку', 'priority' => 'urgent', 'type' => 'call',
+        ])->assertCreated()
+            ->assertJsonPath('task.priority', 'urgent')
+            ->assertJsonPath('task.type', 'call');
+
+        $task = Task::sole();
+        $this->assertSame('urgent', $task->priority);
+        $this->assertSame('call', $task->type);
+
+        $this->patchJson(route('crm.tasks.update', $task), ['done' => true])
+            ->assertOk()->assertJsonPath('done', true);
+        $this->assertNotNull($task->fresh()->done_at);
+    }
+
+    public function test_task_can_create_a_customer_inline_and_link_it_atomically(): void
+    {
+        $owner = User::factory()->create();
+
+        $response = $this->actingAs($owner)->postJson(route('crm.tasks.store'), [
+            'title' => 'Уточнить размер заказа',
+            'priority' => 'urgent',
+            'type' => 'call',
+            'new_customer_name' => 'Шахноза Каримова',
+        ])->assertCreated()
+            ->assertJsonPath('task.customer_name', 'Шахноза Каримова');
+
+        $customer = Customer::sole();
+        $task = Task::sole();
+
+        $this->assertSame($owner->id, $customer->user_id);
+        $this->assertSame($customer->id, $task->customer_id);
+        $this->assertSame($owner->id, $task->user_id);
+    }
+
+    public function test_task_customer_picker_uses_search_instead_of_rendering_the_whole_customer_book(): void
+    {
+        $owner = User::factory()->create();
+        Customer::factory()->for($owner)->create(['name' => 'Клиент из подсказки']);
+
+        $this->actingAs($owner)->get(route('crm.tasks.index'))
+            ->assertOk()
+            ->assertSee(route('crm.customers.search'), false)
+            ->assertSee('searchCustomers()', false)
+            ->assertSee('chooseNewCustomer()', false)
+            ->assertDontSee('id="task-customer"', false)
+            ->assertSee('role="radiogroup"', false)
+            ->assertSee('priorityDotClass(task.priority)', false)
+            ->assertSee('bg-red-50', false);
+    }
+
+    public function test_task_customer_suggestions_remain_owner_scoped(): void
+    {
+        $owner = User::factory()->create();
+        Customer::factory()->for($owner)->create(['name' => 'Мой Бобур']);
+        Customer::factory()->create(['name' => 'Чужой Бобур']);
+
+        $this->actingAs($owner)->getJson(route('crm.customers.search', ['q' => 'Бобур']))
+            ->assertOk()
+            ->assertJsonCount(1, 'customers')
+            ->assertJsonPath('customers.0.name', 'Мой Бобур');
     }
 
     /** A task with neither is still a task. */

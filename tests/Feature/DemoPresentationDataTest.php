@@ -55,7 +55,10 @@ class DemoPresentationDataTest extends TestCase
             'title' => 'Изменено владельцем',
         ]);
         $this->assertDatabaseMissing('deals', ['id' => $legacy->id]);
-        $this->assertSame(3, Deal::where('user_id', $owner->id)->where('stage', 'payment')->count());
+        // The deliberately owner-edited demo deal is retained even if it is
+        // already paid; count the three reproducible presentation sales apart
+        // from that retained owner work.
+        $this->assertSame(3, Deal::where('user_id', $owner->id)->where('stage', 'payment')->whereKeyNot($edited->id)->count());
         $this->assertSame(0, $anotherOwnersShop->conversations()->count());
     }
 }

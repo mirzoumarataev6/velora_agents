@@ -25,6 +25,8 @@ final class RetrievedChunk
         return [
             'id' => $this->chunk->id,
             'source_name' => $this->chunk->knowledgeSource?->name,
+            'source_id' => $this->chunk->knowledge_source_id,
+            'source_mime_type' => $this->chunk->knowledgeSource?->mime_type,
             'content' => $this->chunk->content,
             'score' => round($this->score, 4),
             'confident' => $this->confident,

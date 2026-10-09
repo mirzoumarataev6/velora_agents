@@ -209,6 +209,7 @@ class AgentReplyService
         $escalation = null;
         $productSearches = 0;
         $productQueries = [];
+        $productImageCandidates = [];
         $productMisses = 0;
         $retrievalSkipped = false;
         $handover = null;
@@ -339,6 +340,7 @@ class AgentReplyService
                 $carried = $resolved['carried'];
                 $productSearches = $resolved['searches'];
                 $productQueries = $resolved['queries'];
+                $productImageCandidates = $resolved['images'];
                 $productMisses = $resolved['misses'];
                 // Replaced, not appended: $resolved carries forward the non-search
                 // calls from every superseded generation (the first one included),
@@ -486,6 +488,7 @@ class AgentReplyService
             if ($haggleLeads === []) {
                 $replyText = $this->honourAnyOrderClaim($agent, $conversation, $replyText, $capturedLeads);
             }
+            $replyText = $this->removeFalsePhotoRefusal($replyText, $userMsg->content);
             $replyText = $this->rejectEmptyReply($agent, $conversation, $replyText);
 
             // Superseded generations (a turn the model spent calling
@@ -579,6 +582,7 @@ class AgentReplyService
                 // What the catalog was asked for, so the owner's dashboard can
                 // show demand rather than only sales.
                 'product_queries' => $productQueries,
+                'product_image_candidates' => array_slice($productImageCandidates, 0, 10),
                 // Whether this turn ended without an answer, and why. Recorded
                 // here because nothing else in the schema survives it: a
                 // question the agent could not answer produces no lead, no
@@ -801,6 +805,7 @@ class AgentReplyService
         // ten times and never stocked leaves no lead, no order and no trace
         // anywhere else in the schema.
         $queries = [];
+        $images = [];
         $misses = 0;
 
         for ($round = 0; $round < self::MAX_PRODUCT_SEARCH_ROUNDS; $round++) {
@@ -816,6 +821,11 @@ class AgentReplyService
             foreach ($calls as $call) {
                 $arguments = $call['arguments'] ?? [];
                 $found = $this->productSearch->search($agent, $arguments);
+                foreach ([...($found['products'] ?? []), ...($found['nearest'] ?? [])] as $product) {
+                    if (! empty($product['image_url'])) {
+                        $images[] = ['url' => $product['image_url'], 'name' => $product['name'] ?? ''];
+                    }
+                }
                 $searches++;
 
                 $queries[] = [
@@ -877,22 +887,39 @@ class AgentReplyService
             'tool_calls' => $seenToolCalls,
             'searches' => $searches,
             'queries' => $queries,
+            'images' => array_slice(array_values(array_unique($images, SORT_REGULAR)), 0, 10),
             'misses' => $misses,
         ];
+    }
+
+    /**
+     * The channel job handles photo delivery separately. A model can still
+     * volunteer a false refusal in an ordinary catalog answer despite the
+     * prompt; remove that claim without discarding the factual product list.
+     */
+    protected function removeFalsePhotoRefusal(string $replyText, string $customerText): string
+    {
+        if (preg_match('/(?:к сожалению,?\s*)?я не могу (?:отправить|прислать|показать)[^\n]*(?:фото|фотограф|картинк|изображен)/iu', $replyText) !== 1) {
+            return $replyText;
+        }
+
+        // A stock-list answer can volunteer this false refusal even without
+        // the word "photo" in the customer's turn. Remove only the refusal
+        // and its unsupported website redirect, preserving the product list.
+        $cleaned = preg_replace('/(?:к сожалению,?\s*)?я не могу (?:отправить|прислать|показать)[^.!?\n]*(?:фото|фотограф|картинк|изображен)[^\n]*?(?:[.!?](?=\s|$)|$)/iu', '', $replyText);
+        $cleaned = preg_replace('/(?:однако\s+)?вы можете (?:увидеть|посмотреть)[^\n]*?сайт[^\n]*?(?:[.!?](?=\s|$)|$)/iu', '', $cleaned);
+        $cleaned = trim($this->styleCleaner->clean(trim($cleaned)));
+
+        return $cleaned !== '' ? $cleaned : 'Какую модель хотите посмотреть?';
     }
 
     /**
      * Never send a message that says nothing.
      *
      * A reply of "." or " " is not a short answer, it is a broken one — the
-     * customer reads it as the bot glitching and starts nudging ("Алооо", "."),
-     * which is exactly what a stuck conversation looks like from their side.
-     *
-     * There are real paths to it, all of them narrow: a model that returns
-     * whitespace, a truncation repair that cuts back to a leading full stop, a
-     * markdown strip that removes everything a line contained. Rather than
-     * hunting each one, the last step before persistence refuses anything with
-     * no letters or digits in it.
+     * customer reads it as the bot glitching and starts nudging ("Алооо", ".").
+     * Whitespace from the model, truncation repair and markdown stripping can
+     * all cause it; check once before persistence rather than trusting them.
      */
     protected function rejectEmptyReply(Agent $agent, Conversation $conversation, string $replyText): string
     {
@@ -1996,6 +2023,14 @@ class AgentReplyService
             : 'Do not use emojis.';
 
         $parts[] = $this->answeringPolicyInstruction($searchProducts);
+
+        $parts[] = implode("\n", [
+            'PHOTO REQUESTS:',
+            '- When the customer asks to see a product photo, do not claim that you cannot send photos, that this chat cannot attach them, or redirect them to a website instead.',
+            '- Photo selection and delivery are handled by the chat system. Do not volunteer a photo refusal when listing products or discussing their specifications.',
+            '- Never claim a photo is attached or available unless the catalog or knowledge base actually shows it.',
+            '- Do not describe or invent an image, promise to send one later, or claim that photos are unavailable without evidence.',
+        ]);
 
         $parts[] = $this->consultativeSellingInstruction();
 

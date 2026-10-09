@@ -812,6 +812,19 @@ h2.title {
    8 · Floating product frame
    ═══════════════════════════════════════════════════════════════════════ */
 .stage { perspective: 2000px; margin-top: clamp(3rem, 6vw, 4.5rem); padding-bottom: clamp(4rem, 8vw, 6rem); position: relative; z-index: 2; }
+@media (max-width: 620px) {
+    /* Keep the product preview in the first mobile screen; the benefits rail
+       still reads normally, but no longer spends half a viewport on spacing. */
+    .hero { padding-top: 6.1rem; }
+    .hero-in { gap: .85rem; }
+    .hero-copy > * + * { margin-top: 1rem; }
+    .hero-copy .display { margin-top: 1.1rem; }
+    .hero-actions { margin-top: 1.3rem !important; }
+    .hero-rail ul { display: flex; flex-wrap: wrap; gap: .1rem 1rem; }
+    .hero-rail li { border: 0; padding: .25rem 0; }
+    .stage { margin-top: 1.2rem; }
+    .stage .frame { transform: none; }
+}
 .frame {
     width: var(--shell); margin-inline: auto; border-radius: 20px;
     border: 1px solid var(--line); background: var(--surf);
@@ -1333,7 +1346,7 @@ footer { border-top: 1px solid var(--line); padding: 3rem 0 2.2rem; background: 
                 <span class="glyph"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path data-draw style="--len:40" d="M4 20v-5M12 20V8M20 20v-9"/><circle class="blip" cx="4" cy="11" r="2"/><circle class="blip" cx="12" cy="5" r="2"/><circle class="blip" cx="20" cy="8" r="2"/></svg></span>
                 <h3 data-i18n="landing.why.items.3.title">{{ __('landing.why.items.3.title') }}</h3>
                 <p data-i18n="landing.why.items.3.line">{{ __('landing.why.items.3.line') }}</p>
-                <div class="dial" aria-hidden="true"><b>Off</b><b>Subtle</b><b class="on">Active</b></div>
+                <div class="dial" aria-hidden="true"><b data-i18n="landing.demo.off">{{ __('landing.demo.off') }}</b><b data-i18n="landing.demo.subtle">{{ __('landing.demo.subtle') }}</b><b class="on" data-i18n="landing.demo.active">{{ __('landing.demo.active') }}</b></div>
             </article>
 
             <article class="cell c-mid" data-reveal>

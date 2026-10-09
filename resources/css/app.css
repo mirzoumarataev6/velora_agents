@@ -73,19 +73,15 @@ body {
     overscroll-behavior: none;
 }
 
-/* The same, for every inner scroll panel rather than one file at a time.
-   Tailwind's own overflow-y-auto / overflow-x-auto utilities are the marker
-   for "this element scrolls" everywhere in the product (the sidebar nav, the
-   kanban board's columns and its horizontal strip, the inbox list and
-   transcript, a customer's message timeline, the lead bell, table scrollers,
-   …) so hanging the rule off those two classes catches all of them — present
-   and future — without hunting down and annotating each container by hand.
-   `contain` here, not `none`: an inner panel SHOULD still let its own content
-   refuse to overscroll, it just must not hand the bounce up to the page
-   behind it, which is what chaining un-contained would do. */
-.overflow-y-auto,
-.overflow-x-auto {
+/* Contain scrolling only on the axis that actually has a scroll area. Applying
+   `contain` to overflow-x-auto also blocks vertical wheel chaining over wide
+   tables, even when those wrappers have no vertical scroll range. */
+.overflow-y-auto {
     overscroll-behavior: contain;
+}
+.overflow-x-auto {
+    overscroll-behavior-x: contain;
+    overscroll-behavior-y: auto;
 }
 
 /* The document is the CRM's only vertical scroll region. The list must grow
@@ -137,33 +133,6 @@ body {
 .dark .crm-deals-scroll thead th {
     background: var(--color-night-card);
 }
-
-/* Secondary analytics remain available without competing with the primary
-   numbers and next action on the first screen. */
-.analytics-more-toggle {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1.5rem;
-    padding: 1rem 1.25rem;
-    border: 1px solid var(--color-hairline);
-    border-radius: 1rem;
-    background: var(--color-surface);
-    cursor: pointer;
-    list-style: none;
-    color: var(--color-ink);
-    transition: border-color .18s ease, background-color .18s ease;
-}
-.analytics-more-toggle::-webkit-details-marker { display: none; }
-.analytics-more-toggle:hover { border-color: var(--color-brand-light); background: var(--color-azure-50); }
-.analytics-more-toggle:focus-visible { outline: 3px solid var(--color-brand-light); outline-offset: 3px; }
-.analytics-more-toggle strong { display: block; font-size: 1rem; font-weight: 600; }
-.analytics-more-description { display: block; margin-top: .2rem; font-size: .875rem; color: var(--color-muted); }
-.analytics-more-toggle svg { width: 1.25rem; height: 1.25rem; flex: none; color: var(--color-brand); transition: transform .18s ease; }
-.analytics-more[open] .analytics-more-toggle svg { transform: rotate(180deg); }
-.dark .analytics-more-toggle { border-color: var(--color-night-raised); background: var(--color-night-card); color: var(--color-night-ink); }
-.dark .analytics-more-toggle:hover { border-color: var(--color-brand-light); background: var(--color-night-raised); }
-.dark .analytics-more-description { color: var(--color-night-muted); }
 
 body {
     font-family: theme(--font-sans);
@@ -900,6 +869,90 @@ html.dark {
         box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06);
     }
 
+    /* A first-use BI moment may carry a trace of the landing's signal motif.
+       Keep it rare: repeating the glow on every work card would flatten the
+       very hierarchy this panel is meant to establish. No fictional data is
+       drawn here — the nodes describe the journey, not a fake chart. */
+    .bi-start-hero {
+        position: relative;
+        background:
+            radial-gradient(circle at 84% 28%, color-mix(in srgb, var(--color-brand-circle) 80%, transparent), transparent 34%),
+            var(--color-surface);
+    }
+    .dark .bi-start-hero {
+        background:
+            radial-gradient(circle at 84% 28%, color-mix(in srgb, var(--color-brand) 17%, transparent), transparent 38%),
+            var(--color-night-card);
+    }
+    .bi-start-trace {
+        position: absolute;
+        right: 3.25rem;
+        top: 50%;
+        display: flex;
+        align-items: center;
+        gap: 1.15rem;
+        transform: translateY(-50%);
+        opacity: 0.72;
+    }
+    .bi-start-trace::before {
+        position: absolute;
+        right: 0;
+        left: 0;
+        top: 50%;
+        height: 2px;
+        background: var(--color-brand);
+        content: '';
+    }
+    .bi-start-trace span {
+        position: relative;
+        width: 1rem;
+        height: 1rem;
+        border: 2px solid var(--color-brand);
+        border-radius: 50%;
+        background: var(--color-surface);
+    }
+    .dark .bi-start-trace span {
+        background: var(--color-night-card);
+    }
+    .bi-start-trace span:last-child {
+        background: var(--color-brand);
+        box-shadow: 0 0 0 6px color-mix(in srgb, var(--color-brand) 12%, transparent);
+    }
+    @media (max-width: 850px) {
+        .bi-start-trace { display: none; }
+    }
+    .agent-launch-card {
+        position: relative;
+        background:
+            radial-gradient(circle at 95% 4%, color-mix(in srgb, var(--color-brand-circle) 86%, transparent), transparent 38%),
+            var(--color-surface);
+    }
+    .dark .agent-launch-card {
+        background:
+            radial-gradient(circle at 95% 4%, color-mix(in srgb, var(--color-brand) 16%, transparent), transparent 42%),
+            var(--color-night-card);
+    }
+
+    /* CRM is a dense work surface, so its cards and controls use a quieter
+       8–12px radius. The product-wide larger radii remain right for marketing
+       and dashboard moments, but they made tables and forms feel inflated. */
+    .crm-page .card {
+        border-radius: var(--radius-md);
+    }
+    .crm-page .field {
+        border-radius: var(--radius-sm);
+    }
+    .crm-page .btn,
+    .crm-page .btn-sm {
+        border-radius: var(--radius-sm);
+    }
+    .crm-page .tabs {
+        border-radius: var(--radius-sm);
+    }
+    .crm-page .tab {
+        border-radius: var(--radius-xs);
+    }
+
     /* The lift. 3px is deliberately small: the card should feel like it
        responded, not like it jumped. */
     .card-lift:hover,
@@ -1468,6 +1521,19 @@ html.dark {
         line-height: 1.35;
         white-space: nowrap;
     }
+    /* A CRM reason is user-entered copy, unlike a fixed status badge. Its
+       second line must wrap inside a two-column phone KPI instead of widening
+       the entire document when the reason is a sentence. */
+    .crm-reason-badge {
+        max-width: 100%;
+        min-width: 0;
+        white-space: normal;
+    }
+    .crm-reason-badge > span:first-child {
+        min-width: 0;
+        overflow-wrap: anywhere;
+        white-space: normal;
+    }
     .badge-brand {
         background-color: var(--color-brand-circle);
         color: var(--color-brand-strong);
@@ -1633,6 +1699,26 @@ html.dark {
     .dark .nav-item[aria-current='page']:hover {
         background-color: color-mix(in srgb, var(--color-azure-900) 80%, var(--color-night-card));
         color: var(--color-brand-light);
+    }
+
+    /* A navigation count answers one narrow question: how much attention is
+       waiting? It is deliberately smaller than a button, because the previous
+       `.btn` treatment made a one-digit counter read as a second primary action
+       and pulled the eye away from the navigation label. */
+    .nav-unread-count {
+        display: inline-flex;
+        min-width: 1.125rem;
+        height: 1.125rem;
+        align-items: center;
+        justify-content: center;
+        border-radius: 999px;
+        padding: 0 0.3125rem;
+        background-color: var(--color-brand-strong);
+        color: var(--color-surface);
+        font-size: 0.625rem;
+        font-weight: 700;
+        line-height: 1;
+        font-variant-numeric: tabular-nums;
     }
 
     /* --- Stat / KPI -------------------------------------------------------
@@ -2069,6 +2155,18 @@ html.dark {
         border-top-color: color-mix(in srgb, var(--color-night-ink) 10%, transparent);
     }
 
+    /* The same hairline, underneath. `.rule` draws on top, which is right for a
+       divider between siblings but wrong for a panel HEADER — there the line
+       belongs to the header, not to whatever follows it, so that a scrolling body
+       underneath slides past a border that stays put. */
+    .rule-b {
+        border: none;
+        border-bottom: 1px solid var(--color-hairline);
+    }
+    .dark .rule-b {
+        border-bottom-color: color-mix(in srgb, var(--color-night-ink) 10%, transparent);
+    }
+
     /* --- Charts -----------------------------------------------------------
        WHAT REPLACED THE FAT BARS.
 
@@ -2457,4 +2555,216 @@ html.dark {
         flex: none;
         color: var(--color-faint);
     }
+}
+
+/* ===================================================================
+   BI CHART SERIES — the categorical theme, as classes.
+
+   WHY CLASSES AND NOT INLINE FILLS. The theme toggle in this product swaps a
+   class on <html> with no reload, so anything that hard-codes a light-mode hex
+   into an SVG attribute is wrong the instant somebody hits the moon icon. These
+   bind `color` to the right token per theme, and every mark inside paints with
+   `currentColor` — so one class on a <g> re-colours its whole series, in both
+   themes, for free.
+
+   The hues themselves are authored in tailwind.config.js (never here, never in
+   a view) and were validated rather than chosen: lightness band, chroma floor,
+   adjacent-pair separation under deuteranopia/protanopia/tritanopia, and 3:1
+   against the surface. Dark is a separately selected set, not a lightened copy.
+   =================================================================== */
+.series-1 { color: var(--color-series-1); }
+.series-2 { color: var(--color-series-2); }
+.series-3 { color: var(--color-series-3); }
+.series-4 { color: var(--color-series-4); }
+.series-5 { color: var(--color-series-5); }
+.series-6 { color: var(--color-series-6); }
+.series-other { color: var(--color-series-other); }
+
+.dark .series-1 { color: var(--color-series-dark-1); }
+.dark .series-2 { color: var(--color-series-dark-2); }
+.dark .series-3 { color: var(--color-series-dark-3); }
+.dark .series-4 { color: var(--color-series-dark-4); }
+.dark .series-5 { color: var(--color-series-dark-5); }
+.dark .series-6 { color: var(--color-series-dark-6); }
+.dark .series-other { color: var(--color-series-other-dark); }
+
+/* A bar, a column, or a donut arc. The 4px radius is on the DATA END only —
+   the end away from the baseline — because rounding the baseline end would lift
+   the mark off the axis and make a zero look like a small positive value. */
+.bar-mark {
+    fill: currentColor;
+    transition: opacity 160ms var(--ease-out, ease-out);
+}
+
+.bar-mark:hover { opacity: 0.82; }
+
+/* The 2px gap the skill calls for between adjacent fills, drawn as a stroke in
+   the SURFACE colour rather than as a geometry change: a gap made by shrinking
+   each bar would misstate its value by two pixels, and on a 40px-wide column
+   that is a readable error. A surface-coloured stroke sits ON the boundary and
+   takes a pixel from each neighbour symmetrically. */
+.bar-gap {
+    stroke: var(--color-surface);
+    stroke-width: 2;
+}
+
+.dark .bar-gap { stroke: var(--color-night-card); }
+
+/* The donut's own ring. `stroke-linecap: butt` because a round cap on an arc
+   overlaps its neighbour and makes two adjacent slices look like one. */
+.donut-arc {
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: butt;
+    transition: opacity 160ms var(--ease-out, ease-out);
+}
+
+.donut-arc:hover { opacity: 0.82; }
+
+/* The legend swatch. 10px so it clears the >=8px marker floor, and a rounded
+   square rather than a circle so it does not read as a radio button. */
+.series-swatch {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 3px;
+    background: currentColor;
+    flex: none;
+}
+
+/* A widget card on the board. The drag handle is the header, so the body keeps
+   normal text selection — a chart you cannot select a number out of is
+   infuriating, and making the whole card draggable is the usual way to get
+   there. */
+.widget-card {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+}
+
+.widget-head {
+    cursor: grab;
+    touch-action: none;
+}
+
+.widget-head:active { cursor: grabbing; }
+
+.widget-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+}
+
+/* Gridstack paints its own placeholder; this makes it match the product's
+   cards rather than the library's default green. */
+.grid-stack > .grid-stack-placeholder > .placeholder-content {
+    background: var(--color-brand-circle);
+    border: 2px dashed var(--color-brand);
+    border-radius: 14px;
+}
+
+.dark .grid-stack > .grid-stack-placeholder > .placeholder-content {
+    background: var(--color-night-raised);
+    border-color: var(--color-brand-light);
+}
+
+/* The board is a plain stack until gridstack has booted, so a page whose JS is
+   still loading — or disabled — is a readable column of charts rather than a
+   pile of unpositioned boxes.
+
+   KEYED ON `.grid-stack-ready`, A CLASS WE ADD OURSELVES, and that detail cost
+   a render. The obvious selector is gridstack's own initialization marker, but
+   v14 does not set one — it adds `gs-12` and `grid-stack-animate`, neither of
+   which is a stable "I am ready" signal. Written as `:not(.gs-initialized)`,
+   which is what v0–v9 used, this rule kept matching after boot and its
+   `position: static !important` silently beat gridstack's own absolute
+   positioning: the library ran, placed everything, and every card still
+   rendered full-width in a single column. Our own class cannot drift with
+   theirs. */
+.grid-stack:not(.grid-stack-ready) .grid-stack-item {
+    position: static !important;
+    margin-bottom: 1rem;
+}
+/* CRM content navigation replaces one page tree without flashing the shared
+   shell; the active URL still changes and browser back restores the prior view. */
+.crm-nav-loading {
+    position: relative;
+}
+.crm-nav-loading::before {
+    position: absolute;
+    z-index: 20;
+    inset: 0 auto auto 0;
+    width: 34%;
+    height: 2px;
+    background: var(--color-brand);
+    content: "";
+    animation: crm-nav-progress 900ms ease-in-out infinite alternate;
+}
+@keyframes crm-nav-progress {
+    from { transform: translateX(0); }
+    to { transform: translateX(190%); }
+}
+
+.crm-customer-table-scroll {
+    overflow-y: clip;
+    overscroll-behavior-y: auto;
+}
+
+/* Strike only the title's glyphs, not the full-width row. The browser paints a
+   separate decoration for each wrapped line, so long task names stay legible. */
+.crm-task-title-text {
+    text-decoration-line: line-through;
+    text-decoration-color: transparent;
+    text-decoration-thickness: 1px;
+    transition: text-decoration-color 180ms ease-out;
+}
+.crm-task-title-text--done {
+    text-decoration-color: currentColor;
+}
+
+.crm-nav-enter {
+    animation: crm-nav-enter 110ms ease-out both;
+}
+
+@keyframes crm-nav-enter {
+    from { opacity: .85; transform: translateY(2px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Auth is the bridge from the landing's signal motif to a quiet working form.
+   Keep the expressive treatment in this single panel, not behind input fields. */
+.auth-story {
+    background:
+        radial-gradient(circle at 96% 8%, color-mix(in srgb, var(--color-brand) 17%, transparent), transparent 49%),
+        linear-gradient(155deg, var(--color-azure-50), var(--color-paper));
+    border-right: 1px solid var(--color-hairline);
+}
+.auth-story::after {
+    position: absolute;
+    right: -7rem;
+    bottom: 7rem;
+    width: 24rem;
+    height: 24rem;
+    border: 1px solid color-mix(in srgb, var(--color-brand) 22%, transparent);
+    border-radius: 50%;
+    content: '';
+    pointer-events: none;
+}
+.auth-story-step {
+    background: color-mix(in srgb, var(--color-surface) 76%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-brand) 10%, transparent);
+}
+.dark .auth-story {
+    background:
+        radial-gradient(circle at 96% 8%, color-mix(in srgb, var(--color-brand-light) 13%, transparent), transparent 49%),
+        linear-gradient(155deg, var(--color-night-soft), var(--color-night-card));
+    border-color: var(--color-night-raised);
+}
+.dark .auth-story::after {
+    border-color: color-mix(in srgb, var(--color-brand-light) 19%, transparent);
+}
+.dark .auth-story-step {
+    background: color-mix(in srgb, var(--color-night-card) 78%, transparent);
+    border-color: color-mix(in srgb, var(--color-brand-light) 12%, transparent);
 }

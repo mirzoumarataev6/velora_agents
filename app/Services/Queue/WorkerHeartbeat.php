@@ -10,6 +10,13 @@ use Illuminate\Support\Facades\Cache;
  * read by anything that needs to know whether it is still alive: the
  * supervisor loop, `queue:health`, `queue:watchdog`.
  *
+ * ONE RECORD PER POOL. The product runs two worker processes — `default` for
+ * customer-facing work and `ingest` for BI file imports — and they must not share
+ * a key: an idle ingest worker writing every few seconds would keep overwriting
+ * the default worker's "working" state, and a hung job would then never be
+ * detected. The pool comes from `worker.pool`, which `queue:supervise` sets on
+ * each child it spawns.
+ *
  * This exists because `queue:work --timeout` cannot enforce anything on
  * Windows — the worker's timeout is implemented with pcntl alarms, and the
  * pcntl extension does not exist here. A job that hangs on a socket therefore
@@ -21,6 +28,33 @@ class WorkerHeartbeat
     public const STATE_IDLE = 'idle';
 
     public const STATE_WORKING = 'working';
+
+    /** Which worker pool this instance reads and writes the heartbeat of. */
+    public readonly string $pool;
+
+    /**
+     * Defaults to the pool this PROCESS belongs to, so the event listeners in
+     * AppServiceProvider — which resolve this from the container inside a worker —
+     * automatically check in under the right key without being told.
+     */
+    public function __construct(?string $pool = null)
+    {
+        $this->pool = $pool ?? (string) config('worker.pool', 'default');
+    }
+
+    /** The configured pool names, in declaration order. */
+    public static function pools(): array
+    {
+        $pools = array_keys((array) config('worker.pools', []));
+
+        return $pools === [] ? ['default'] : $pools;
+    }
+
+    /** A heartbeat reader for one named pool. */
+    public static function for(string $pool): self
+    {
+        return new self($pool);
+    }
 
     /**
      * Record that the worker is alive and between jobs. Throttled — an idle
@@ -152,6 +186,6 @@ class WorkerHeartbeat
 
     protected function key(): string
     {
-        return (string) config('worker.heartbeat.cache_key', 'worker:heartbeat');
+        return (string) config('worker.heartbeat.cache_key', 'worker:heartbeat').':'.$this->pool;
     }
 }

@@ -6,6 +6,7 @@ return [
         'agents' => 'Agents',
         'conversations' => 'Conversations',
         'crm' => 'CRM',
+        'bi' => 'Data analysis',
         'leads' => 'Leads',
         'settings' => 'Settings',
         'logout' => 'Log out',
@@ -39,6 +40,8 @@ return [
         'title_suffix' => ' — Velora Agents',
         'no_description' => 'No description',
         'back' => 'All agents',
+        'previous_tabs' => 'Previous tabs',
+        'next_tabs' => 'Next tabs',
         'tabs' => [
             'knowledge' => 'Knowledge base',
             'catalog' => 'Catalog',
@@ -109,6 +112,8 @@ return [
         ],
         'max_length_label' => 'Max reply length (chars)',
         'use_emojis_label' => 'Use emoji',
+        'internet_image_search_label' => 'Allow image search on the internet',
+        'internet_image_search_help' => 'If the catalog and knowledge base have no suitable photos, the agent may find up to 3 images on Wikimedia Commons and include source and license attribution.',
         'haggling_label' => 'Negotiate on price',
         'haggling_help' => 'When a customer asks for a discount, the assistant haggles like a real salesperson: it justifies the price, counters, asks about their budget. It never grants a price below your floor on its own — it takes the customer\'s final offer to you for approval. Needs a connected catalog: the floor is a percentage of a listed price.',
         'haggling_level_label' => 'Negotiating style',
@@ -232,6 +237,7 @@ return [
         'url_label' => 'Page URL',
         'url_placeholder' => 'https://example.com/catalog',
         'refetch' => 'Re-fetch',
+        'delete_source' => 'Delete source',
         'toasts' => [
             'upload_failed' => 'Failed to upload files',
             'files_added' => 'Files added and queued',
@@ -328,6 +334,7 @@ return [
             'description' => 'Description',
             'sku' => 'SKU',
             'url' => 'Link',
+            'image_url' => 'Product photo',
         ],
 
         /*
@@ -488,6 +495,7 @@ return [
             'description' => 'Description',
             'sku' => 'SKU',
             'url' => 'Link',
+            'image_url' => 'Product photo',
             'extra' => 'Extra field',
         ],
 
@@ -676,7 +684,8 @@ return [
         'subheading' => 'Uses the exact same reply logic as the real channels.',
         'clear' => 'Clear conversation',
         'empty_title' => 'Ask a question the way a customer would',
-        'empty_example' => 'E.g. "Do you have this dress in size 46?" — the agent replies based on the knowledge base.',
+        'empty_example' => 'Choose an example or ask your own question. The reply will test the agent’s actual settings.',
+        'suggestions' => ['Hello! What does your business do?', 'How much does your product cost?', 'How can I contact a manager?'],
         'sources_label' => 'Sources',
         'kb_fallback' => 'Knowledge base',
         'typing' => 'Agent is typing…',

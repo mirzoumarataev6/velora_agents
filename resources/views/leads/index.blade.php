@@ -18,7 +18,10 @@
             'deleteConfirm' => __('leads.index.delete_confirm'),
             'approved' => __('leads.haggle.approved'),
             'declined' => __('leads.haggle.declined'),
+            'approveConfirm' => __('leads.haggle.approve_confirm'),
+            'declineCounterConfirm' => __('leads.haggle.decline_counter_confirm'),
             'declineConfirm' => __('leads.haggle.decline_confirm'),
+            'invalidPrice' => __('leads.haggle.invalid_price'),
         ]) }},
     })">
     <div class="page-header">
@@ -79,7 +82,7 @@
              before. With JS the keystrokes filter live and the submit is
              redundant, so it is suppressed. --}}
         <form method="GET" action="{{ route('leads.index') }}" @submit.prevent="search($refs.search.value)"
-            class="relative ml-auto min-w-0 flex-1 sm:max-w-xs">
+            class="relative w-full basis-full sm:ml-auto sm:min-w-0 sm:flex-1 sm:basis-auto sm:max-w-xs">
             @if ($activeView !== 'orders')
                 <input type="hidden" name="view" value="{{ $activeView }}" />
             @endif
@@ -228,13 +231,29 @@
                     window.showToast?.(labels.network, 'error');
                 }
             },
-            approvePrice(id, price) {
+            formatDecisionPrice(value) {
+                return new Intl.NumberFormat(document.documentElement.lang || 'ru', { maximumFractionDigits: 2 }).format(value);
+            },
+            approvePrice(id, price, requestedPrice) {
                 const value = parseFloat(price);
+                if (String(price).trim() !== '' && (!Number.isFinite(value) || value <= 0)) {
+                    window.showToast?.(labels.invalidPrice, 'error');
+                    return;
+                }
+                const displayPrice = Number.isFinite(value) && value > 0 ? this.formatDecisionPrice(value) : requestedPrice;
+                if (!confirm(labels.approveConfirm.replace(':price', displayPrice))) return;
                 this.decide(approveUrlBase, Number.isFinite(value) && value > 0 ? { price: value } : {}, labels.approved, id);
             },
             declinePrice(id, counter) {
                 const value = parseFloat(counter);
-                if (!Number.isFinite(value) && !confirm(labels.declineConfirm)) return;
+                if (String(counter).trim() !== '' && (!Number.isFinite(value) || value <= 0)) {
+                    window.showToast?.(labels.invalidPrice, 'error');
+                    return;
+                }
+                const question = Number.isFinite(value) && value > 0
+                    ? labels.declineCounterConfirm.replace(':price', this.formatDecisionPrice(value))
+                    : labels.declineConfirm;
+                if (!confirm(question)) return;
                 this.decide(declineUrlBase, Number.isFinite(value) && value > 0 ? { counter_price: value } : {}, labels.declined, id);
             },
             async remove(id) {

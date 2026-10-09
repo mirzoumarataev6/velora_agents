@@ -36,6 +36,22 @@
     --color-slate-900: #0f1115;
     --color-slate-950: #080a0e;
 
+    --color-series-1: #0052cc;
+    --color-series-2: #c97608;
+    --color-series-3: #8a3ffc;
+    --color-series-4: #19a37a;
+    --color-series-5: #c4007b;
+    --color-series-6: #8a8400;
+
+    --color-series-dark-1: #4a86e0;
+    --color-series-dark-2: #b8862a;
+    --color-series-dark-3: #8a63cc;
+    --color-series-dark-4: #1d8a60;
+    --color-series-dark-5: #e35f9c;
+    --color-series-dark-6: #94912c;
+
+    --color-series-other: #b9c0cc;
+    --color-series-other-dark: #5c6470;
     --color-brand: #1a50fc;
     --color-brand-ring: #0052cc;
     --color-brand-hover: #00429f;

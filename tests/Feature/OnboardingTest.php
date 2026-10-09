@@ -73,7 +73,9 @@ class OnboardingTest extends TestCase
         $response = $this->actingAs($user)->get(route('agents.index'));
 
         $response->assertOk();
-        $response->assertSee(__('onboarding.welcome.title', ['name' => $user->name]), false);
+        // Faker can generate an apostrophe in the name; Blade correctly HTML
+        // escapes it, so the assertion must compare the rendered form.
+        $response->assertSee(__('onboarding.welcome.title', ['name' => $user->name]));
     }
 
     /**

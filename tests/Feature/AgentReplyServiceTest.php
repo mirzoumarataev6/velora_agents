@@ -56,6 +56,22 @@ class AgentReplyServiceTest extends TestCase
         $this->assertTrue($result['assistant']->meta['failed']);
     }
 
+    public function test_photo_reply_guard_removes_a_false_claim_that_messenger_cannot_send_photos(): void
+    {
+        $method = new \ReflectionMethod(AgentReplyService::class, 'removeFalsePhotoRefusal');
+
+        $cleaned = $method->invoke(
+            $this->app->make(AgentReplyService::class),
+            'OMEN 16 стоит 14999 сомони. К сожалению, я не могу отправить фотографии, но вы можете увидеть его на сайте pixelshop.tj.',
+            'Покажи фото OMEN 16',
+        );
+
+        $this->assertSame(
+            'OMEN 16 стоит 14999 сомони.',
+            $cleaned,
+        );
+    }
+
     public function test_system_prompt_signals_no_context_when_no_chunks_pass_threshold(): void
     {
         $captured = null;

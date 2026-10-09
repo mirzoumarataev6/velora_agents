@@ -199,6 +199,57 @@ const night = {
     field: '#121926',
 };
 
+/* --- Chart series -----------------------------------------------------------
+   THE CATEGORICAL THEME: six hues, assigned to series in this fixed order and
+   NEVER cycled. A seventh category folds into an "Other" slot (`series-other`)
+   rather than reusing slot 1 — two series sharing a colour is not a crowded
+   chart, it is a wrong one.
+
+   Why six and not eight or ten. Every one of these was checked, not chosen by
+   eye: the set has to clear a lightness band, a chroma floor, a colour-vision
+   separation threshold for each ADJACENT pair under deutan/protan/tritan
+   simulation, a normal-vision floor, and 3:1 contrast against the surface it is
+   drawn on. Eight slots could not clear the CVD check in dark mode — the dark
+   band is narrow (OKLCH L 0.48–0.67), which leaves little lightness to separate
+   hues with once deuteranopia has collapsed red and green onto one axis. Six
+   clears everything with margin. Six readable series beats eight where two are
+   indistinguishable to roughly one man in twelve.
+
+   The order is not decorative either: it alternates between hues that stay
+   "blue-ish" and hues that stay "yellow-ish" under deuteranopia, and alternates
+   lightness within each, which is what makes neighbouring series separable for
+   a reader who cannot use hue at all.
+
+   DARK IS SELECTED, NOT DERIVED. These are not the light steps lightened — that
+   is what produced a palette whose greens and magentas merged on the dark card.
+   They were re-stepped against #151b26 and re-validated against it.
+
+   Slot 1 is the brand azure, so a single-series chart — the common case — is
+   drawn in the product's own blue and needs no legend at all.
+
+   Status colours (success/warning/danger/info) are deliberately NOT part of
+   this set and are never used as "series 7": they mean a state, and a chart
+   that spends them on a category makes the one red thing on the page ambiguous. */
+const series = {
+    1: '#0052cc', // azure 600 — the brand, and slot 1 by design
+    2: '#c97608', // amber-brown
+    3: '#8a3ffc', // violet
+    4: '#19a37a', // green
+    5: '#c4007b', // magenta
+    6: '#8a8400', // olive
+};
+
+/* The same six re-stepped for the night card. See the note above: selected,
+   not derived. */
+const seriesDark = {
+    1: '#4a86e0',
+    2: '#b8862a',
+    3: '#8a63cc',
+    4: '#1d8a60',
+    5: '#e35f9c',
+    6: '#94912c',
+};
+
 /* --- Semantics -------------------------------------------------------------
    A blue accent leaves red, amber and green uncrowded, so these sit where they
    naturally belong — no pushing away from the brand hue is needed here, unlike
@@ -224,6 +275,17 @@ export default {
             colors: {
                 azure,
                 slate,
+
+                /* Chart series, light and dark. Referenced by the chart
+                   components as `series-1`…`series-6` / `series-dark-1`…, never
+                   as a hex — see the note where they are authored. */
+                series,
+                'series-dark': seriesDark,
+                /* Everything past slot 6, and the "rest" slice of a donut. A
+                   deliberate neutral: "Other" is not a category competing for
+                   attention, it is the absence of one. */
+                'series-other': slate[400],
+                'series-other-dark': slate[600],
 
                 /* ---- Semantic aliases -------------------------------------
                    Views name the role, not the swatch, so a future re-skin is

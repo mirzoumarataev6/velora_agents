@@ -77,6 +77,25 @@ class CatalogImportTest extends TestCase
         $this->assertDatabaseCount('datasets', 0);
     }
 
+    public function test_catalog_can_map_and_store_a_product_image_url(): void
+    {
+        $user = User::factory()->create();
+        $agent = Agent::factory()->for($user)->create();
+
+        $result = $this->upload(
+            $user,
+            $agent,
+            "Название;Фото\nНоутбук;https://shop.example.test/images/laptop.jpg\n"
+        );
+
+        $result['analyze']->assertJsonPath('mapping.image_url', 1);
+        $result['import']->assertOk();
+        $this->assertSame(
+            'https://shop.example.test/images/laptop.jpg',
+            $agent->datasetProducts()->sole()->image_url
+        );
+    }
+
     public function test_analyze_suggests_english_headers_too(): void
     {
         $user = User::factory()->create();

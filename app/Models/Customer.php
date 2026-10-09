@@ -17,7 +17,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * write from. Their threads hang off this row; see CustomerResolver for how a
  * thread is decided to belong here.
  */
-#[Fillable(['name', 'phone', 'phone_key', 'source', 'status', 'tags', 'first_contact_at', 'last_contact_at', 'note'])]
+#[Fillable(['crm_workspace_id', 'name', 'phone', 'phone_key', 'source', 'status', 'tags', 'first_contact_at', 'last_contact_at', 'note'])]
 #[UsePolicy(CustomerPolicy::class)]
 class Customer extends Model
 {
@@ -108,6 +108,11 @@ class Customer extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function workspace(): BelongsTo
+    {
+        return $this->belongsTo(CrmWorkspace::class, 'crm_workspace_id');
     }
 
     public function conversations(): HasMany

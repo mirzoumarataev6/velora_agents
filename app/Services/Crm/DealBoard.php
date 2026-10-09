@@ -32,27 +32,86 @@ class DealBoard
      */
     public function list(User $user, array $filters = []): LengthAwarePaginator
     {
-        $query = $this->filteredDeals($user, $filters)
+        // The list is customer-first: repeat orders and channel threads belong
+        // in the customer's profile, while one representative deal keeps the
+        // existing quick stage/edit actions useful from the pipeline.
+        $query = $this->filteredDeals($user, $filters);
+        $direction = ($filters['dir'] ?? 'desc') === 'asc' ? 'asc' : 'desc';
+        $groups = (clone $query)
+            ->reorder()
+            ->selectRaw('customer_id, COUNT(*) as matching_deal_count, MAX(id) as representative_deal_id')
+            ->groupBy('customer_id')
+            ->when(($filters['sort'] ?? 'date') === 'amount', fn ($builder) => $builder->orderByRaw("MAX(amount) {$direction}"))
+            ->when(($filters['sort'] ?? 'date') !== 'amount', fn ($builder) => $builder->orderByRaw("MAX(COALESCE(deal_date, DATE(created_at))) {$direction}"))
+            ->orderBy('customer_id', $direction)
+            ->paginate(self::PER_PAGE, ['*'], 'page', max(1, (int) request()->query('page', 1)))
+            ->withQueryString();
+
+        if ($groups->isEmpty() && $groups->currentPage() > 1) {
+            $groups = (clone $query)->reorder()
+                ->selectRaw('customer_id, COUNT(*) as matching_deal_count, MAX(id) as representative_deal_id')
+                ->groupBy('customer_id')
+                ->when(($filters['sort'] ?? 'date') === 'amount', fn ($builder) => $builder->orderByRaw("MAX(amount) {$direction}"))
+                ->when(($filters['sort'] ?? 'date') !== 'amount', fn ($builder) => $builder->orderByRaw("MAX(COALESCE(deal_date, DATE(created_at))) {$direction}"))
+                ->orderBy('customer_id', $direction)
+                ->paginate(self::PER_PAGE, ['*'], 'page', max(1, $groups->lastPage()))
+                ->withQueryString();
+        }
+
+        $rows = $groups->getCollection();
+        $customerIds = $rows->pluck('customer_id')->all();
+        $representativeIds = $rows->pluck('representative_deal_id')->all();
+        $deals = Deal::ownedBy($user)->whereIn('id', $representativeIds)
             ->with([
                 'customer:id,name,phone,status,tags',
                 'conversation:id,channel_id,last_message_at',
                 'conversation.channel:id,type',
                 'tasks' => fn ($query) => $query->open()
                     ->orderByRaw('due_at is null')->orderBy('due_at')->orderBy('id')->limit(1),
-            ]);
+            ])->get()->keyBy('id');
 
-        $page = max(1, (int) request()->query('page', 1));
-        $results = $query->paginate(self::PER_PAGE, ['*'], 'page', $page);
-        if ($page > $results->lastPage()) {
-            $results = $query->paginate(self::PER_PAGE, ['*'], 'page', max(1, $results->lastPage()));
-        }
+        $allStageFilters = $filters;
+        $allStageFilters['stage'] = 'all';
+        $purchaseCounts = $customerIds === [] ? collect() : $this->filteredDeals($user, $allStageFilters)
+            // filteredDeals also carries the table's requested sort; grouped
+            // aggregate queries must drop it for MySQL ONLY_FULL_GROUP_BY.
+            ->reorder()
+            ->whereIn('customer_id', $customerIds)
+            ->where('payment_status', 'paid')
+            ->selectRaw('customer_id, COUNT(*) as total')
+            ->groupBy('customer_id')->pluck('total', 'customer_id');
+        $customers = $customerIds === [] ? collect() : Customer::ownedBy($user)
+            ->whereIn('id', $customerIds)->withCount('conversations')->get(['id'])->keyBy('id');
 
-        return $results->withQueryString()->through(fn (Deal $deal) => $this->card($deal));
+        $groups->setCollection($rows->map(function ($row) use ($deals, $purchaseCounts, $customers) {
+            $deal = $deals->get($row->representative_deal_id);
+            if (! $deal) {
+                return null;
+            }
+
+            $purchaseCount = (int) ($purchaseCounts[$row->customer_id] ?? 0);
+            $conversationCount = (int) ($customers[$row->customer_id]->conversations_count ?? 0);
+
+            return $this->card(
+                $deal,
+                $purchaseCount,
+                $conversationCount,
+                trans_choice('crm.board.customer_purchases_count', $purchaseCount, ['count' => $purchaseCount]),
+                trans_choice('crm.board.customer_conversations_count', $conversationCount, ['count' => $conversationCount]),
+            );
+        })->filter()->values());
+
+        return $groups;
     }
 
     /** One row, as both the Blade view and the poll consume it. */
-    public function card(Deal $deal): array
-    {
+    public function card(
+        Deal $deal,
+        int $customerPurchaseCount = 0,
+        int $customerConversationCount = 0,
+        ?string $customerPurchaseCountLabel = null,
+        ?string $customerConversationCountLabel = null,
+    ): array {
         // What last happened on this deal — the customer's own channel if
         // there is one, and the deal's own last edit otherwise (a manually
         // opened deal with nobody writing in yet).
@@ -63,6 +122,7 @@ class DealBoard
 
         return [
             'id' => $deal->id,
+            'crm_workspace_id' => $deal->crm_workspace_id,
             'stage' => $deal->stage,
             'title' => $deal->title,
             'customer_id' => $deal->customer_id,
@@ -73,6 +133,10 @@ class DealBoard
             'customer_phone' => $deal->customer?->phone,
             'customer_status' => $deal->customer?->status,
             'customer_tags' => $deal->customer?->tags ?? [],
+            'customer_purchase_count' => $customerPurchaseCount,
+            'customer_conversation_count' => $customerConversationCount,
+            'customer_purchase_count_label' => $customerPurchaseCountLabel,
+            'customer_conversation_count_label' => $customerConversationCountLabel,
             'channel' => $deal->conversation?->channel?->type,
             // Formatted for display...
             'amount' => $deal->amount !== null ? Lead::formatPrice($deal->amount) : null,
@@ -81,6 +145,7 @@ class DealBoard
             // separator would make "2 500" an invalid number.
             'amount_raw' => $deal->amount !== null ? (string) $deal->amount : null,
             'payment_status' => $deal->payment_status,
+            'sales_origin' => $deal->sales_origin ?: 'social',
             'note' => $deal->note,
             'cancelled_reason' => $deal->cancelled_reason,
             'conversation_id' => $deal->conversation_id,
@@ -133,13 +198,13 @@ class DealBoard
         }
 
         return $results->withQueryString()->through(fn (Customer $customer) => [
-                'id' => $customer->id,
-                'name' => $customer->displayName(),
-                'phone' => $customer->phone,
-                'status' => $customer->status,
-                'channel' => $customer->channelTypes()[0] ?? null,
-                'last_activity' => $customer->last_contact_at?->diffForHumans(),
-            ]);
+            'id' => $customer->id,
+            'name' => $customer->displayName(),
+            'phone' => $customer->phone,
+            'status' => $customer->status,
+            'channel' => $customer->channelTypes()[0] ?? null,
+            'last_activity' => $customer->last_contact_at?->diffForHumans(),
+        ]);
     }
 
     /** Count the "Без сделки" tab without loading its customer rows on other tabs. */
@@ -152,13 +217,17 @@ class DealBoard
     }
 
     /** Business-level pipeline figures for the CRM landing page. */
-    public function overview(User $user): array
+    public function overview(User $user, array $filters = []): array
     {
-        $counts = Deal::ownedBy($user)
+        $scopedDeals = Deal::ownedBy($user)
+            ->when(! empty($filters['workspace_id']), fn ($query) => $query->where('crm_workspace_id', $filters['workspace_id']))
+            ->when(in_array($filters['origin'] ?? 'all', Deal::SALES_ORIGINS, true), fn ($query) => $query->where('sales_origin', $filters['origin']));
+
+        $counts = (clone $scopedDeals)
             ->selectRaw('stage, COUNT(*) as total, COALESCE(SUM(amount), 0) as value')
             ->groupBy('stage')->get()->keyBy('stage');
 
-        $cancelReasons = Deal::ownedBy($user)
+        $cancelReasons = (clone $scopedDeals)
             ->where('stage', Deal::STAGE_CANCELLED)
             ->selectRaw("COALESCE(NULLIF(cancelled_reason, ''), 'unspecified') as reason, COUNT(*) as total")
             ->groupBy('reason')->orderByDesc('total')->limit(5)->get();
@@ -166,11 +235,17 @@ class DealBoard
         $paid = (int) ($counts['payment']->total ?? 0);
         $lost = (int) ($counts[Deal::STAGE_CANCELLED]->total ?? 0);
 
+        $originCounts = Deal::ownedBy($user)
+            ->when(! empty($filters['workspace_id']), fn ($query) => $query->where('crm_workspace_id', $filters['workspace_id']))
+            ->selectRaw('sales_origin, COUNT(*) as total')
+            ->groupBy('sales_origin')->pluck('total', 'sales_origin');
+
         return [
             'counts' => collect(Deal::allStages())->mapWithKeys(fn ($stage) => [$stage => (int) ($counts[$stage]->total ?? 0)])->all(),
             'paid_value' => (float) ($counts['payment']->value ?? 0),
             'conversion' => $paid + $lost > 0 ? round(($paid / ($paid + $lost)) * 100) : null,
             'cancel_reasons' => $cancelReasons->map(fn ($row) => ['reason' => $row->reason, 'total' => (int) $row->total])->all(),
+            'origin_counts' => collect(Deal::SALES_ORIGINS)->mapWithKeys(fn ($origin) => [$origin => (int) ($originCounts[$origin] ?? 0)])->all(),
         ];
     }
 
@@ -179,8 +254,20 @@ class DealBoard
     {
         $query = Deal::ownedBy($user);
 
-        if (($filters['stage'] ?? 'all') !== 'all') {
+        if (($filters['stage'] ?? 'all') === 'in_progress') {
+            $query->whereIn('stage', ['new_lead', 'haggling']);
+        } elseif (($filters['stage'] ?? 'all') === 'resolved') {
+            $query->whereIn('stage', ['payment', Deal::STAGE_CANCELLED]);
+        } elseif (($filters['stage'] ?? 'all') !== 'all') {
             $query->where('stage', $filters['stage']);
+        }
+
+        if (in_array($filters['origin'] ?? 'all', Deal::SALES_ORIGINS, true)) {
+            $query->where('sales_origin', $filters['origin']);
+        }
+
+        if (! empty($filters['workspace_id'])) {
+            $query->where('crm_workspace_id', $filters['workspace_id']);
         }
 
         if (filled($filters['q'] ?? null)) {

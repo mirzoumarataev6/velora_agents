@@ -33,6 +33,7 @@
             'reopened' => __('conversations.toasts.reopened'),
             'failed' => __('conversations.toasts.failed'),
             'network' => __('conversations.toasts.network'),
+            'invalidDate' => __('conversations.index.invalid_date'),
             'roles' => __('conversations.roles'),
             'status' => __('conversations.status'),
             'knowledgeUnconfirmed' => __('conversations.thread.knowledge_unconfirmed'),
@@ -100,12 +101,27 @@
             </select>
         @endif
 
-        {{-- Native date inputs carry a fixed intrinsic width, so they are the
-             widest things here; an explicit width keeps the pair predictable. --}}
-        <input type="date" x-model="filters.from" @change="reload()" aria-label="{{ __('conversations.index.date_from') }}" data-i18n-al="conversations.index.date_from"
-            class="field w-[8.25rem] shrink-0 px-2 py-1.5 text-xs" />
-        <input type="date" x-model="filters.to" @change="reload()" aria-label="{{ __('conversations.index.date_to') }}" data-i18n-al="conversations.index.date_to"
-            class="field w-[8.25rem] shrink-0 px-2 py-1.5 text-xs" />
+        {{-- Browser-native date text ignored the product locale in Chromium.
+             Keep the picker, but mirror it into an explicit local format. --}}
+        <div class="relative w-36 shrink-0">
+            <input type="text" inputmode="numeric" autocomplete="off" x-model="fromDisplay" @change="applyDateFilter('from', fromDisplay)"
+                placeholder="{{ __('crm.board.date_format_hint') }}" aria-label="{{ __('conversations.index.date_from') }}" data-i18n-al="conversations.index.date_from"
+                class="field w-full px-2 py-1.5 pr-8 text-xs" />
+            <input type="date" x-ref="fromPicker" class="pointer-events-none absolute right-0 top-0 h-1 w-1 opacity-0" @change="fromDisplay = formatDateFilter($event.target.value); applyDateFilter('from', fromDisplay)">
+            <button type="button" @click="if ($refs.fromPicker.showPicker) $refs.fromPicker.showPicker(); else $refs.fromPicker.focus()"
+                class="absolute inset-y-0 right-0 flex w-8 items-center justify-center text-muted hover:text-brand-strong dark:text-night-muted dark:hover:text-brand-light"
+                aria-label="{{ __('crm.board.open_calendar') }}"><svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4m10-4v4M3 10h18"/></svg></button>
+        </div>
+        <div class="relative w-36 shrink-0">
+            <input type="text" inputmode="numeric" autocomplete="off" x-model="toDisplay" @change="applyDateFilter('to', toDisplay)"
+                placeholder="{{ __('crm.board.date_format_hint') }}" aria-label="{{ __('conversations.index.date_to') }}" data-i18n-al="conversations.index.date_to"
+                class="field w-full px-2 py-1.5 pr-8 text-xs" />
+            <input type="date" x-ref="toPicker" class="pointer-events-none absolute right-0 top-0 h-1 w-1 opacity-0" @change="toDisplay = formatDateFilter($event.target.value); applyDateFilter('to', toDisplay)">
+            <button type="button" @click="if ($refs.toPicker.showPicker) $refs.toPicker.showPicker(); else $refs.toPicker.focus()"
+                class="absolute inset-y-0 right-0 flex w-8 items-center justify-center text-muted hover:text-brand-strong dark:text-night-muted dark:hover:text-brand-light"
+                aria-label="{{ __('crm.board.open_calendar') }}"><svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4m10-4v4M3 10h18"/></svg></button>
+        </div>
+        <span x-show="dateError" x-cloak x-text="dateError" role="alert" class="shrink-0 text-xs text-danger"></span>
 
         <button type="button" x-show="hasFilters()" x-cloak @click="resetFilters()"
             class="shrink-0 whitespace-nowrap rounded-xl px-2 py-1.5 text-xs font-medium text-muted transition-colors hover:text-brand-strong dark:text-night-muted">
@@ -186,7 +202,7 @@
                             <div class="min-w-0 flex-1">
                                 <div class="flex items-baseline justify-between gap-2">
                                     <span class="truncate text-sm font-semibold" :class="c.unread && 'text-ink dark:text-night-ink'" x-text="c.customer"></span>
-                                    <span class="shrink-0 text-[11px] tnum text-muted dark:text-night-muted" x-text="shortTime(c.last_message_at)"></span>
+                                    <span class="shrink-0 text-xs tnum text-muted dark:text-night-muted" x-text="shortTime(c.last_message_at)"></span>
                                 </div>
                                 {{-- While searching the row shows the message that
                                      matched, with the term marked, rather than
@@ -308,14 +324,14 @@
                             <div x-show="matchIds.length > 0" x-cloak class="badge badge-brand shrink-0">
                                 <button type="button" @click="prevMatch()"
                                     aria-label="{{ __('conversations.search.prev_match') }}" data-i18n-al="conversations.search.prev_match"
-                                    class="flex h-6 w-6 items-center justify-center rounded-md text-brand-strong transition-colors hover:bg-brand/15">
+                                    class="flex h-9 w-9 items-center justify-center rounded-md text-brand-strong transition-colors hover:bg-brand/15">
                                     <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M18 15l-6-6-6 6"/></svg>
                                 </button>
-                                <span class="tnum px-1 text-[11px] font-semibold text-brand-strong"
+                                <span class="tnum px-1 text-xs font-semibold text-brand-strong"
                                     x-text="(matchIndex + 1) + '/' + matchIds.length"></span>
                                 <button type="button" @click="nextMatch()"
                                     aria-label="{{ __('conversations.search.next_match') }}" data-i18n-al="conversations.search.next_match"
-                                    class="flex h-6 w-6 items-center justify-center rounded-md text-brand-strong transition-colors hover:bg-brand/15">
+                                    class="flex h-9 w-9 items-center justify-center rounded-md text-brand-strong transition-colors hover:bg-brand/15">
                                     <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 9l6 6 6-6"/></svg>
                                 </button>
                             </div>
@@ -351,12 +367,12 @@
                                 <div class="flex flex-wrap items-center gap-2">
                                     <span class="text-xs font-semibold text-success" data-i18n="conversations.thread.leads_heading">{{ __('conversations.thread.leads_heading') }}</span>
                                     <template x-for="lead in leads" :key="lead.id">
-                                        <span class="rounded-full bg-white px-2.5 py-0.5 text-[11px] font-medium dark:bg-night-raised">
+                                        <span class="rounded-full bg-white px-2.5 py-0.5 text-xs font-medium dark:bg-night-raised">
                                             <span x-text="lead.customer_name || lead.contact || '—'"></span>
                                             <span x-show="lead.items" class="text-muted dark:text-night-muted"> · <span x-text="lead.items"></span></span>
                                         </span>
                                     </template>
-                                    <a :href="leadsUrl" class="ml-auto text-[11px] font-semibold text-success hover:underline"
+                                    <a :href="leadsUrl" class="ml-auto text-xs font-semibold text-success hover:underline"
                                         data-i18n="conversations.thread.view_in_leads">{{ __('conversations.thread.view_in_leads') }}</a>
                                 </div>
                             </div>
@@ -423,7 +439,7 @@
                                          between knowing the agent was wrong and
                                          knowing what it was wrong about. --}}
                                     <div x-show="m.rating" x-cloak
-                                        class="mt-1 flex w-fit items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium"
+                                        class="mt-1 flex w-fit items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
                                         :class="m.rating === 'thumbs_up'
                                             ? 'bg-success/10 text-success'
                                             : 'bg-danger/10 text-danger'"
@@ -432,7 +448,7 @@
                                         <span x-text="m.rating === 'thumbs_up' ? labels.ratingUpHint : labels.ratingDownHint"></span>
                                     </div>
 
-                                    <div class="mt-1 flex items-center gap-2 px-1 text-[11px] text-muted dark:text-night-muted">
+                                    <div class="mt-1 flex items-center gap-2 px-1 text-xs text-muted dark:text-night-muted">
                                         <span x-text="rolePrefix(m.role)"></span>
                                         <span x-text="fullTime(m.created_at)" class="tnum"></span>
                                         <button type="button" x-show="m.chunks && m.chunks.length" x-cloak
@@ -446,7 +462,7 @@
                                     {{-- Which knowledge chunks fed this answer --}}
                                     <div x-show="expanded === m.id" x-cloak x-transition.opacity.duration.150ms class="mt-1.5 w-full max-w-[85%] space-y-1.5">
                                         <template x-for="chunk in m.chunks" :key="chunk.source + chunk.score">
-                                            <div class="card p-2.5 text-[11px]">
+                                            <div class="card p-2.5 text-xs">
                                                 <div class="flex items-center justify-between gap-2">
                                                     <span class="truncate font-semibold" x-text="chunk.source || '—'"></span>
                                                     <span class="flex shrink-0 items-center gap-1.5">
@@ -537,6 +553,30 @@
                 q: initialFilters.q || '',
                 from: initialFilters.from || '',
                 to: initialFilters.to || '',
+            },
+            europeanDate: @js(app()->getLocale() !== 'en'),
+            fromDisplay: '', toDisplay: '', dateError: '',
+            formatDateFilter(iso) {
+                if (!iso || !this.europeanDate) return iso || '';
+                const match = String(iso).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+                return match ? `${match[3]}.${match[2]}.${match[1]}` : String(iso);
+            },
+            parseDateFilter(value) {
+                if (!value?.trim()) return '';
+                const match = this.europeanDate
+                    ? value.trim().match(/^(\d{2})\.(\d{2})\.(\d{4})$/)
+                    : value.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+                if (!match) return null;
+                const iso = this.europeanDate ? `${match[3]}-${match[2]}-${match[1]}` : value.trim();
+                const date = new Date(`${iso}T00:00:00Z`);
+                return Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== iso ? null : iso;
+            },
+            applyDateFilter(field, display) {
+                this.dateError = '';
+                const iso = this.parseDateFilter(display);
+                if (iso === null) { this.dateError = this.labels.invalidDate; return; }
+                this.filters[field] = iso;
+                this.reload();
             },
 
             /** Keeps the pane usable at both ends: never a slit, never the whole page. */
@@ -738,6 +778,8 @@
             },
 
             init() {
+                this.fromDisplay = this.formatDateFilter(this.filters.from);
+                this.toDisplay = this.formatDateFilter(this.filters.to);
                 this.initWidth();
                 this.reload();
 
@@ -808,6 +850,7 @@
                     agent: this.lockedAgent || '',
                     channel: '', q: '', from: '', to: '',
                 };
+                this.fromDisplay = ''; this.toDisplay = ''; this.dateError = '';
                 this.autoOpenedFor = null;
                 this.matchIds = [];
                 this.matchIndex = -1;

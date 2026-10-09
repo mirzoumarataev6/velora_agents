@@ -26,6 +26,7 @@ class StoreAgentRequest extends FormRequest
             'fallback_message' => ['nullable', 'string', 'max:1000'],
             'max_length' => ['nullable', 'integer', 'min:50', 'max:4000'],
             'use_emojis' => ['boolean'],
+            'internet_image_search' => ['boolean'],
             'custom_system_prompt' => ['nullable', 'string', 'max:5000'],
             'rules_instructions' => ['nullable', 'string', 'max:5000'],
             'on_not_found' => ['required', 'string', 'in:apologize,human_handoff,suggest_alternatives'],
@@ -69,6 +70,7 @@ class StoreAgentRequest extends FormRequest
                 // Absent from an older form post means "use the configured
                 // default", not "off".
                 'escalation' => $data['escalation'] ?? config('agent.escalation.default_sensitivity', 'conservative'),
+                'internet_image_search' => (bool) ($data['internet_image_search'] ?? false),
             ],
             'proactivity' => $data['proactivity'],
             'haggling_enabled' => (bool) ($data['haggling_enabled'] ?? false),

@@ -18,6 +18,7 @@
             customerName: @js($initialCustomer?->displayName()),
             name: @js(old('new_customer_name', '')),
             phone: @js(old('new_customer_phone', '')),
+            date: @js(old('deal_date', '')),
         },
     })"
     x-effect="if (adding && presetCustomerId) { applyPreset(presetCustomerId, presetCustomerName); presetCustomerId = null; }"
@@ -30,8 +31,9 @@
             <button type="button" @click="adding = false" class="btn btn-ghost btn-sm" aria-label="{{ __('crm.board.close') }}">✕</button>
         </div>
 
-        <form method="POST" action="{{ route('crm.deals.store') }}" class="space-y-3">
+        <form method="POST" action="{{ route('crm.deals.store') }}" class="space-y-3" @submit="validateDate($event)">
             @csrf
+            <input type="hidden" name="crm_workspace_id" value="{{ old('crm_workspace_id', $filters['workspace_id'] ?? $defaultWorkspaceId) }}" />
 
             <div>
                 <label for="deal-customer" class="mb-1 block text-sm font-medium">{{ __('crm.board.add_customer') }}</label>
@@ -99,7 +101,7 @@
                 @enderror
             </div>
 
-            <div class="grid grid-cols-2 gap-3">
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
                     <label for="deal-new-amount" class="mb-1 block text-sm font-medium">{{ __('crm.board.add_amount') }}</label>
                     <input id="deal-new-amount" name="amount" type="number" step="0.01" min="0.01" required
@@ -113,8 +115,26 @@
                     {{-- Optional: left blank, the deal is dated by when it was
                          actually entered (today) — same as always. Filled in,
                          it backdates a sale the owner is only now logging. --}}
-                    <input id="deal-new-date" name="deal_date" type="date" value="{{ old('deal_date') }}" class="field w-full px-3 py-2 text-sm" />
+                    <div class="relative">
+                        <input id="deal-new-date" type="text" inputmode="numeric" autocomplete="off" x-model="dateDisplay"
+                            placeholder="{{ __('crm.board.date_format_hint') }}" class="field w-full px-3 py-2 pr-10 text-sm" :aria-invalid="dateError ? 'true' : 'false'" aria-describedby="deal-new-date-error" />
+                        <input type="hidden" name="deal_date" :value="dateIso() || ''" />
+                        <input type="date" x-ref="datePicker" class="pointer-events-none absolute right-0 top-0 h-1 w-1 opacity-0" @change="dateDisplay = crmFormatDate($event.target.value, dateEuropean)">
+                        <button type="button" @click="if ($refs.datePicker.showPicker) $refs.datePicker.showPicker(); else $refs.datePicker.focus()"
+                            class="absolute inset-y-0 right-0 flex w-9 items-center justify-center text-muted hover:text-brand-strong dark:text-night-muted dark:hover:text-brand-light"
+                            aria-label="{{ __('crm.board.open_calendar') }}"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4m10-4v4M3 10h18"/></svg></button>
+                    </div>
+                    <p id="deal-new-date-error" x-show="dateError" x-cloak x-text="dateError" class="mt-1 text-xs text-danger" role="alert"></p>
                 </div>
+            </div>
+
+            <div>
+                <label for="deal-sales-origin" class="mb-1 block text-sm font-medium">{{ __('crm.board.sales_origin') }}</label>
+                <select id="deal-sales-origin" name="sales_origin" required class="field w-full !rounded-md px-3 py-2 text-sm">
+                    @foreach (\App\Models\Deal::SALES_ORIGINS as $origin)
+                        <option value="{{ $origin }}" @selected(old('sales_origin', $filters['origin'] === 'all' ? 'social' : $filters['origin']) === $origin)>{{ __('crm.sales_origins.'.$origin) }}</option>
+                    @endforeach
+                </select>
             </div>
 
             <button type="submit" class="btn btn-primary btn-sm btn-block">{{ __('crm.board.add_submit') }}</button>

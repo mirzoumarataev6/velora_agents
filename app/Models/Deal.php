@@ -22,7 +22,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * for exactly which signals are still allowed to move a deal automatically,
  * and why Оплата is not one of their destinations any more).
  */
-#[Fillable(['conversation_id', 'agent_id', 'lead_id', 'title', 'amount', 'deal_date', 'payment_status', 'stage', 'position', 'note', 'closed_at', 'cancelled_reason'])]
+#[Fillable(['conversation_id', 'agent_id', 'lead_id', 'crm_workspace_id', 'title', 'amount', 'deal_date', 'sales_origin', 'payment_status', 'stage', 'position', 'note', 'closed_at', 'cancelled_reason'])]
 #[UsePolicy(DealPolicy::class)]
 class Deal extends Model
 {
@@ -48,6 +48,9 @@ class Deal extends Model
     public const STAGE_CANCELLED = 'cancelled';
 
     public const PAYMENT_STATUSES = ['unpaid', 'partial', 'paid'];
+
+    /** How the purchase happened; deliberately independent from chat channel. */
+    public const SALES_ORIGINS = ['social', 'in_person'];
 
     /** Every stage the list can be filtered by, including the set-apart one. */
     public static function allStages(): array
@@ -137,6 +140,11 @@ class Deal extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function workspace(): BelongsTo
+    {
+        return $this->belongsTo(CrmWorkspace::class, 'crm_workspace_id');
     }
 
     public function customer(): BelongsTo

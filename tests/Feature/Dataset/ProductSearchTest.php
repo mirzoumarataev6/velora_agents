@@ -77,6 +77,18 @@ class ProductSearchTest extends TestCase
         $this->assertTrue($this->search->enabledFor($this->agentWithCatalog()));
     }
 
+    public function test_search_results_keep_the_owner_mapped_product_image_url(): void
+    {
+        $agent = Agent::factory()->for(User::factory())->create();
+        $this->catalog($agent, [[
+            'name' => 'Ноутбук X', 'image_url' => 'https://shop.example.test/x.jpg',
+        ]]);
+
+        $result = $this->search->search($agent, ['query' => 'Ноутбук X']);
+
+        $this->assertSame('https://shop.example.test/x.jpg', $result['products'][0]['image_url']);
+    }
+
     public function test_a_text_query_matches_name_and_description(): void
     {
         $agent = $this->agentWithCatalog();

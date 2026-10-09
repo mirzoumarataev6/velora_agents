@@ -26,7 +26,7 @@ class AgentTabPersistenceTest extends TestCase
             $this->actingAs($user)
                 ->get(route('agents.show', ['agent' => $agent, 'tab' => $tab]))
                 ->assertOk()
-                ->assertSee("x-data=\"{ tab: '{$tab}' }\"", false);
+                ->assertSee("tab: '{$tab}'", false);
         }
     }
 
@@ -38,7 +38,7 @@ class AgentTabPersistenceTest extends TestCase
         $this->actingAs($user)
             ->get(route('agents.show', $agent))
             ->assertOk()
-            ->assertSee("x-data=\"{ tab: 'knowledge' }\"", false);
+            ->assertSee("tab: 'knowledge'", false);
     }
 
     /**
@@ -55,7 +55,7 @@ class AgentTabPersistenceTest extends TestCase
             $response = $this->actingAs($user)
                 ->get(route('agents.show', ['agent' => $agent, 'tab' => $tab]));
 
-            $response->assertOk()->assertSee("x-data=\"{ tab: 'knowledge' }\"", false);
+            $response->assertOk()->assertSee("tab: 'knowledge'", false);
             $response->assertDontSee('alert(1)', false);
         }
     }

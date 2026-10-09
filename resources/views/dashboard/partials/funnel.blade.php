@@ -55,7 +55,7 @@
                         style="width: {{ $stage['value'] === 0 ? 0 : max(2, $stage['share']) }}%"></div>
                 </div>
 
-                <p class="mt-1 text-[11px] text-muted dark:text-night-muted">
+                <p class="mt-1 text-xs text-muted dark:text-night-muted">
                     {{ __('dashboard.funnel.of_all', ['percent' => $stage['share']]) }}
                 </p>
             </div>

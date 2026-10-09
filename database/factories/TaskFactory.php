@@ -20,6 +20,8 @@ class TaskFactory extends Factory
             'title' => fake()->sentence(4),
             'due_at' => now()->addDay(),
             'done_at' => null,
+            'priority' => 'normal',
+            'type' => 'follow_up',
         ];
     }
 

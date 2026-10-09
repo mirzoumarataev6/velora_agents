@@ -146,6 +146,34 @@ class WhatsAppDriverTest extends TestCase
         }
     }
 
+    public function test_send_image_is_refused_outside_the_24_hour_customer_service_window(): void
+    {
+        Http::fake();
+        $channel = Channel::factory()->whatsapp()->create();
+
+        $this->expectException(OutsideMessagingWindowException::class);
+        $this->driver()->sendImage($channel, '15550001234', 'https://images.example.test/item.jpg');
+    }
+
+    public function test_send_image_uses_graph_image_link_inside_customer_window(): void
+    {
+        Http::fake(['graph.facebook.com/*/messages' => Http::response(['messages' => [['id' => 'wamid.PHOTO']]], 200)]);
+        $channel = Channel::factory()->whatsapp()->create();
+        $conversation = $channel->agent->conversations()->create([
+            'channel_id' => $channel->id, 'external_user_id' => '15550001234', 'status' => 'ai',
+        ]);
+        $conversation->messages()->create([
+            'role' => 'user', 'content' => 'Покажи фото', 'external_message_id' => 'wamid.RECENT',
+            'created_at' => now()->subMinutes(5),
+        ]);
+
+        $this->driver()->sendImage($channel, '15550001234', 'https://images.example.test/item.jpg', 'Ноутбук');
+
+        Http::assertSent(fn ($request) => $request['type'] === 'image'
+            && $request['image']['link'] === 'https://images.example.test/item.jpg'
+            && $request['image']['caption'] === 'Ноутбук');
+    }
+
     public function test_send_message_succeeds_within_the_24_hour_customer_service_window(): void
     {
         Http::fake(['graph.facebook.com/*/messages' => Http::response(['messages' => [['id' => 'wamid.OUT']]], 200)]);

@@ -16,7 +16,7 @@
     class="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4"
     @click.self="close()" @keydown.escape.window="close()">
 
-    <div class="card w-full max-w-lg overflow-y-auto sm:max-h-[90vh]" role="dialog" aria-modal="true">
+    <div class="card max-h-[100dvh] w-full max-w-3xl overflow-y-auto !rounded-xl sm:max-h-[90vh]" role="dialog" aria-modal="true">
         <template x-if="selected">
             <form @submit.prevent="save()" class="card-pad space-y-3">
                 <div class="flex items-start justify-between gap-3">
@@ -25,7 +25,7 @@
                         <p class="tnum text-xs text-muted dark:text-night-muted"
                             x-text="selected.customer_phone || @js(__('crm.customers.chat_only'))"></p>
                     </div>
-                    <button type="button" @click="close()" class="btn btn-ghost btn-sm shrink-0"
+                    <button type="button" x-ref="dealClose" @click="close()" class="btn btn-ghost btn-sm min-h-10 min-w-10 shrink-0"
                         aria-label="{{ __('crm.board.close') }}">✕</button>
                 </div>
 
@@ -56,20 +56,24 @@
                         class="btn btn-secondary btn-sm">{{ __('crm.board.open_chat') }}</a>
                 </div>
 
-                <section class="rounded-2xl bg-black/[0.025] p-3 dark:bg-white/[0.035]" aria-label="{{ __('crm.board.timeline_heading') }}">
-                    <div class="mb-2 flex items-center justify-between gap-2">
-                        <h2 class="text-sm font-semibold">{{ __('crm.board.timeline_heading') }}</h2>
+                <section class="rounded-xl border border-hairline p-3 dark:border-white/10" aria-label="{{ __('crm.board.timeline_heading') }}">
+                    <div class="flex items-center justify-between gap-2">
+                        <button type="button" class="flex min-h-8 items-center gap-2 text-left text-sm font-semibold" @click="activityOpen = !activityOpen" :aria-expanded="activityOpen">
+                            {{ __('crm.board.timeline_heading') }}
+                            <span class="badge badge-neutral tnum" x-show="activityItems.length" x-text="activityItems.length"></span>
+                            <span class="text-muted dark:text-night-muted" aria-hidden="true" x-text="activityOpen ? '−' : '+'"></span>
+                        </button>
                         <span x-show="activityLoading" x-cloak class="text-xs text-muted dark:text-night-muted">{{ __('crm.board.timeline_loading') }}</span>
                     </div>
-                    <p x-show="!activityLoading && !activityItems.length" x-cloak class="py-2 text-xs text-muted dark:text-night-muted">{{ __('crm.board.timeline_empty') }}</p>
-                    <ol x-show="activityItems.length" class="max-h-48 space-y-2 overflow-y-auto pr-1">
+                    <p x-show="activityOpen && !activityLoading && !activityItems.length" x-cloak class="pt-2 text-xs text-muted dark:text-night-muted">{{ __('crm.board.timeline_empty') }}</p>
+                    <ol x-show="activityOpen && activityItems.length" x-cloak class="mt-3 max-h-48 space-y-2 overflow-y-auto pr-1">
                         <template x-for="(item, index) in activityItems" :key="item.kind + '-' + (item.id || index)">
                             <li class="flex gap-2 text-xs">
                                 <span class="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full" :class="item.kind === 'message' ? 'bg-brand' : 'bg-muted/50'"></span>
                                 <div class="min-w-0 flex-1">
                                     <p class="font-medium" x-text="item.label"></p>
                                     <p class="mt-0.5 whitespace-pre-line break-words text-muted dark:text-night-muted" x-text="item.text"></p>
-                                    <p class="mt-0.5 text-[10px] text-muted/70 dark:text-night-muted/70" x-text="new Date(item.at).toLocaleString(document.documentElement.lang)"></p>
+                                    <p class="mt-0.5 text-xs text-muted dark:text-night-muted" x-text="new Date(item.at).toLocaleString(document.documentElement.lang)"></p>
                                 </div>
                                 <span x-html="channelIcon(item.channel)" class="mt-0.5 shrink-0"></span>
                             </li>
@@ -103,6 +107,24 @@
                     </div>
                 </div>
 
+                <div>
+                    <label class="mb-1 block text-sm font-medium" :for="'deal-origin-' + selected.id">{{ __('crm.board.sales_origin') }}</label>
+                    <select :id="'deal-origin-' + selected.id" x-model="editForm.sales_origin" class="field w-full px-3 py-2 text-sm">
+                        @foreach (\App\Models\Deal::SALES_ORIGINS as $origin)
+                            <option value="{{ $origin }}">{{ __('crm.sales_origins.'.$origin) }}</option>
+                        @endforeach
+                    </select>
+                </div>
+
+                <div>
+                    <label class="mb-1 block text-sm font-medium" :for="'deal-workspace-' + selected.id">{{ __('crm.workspaces.heading') }}</label>
+                    <select :id="'deal-workspace-' + selected.id" x-model="editForm.crm_workspace_id" class="field w-full !rounded-md px-3 py-2 text-sm">
+                        @foreach ($workspaces as $workspace)
+                            <option value="{{ $workspace->id }}">{{ $workspace->displayName() }}</option>
+                        @endforeach
+                    </select>
+                </div>
+
                 <div class="grid grid-cols-2 gap-3">
                     <div>
                         <label class="mb-1 block text-sm font-medium" :for="'deal-stage-' + selected.id">{{ __('crm.board.col_stage') }}</label>
@@ -126,7 +148,15 @@
                     </div>
                     <div>
                         <label class="mb-1 block text-sm font-medium" :for="'deal-date-' + selected.id">{{ __('crm.board.add_date') }}</label>
-                        <input :id="'deal-date-' + selected.id" x-model="editForm.deal_date" type="date" class="field w-full px-3 py-2 text-sm" />
+                        <div class="relative">
+                            <input :id="'deal-date-' + selected.id" x-model="editDateDisplay" type="text" inputmode="numeric" autocomplete="off"
+                                placeholder="{{ __('crm.board.date_format_hint') }}" class="field w-full px-3 py-2 pr-10 text-sm" :aria-invalid="!!editErrors.deal_date" />
+                            <input type="date" x-ref="editDatePicker" class="pointer-events-none absolute right-0 top-0 h-1 w-1 opacity-0" @change="editDateDisplay = crmFormatDate($event.target.value, dateEuropean)">
+                            <button type="button" @click="if ($refs.editDatePicker.showPicker) $refs.editDatePicker.showPicker(); else $refs.editDatePicker.focus()"
+                                class="absolute inset-y-0 right-0 flex w-9 items-center justify-center text-muted hover:text-brand-strong dark:text-night-muted dark:hover:text-brand-light"
+                                aria-label="{{ __('crm.board.open_calendar') }}"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4m10-4v4M3 10h18"/></svg></button>
+                        </div>
+                        <p x-show="editErrors.deal_date" x-cloak class="mt-1 text-xs text-danger" x-text="editErrors.deal_date?.[0]"></p>
                     </div>
                 </div>
 
@@ -149,16 +179,21 @@
                     <textarea :id="'deal-note-' + selected.id" x-model="editForm.note" rows="3" class="field w-full px-3 py-2 text-sm"></textarea>
                 </div>
 
-                <section class="rounded-2xl border border-hairline p-3 dark:border-white/10">
+                <section class="rounded-md border border-hairline p-3 dark:border-white/10">
                     <h2 class="mb-2 text-sm font-semibold">{{ __('crm.board.next_step') }}</h2>
-                    <div class="grid gap-2 sm:grid-cols-[1fr_10rem_auto]">
+                    <div class="grid gap-2 sm:grid-cols-[1fr_14rem_auto]">
                         <div>
                             <input x-model="taskForm.title" maxlength="255" :aria-label="@js(__('crm.tasks.add_title'))"
                                 :placeholder="@js(__('crm.board.next_step_placeholder'))" class="field w-full px-3 py-2 text-sm" />
                             <p x-show="taskErrors.title" x-cloak class="mt-1 text-xs text-danger" x-text="taskErrors.title?.[0]"></p>
                         </div>
-                        <div class="min-w-0 flex-1">
-                            <input x-model="taskForm.due_at" type="datetime-local" :aria-label="@js(__('crm.tasks.add_due'))" :aria-invalid="!!taskErrors.due_at" class="field w-full px-3 py-2 text-sm" />
+                        <div class="relative min-w-0 flex-1">
+                            <input x-model="taskDueDisplay" type="text" inputmode="numeric" autocomplete="off"
+                                placeholder="{{ __('crm.board.datetime_format_hint') }}" :aria-label="@js(__('crm.tasks.add_due'))" :aria-invalid="!!taskErrors.due_at" class="field w-full px-3 py-2 pr-10 text-sm" />
+                            <input type="datetime-local" x-ref="taskDuePicker" class="pointer-events-none absolute right-0 top-0 h-1 w-1 opacity-0" @change="taskDueDisplay = crmFormatDateTime($event.target.value, dateEuropean)">
+                            <button type="button" @click="if ($refs.taskDuePicker.showPicker) $refs.taskDuePicker.showPicker(); else $refs.taskDuePicker.focus()"
+                                class="absolute right-0 top-0 flex h-10 w-9 items-center justify-center text-muted hover:text-brand-strong dark:text-night-muted dark:hover:text-brand-light"
+                                aria-label="{{ __('crm.board.open_calendar') }}"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4m10-4v4M3 10h18"/></svg></button>
                             <p x-show="taskErrors.due_at" x-cloak class="mt-1 text-xs text-danger" x-text="taskErrors.due_at?.[0]"></p>
                         </div>
                         <button type="button" @click="addNextTask()" :disabled="taskSaving || !taskForm.title.trim()" class="btn btn-secondary btn-sm disabled:opacity-50">{{ __('crm.board.next_step_add') }}</button>
@@ -167,7 +202,7 @@
 
                 <hr class="rule" />
 
-                <div class="flex gap-2">
+                <div class="sticky bottom-0 z-10 flex gap-2 border-t border-hairline bg-surface py-3 dark:border-white/10 dark:bg-night-card">
                     <button type="submit" :disabled="editSaving" class="btn btn-primary btn-sm flex-1">{{ __('crm.board.save') }}</button>
                     <button type="button" @click="destroy(selected)" class="btn btn-danger-soft btn-sm">{{ __('crm.board.delete') }}</button>
                 </div>

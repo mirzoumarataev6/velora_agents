@@ -98,7 +98,7 @@ class AnalyticsDashboardTest extends TestCase
         $response->assertOk();
         $response->assertSee(__('dashboard.empty.title'), false);
         $response->assertSee(__('dashboard.empty.description'), false);
-        $response->assertDontSee(__('dashboard.funnel.title'), false);
+        $response->assertDontSee('analytics-more-toggle', false);
     }
 
     public function test_the_widgets_appear_once_there_is_history(): void
@@ -109,13 +109,14 @@ class AnalyticsDashboardTest extends TestCase
 
         $response->assertOk();
         $response->assertSee(__('dashboard.highlight.eyebrow'), false);
-        $response->assertSee(__('dashboard.funnel.title'), false);
         $response->assertSee(__('dashboard.ratings.title'), false);
+        $response->assertSee(__('dashboard.funnel.title'), false);
         $response->assertSee(__('dashboard.response_trend.title'), false);
         $response->assertSee(__('dashboard.leads_status.title'), false);
         $response->assertSee(__('dashboard.heatmap.title'), false);
         $response->assertSee(__('dashboard.products.title'), false);
         $response->assertSee(__('dashboard.unanswered.title'), false);
+        $response->assertDontSee('analytics-more-toggle', false);
         $response->assertDontSee(__('dashboard.empty.title'), false);
     }
 

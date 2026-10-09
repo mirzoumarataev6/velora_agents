@@ -12,6 +12,43 @@ return [
     | restarts it when it dies, hangs, or the code on disk changes.
     |
     */
+    /*
+    | WHICH POOL THIS PROCESS IS. Set by `queue:supervise` on each child it
+    | spawns, and read by WorkerHeartbeat to decide which key to check in under.
+    |
+    | It has to be per-process rather than global: with two workers sharing one
+    | heartbeat key, an idle `ingest` worker would overwrite the `default`
+    | worker's "working" state every few seconds and stall detection would never
+    | fire again. One key per pool is what keeps liveness meaningful.
+    */
+    'pool' => env('WORKER_POOL', 'default'),
+
+    /*
+    | THE POOLS, and why there is more than one.
+    |
+    | `default` carries HandleIncomingMessageJob — a real customer waiting for a
+    | reply. `ingest` carries BI file ingestion, which legitimately takes minutes
+    | for a 100MB spreadsheet. On one shared FIFO those minutes would be added to
+    | every customer message that happened to arrive behind the import, turning a
+    | back-office upload into a front-of-house outage. Two queues and two worker
+    | processes is the whole fix.
+    |
+    | `queues` is passed to `queue:work --queue=`; a comma-separated list is
+    | served in priority order. `timeout` overrides the shared one where a pool's
+    | jobs are legitimately slower.
+    */
+    'pools' => [
+        'default' => [
+            'queues' => env('WORKER_DEFAULT_QUEUES', 'default'),
+        ],
+        'ingest' => [
+            'queues' => env('WORKER_INGEST_QUEUES', 'ingest'),
+            // Above BiJob::$timeout (900s) so the worker's own limit is not what
+            // kills a legitimate import — the job's is.
+            'timeout' => env('WORKER_INGEST_TIMEOUT', 960),
+        ],
+    ],
+
     'supervise' => [
         // Passed straight to the child `queue:work`.
         'tries' => env('WORKER_TRIES', 3),
@@ -56,6 +93,8 @@ return [
     |
     */
     'heartbeat' => [
+        // A PREFIX, not the whole key: the pool name is appended, so each worker
+        // process has its own liveness record. See `pool` above.
         'cache_key' => 'worker:heartbeat',
         // Don't write on every loop iteration — the cache store is the
         // database here, and an idle worker loops constantly.

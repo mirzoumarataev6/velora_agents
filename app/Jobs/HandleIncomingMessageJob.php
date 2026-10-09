@@ -12,6 +12,8 @@ use App\Services\Channels\ChannelDriverInterface;
 use App\Services\Channels\ChannelDriverManager;
 use App\Services\Channels\HumanizedReplySender;
 use App\Services\Channels\IncomingMessage;
+use App\Services\Channels\PhotoReplyService;
+use App\Services\Channels\PhotoRequestContext;
 use App\Services\Quality\FeedbackCadence;
 use App\Services\Quality\MessageFeedbackRecorder;
 use App\Services\Reply\CustomerLocale;
@@ -49,6 +51,8 @@ class HandleIncomingMessageJob implements ShouldQueue
         MessageFeedbackRecorder $ratings,
         FeedbackCadence $cadence,
         CustomerLocale $locales,
+        PhotoRequestContext $photoContext,
+        PhotoReplyService $photoReplies,
     ): void {
         if (! $this->claimUpdate()) {
             return;
@@ -101,7 +105,10 @@ class HandleIncomingMessageJob implements ShouldQueue
             return;
         }
 
-        if ($replyService->shouldSuppressReply($conversation)) {
+        $photo = in_array($this->channel->type, ['telegram', 'whatsapp', 'greenapi'], true)
+            ? $photoContext->resolve($conversation, $userMessage) : ['requested' => false];
+
+        if (! $photo['requested'] && $replyService->shouldSuppressReply($conversation)) {
             Log::info('Suppressing reply: previous fallback still within suppression window', [
                 'channel_id' => $this->channel->id,
                 'conversation_id' => $conversation->id,
@@ -113,7 +120,10 @@ class HandleIncomingMessageJob implements ShouldQueue
 
         $driver->sendTypingIndicator($this->channel, $incoming->externalUserId);
 
-        $assistantMessage = $incoming->type === 'text' && AgentReplyService::isStartCommand($incoming->text)
+        if ($photo['requested']) {
+            $assistantMessage = $photoReplies->reply($driver, $this->channel, $conversation, $userMessage, $photo);
+        } else {
+            $assistantMessage = $incoming->type === 'text' && AgentReplyService::isStartCommand($incoming->text)
             ? $replyService->greetOnStart($conversation)
             : match ($incoming->type) {
                 'photo_unclear' => $replyService->askForProductName($conversation, $userMessage),
@@ -129,6 +139,7 @@ class HandleIncomingMessageJob implements ShouldQueue
                 ),
                 default => $replyService->generateReplyFor($conversation, $userMessage),
             };
+        }
 
         $askForRating = $driver->supportsMessageFeedback()
             && $cadence->shouldAsk($conversation, $assistantMessage, $userMessage);

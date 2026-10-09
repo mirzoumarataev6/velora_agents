@@ -274,7 +274,10 @@ class TelegramDriver implements ChannelDriverInterface
                     'error' => $e->getMessage(),
                 ]);
 
-                $this->call($token, 'sendMessage', ['chat_id' => $externalUserId, 'text' => $chunk]);
+                $this->assertTelegramAccepted(
+                    $this->call($token, 'sendMessage', ['chat_id' => $externalUserId, 'text' => $chunk]),
+                    'sendMessage'
+                );
 
                 continue;
             }
@@ -291,12 +294,23 @@ class TelegramDriver implements ChannelDriverInterface
                     'description' => $response['description'] ?? null,
                 ]);
 
-                $this->call($token, 'sendMessage', [
+                $plain = $this->call($token, 'sendMessage', [
                     'chat_id' => $externalUserId,
                     'text' => $this->markdown->toPlainText($chunk),
                 ]);
+
+                $this->assertTelegramAccepted($plain, 'sendMessage');
             }
         }
+    }
+
+    public function sendImage(Channel $channel, string $externalUserId, string $url, string $caption = ''): void
+    {
+        $this->assertTelegramAccepted($this->call($this->token($channel), 'sendPhoto', [
+            'chat_id' => $externalUserId,
+            'photo' => $url,
+            'caption' => mb_substr($caption, 0, 900),
+        ]), 'sendPhoto');
     }
 
     // Сообщает, что Telegram поддерживает обратную связь по сообщениям
@@ -541,5 +555,13 @@ class TelegramDriver implements ChannelDriverInterface
         }
 
         return $response->json() ?? ['ok' => false, 'description' => 'Empty response from Telegram'];
+    }
+
+    /** Telegram can return a business-level failure in a successful HTTP response. */
+    protected function assertTelegramAccepted(array $response, string $method): void
+    {
+        if (! ($response['ok'] ?? false)) {
+            throw new RuntimeException('Telegram rejected ['.$method.']: '.($response['description'] ?? 'unknown error'));
+        }
     }
 }

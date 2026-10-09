@@ -148,6 +148,12 @@ class User extends Authenticatable
         return $this->hasMany(Deal::class);
     }
 
+    /** CRM folders are owner-owned, independently of any agent. */
+    public function crmWorkspaces(): HasMany
+    {
+        return $this->hasMany(CrmWorkspace::class);
+    }
+
     public function tasks(): HasMany
     {
         return $this->hasMany(Task::class);
@@ -161,5 +167,28 @@ class User extends Authenticatable
     public function usageLogs(): HasMany
     {
         return $this->hasMany(UsageLog::class);
+    }
+
+    /**
+     * The BI module's uploaded files and live connections. Like customers and
+     * deals, these hang off the owner rather than off an agent: a spreadsheet of
+     * last quarter's sales belongs to the business, not to whichever assistant
+     * happens to exist.
+     */
+    public function biSources(): HasMany
+    {
+        return $this->hasMany(BiSource::class);
+    }
+
+    /**
+     * Every queryable dataset this account holds, across all its sources.
+     *
+     * Hangs off the user directly (rather than through the source) because
+     * `bi_datasets.user_id` is denormalized for exactly this: quota counts and
+     * scope checks read it without a join.
+     */
+    public function biDatasets(): HasMany
+    {
+        return $this->hasMany(BiDataset::class);
     }
 }

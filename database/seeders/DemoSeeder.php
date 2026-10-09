@@ -121,7 +121,7 @@ class DemoSeeder extends Seeder
      * data. A customer shared with a non-demo agent or a manually created deal
      * is deliberately left untouched.
      *
-     * @param list<string> $slugs
+     * @param  list<string>  $slugs
      */
     protected function purgePresentationCrm(User $owner, array $slugs): void
     {
@@ -250,7 +250,12 @@ class DemoSeeder extends Seeder
                 continue;
             }
 
-            if ($deal->activities->every(fn (DealActivity $activity) => in_array($activity->type, ['created', 'stage_changed'], true))) {
+            if ($deal->activities->every(fn (DealActivity $activity) => in_array($activity->type, ['created', 'stage_changed'], true)
+                // The pre-marker seeder could emit an `updated` event while
+                // filling a generated card. An empty payload carries no owner
+                // edit to preserve; a populated one does and keeps the card.
+                || ($activity->type === 'updated' && $activity->data === null)
+            )) {
                 $deal->delete();
             }
         }
@@ -636,7 +641,7 @@ class DemoSeeder extends Seeder
      * The inbox keeps its varied history, while CRM answers the concrete
      * business question: what should the owner do next and what was sold.
      *
-     * @param array<int, array<string, mixed>> $agents
+     * @param  array<int, array<string, mixed>>  $agents
      */
     protected function seedPresentationCrm(User $owner, array $agents): void
     {
@@ -670,9 +675,9 @@ class DemoSeeder extends Seeder
             ['agent' => 'demo-olami-kompiuterxo', 'customer' => 'Сарвар', 'title' => 'HP OMEN 16', 'amount' => 14999, 'stage' => 'haggling', 'status' => 'active', 'tags' => ['Игровой ноутбук', 'Торг'], 'task' => 'Ответить на предложение по цене'],
             ['agent' => 'demo-rohat', 'customer' => 'Нозима', 'title' => 'Аренда студии 34 м²', 'amount' => 1200, 'stage' => 'haggling', 'status' => 'active', 'tags' => ['Аренда', 'Торг'], 'task' => 'Обсудить срок аренды и цену'],
             ['agent' => 'demo-olami-kompiuterxo', 'customer' => 'Камол Ҳасанов', 'title' => 'Игровой ноутбук для сына', 'amount' => null, 'stage' => 'new_lead', 'status' => 'lead', 'tags' => ['Рассрочка'], 'task' => 'Объяснить условия рассрочки'],
-            ['agent' => 'demo-olami-kompiuterxo', 'customer' => 'Баҳром Назаров', 'title' => 'HP OMEN 16', 'amount' => 14249, 'stage' => 'payment', 'status' => 'customer', 'tags' => ['Игровой ноутбук'], 'paid' => true, 'closed' => true],
-            ['agent' => 'demo-olami-kompiuterxo', 'customer' => 'Зебо Қодирова', 'title' => 'MacBook Air 13.6', 'amount' => 10499, 'stage' => 'payment', 'status' => 'customer', 'tags' => ['Учёба', 'MacBook'], 'paid' => true, 'closed' => true],
-            ['agent' => 'demo-olami-kompiuterxo', 'customer' => 'Фирӯз', 'title' => 'Монитор 27″ + HDD 1TB', 'amount' => 3098, 'stage' => 'payment', 'status' => 'customer', 'tags' => ['Самовывоз', 'Комплект'], 'paid' => true, 'closed' => true],
+            ['agent' => 'demo-olami-kompiuterxo', 'customer' => 'Баҳром Назаров', 'title' => 'HP OMEN 16', 'amount' => 14249, 'stage' => 'payment', 'status' => 'customer', 'tags' => ['Игровой ноутбук'], 'paid' => true, 'closed' => true, 'sales_origin' => 'social'],
+            ['agent' => 'demo-olami-kompiuterxo', 'customer' => 'Зебо Қодирова', 'title' => 'MacBook Air 13.6', 'amount' => 10499, 'stage' => 'payment', 'status' => 'customer', 'tags' => ['Учёба', 'MacBook'], 'paid' => true, 'closed' => true, 'sales_origin' => 'in_person'],
+            ['agent' => 'demo-olami-kompiuterxo', 'customer' => 'Фирӯз', 'title' => 'Монитор 27″ + HDD 1TB', 'amount' => 3098, 'stage' => 'payment', 'status' => 'customer', 'tags' => ['Самовывоз', 'Комплект'], 'paid' => true, 'closed' => true, 'sales_origin' => 'in_person'],
             ['agent' => 'demo-olami-kompiuterxo', 'customer' => 'Умед Рашидов', 'title' => 'Монитор 27″ IPS curved', 'amount' => null, 'stage' => Deal::STAGE_CANCELLED, 'status' => 'lost', 'tags' => ['Монитор'], 'reason' => 'Нужной модели не было в наличии'],
             ['agent' => 'demo-startcoding', 'customer' => 'Нозима', 'title' => 'Курс графического дизайна', 'amount' => 280, 'stage' => Deal::STAGE_CANCELLED, 'status' => 'lost', 'tags' => ['Дизайн'], 'reason' => 'Покупку отложили'],
         ];
@@ -705,6 +710,7 @@ class DemoSeeder extends Seeder
                 'amount' => $profile['amount'],
                 'deal_date' => $openedAt->toDateString(),
                 'payment_status' => ! empty($profile['paid']) ? 'paid' : 'unpaid',
+                'sales_origin' => $profile['sales_origin'] ?? 'social',
                 'stage' => $profile['stage'],
                 'stage_changed_at' => $stageAt,
                 'closed_at' => ! empty($profile['closed']) ? $stageAt : null,

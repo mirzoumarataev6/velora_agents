@@ -25,7 +25,7 @@ trait PresentsProducts
             }
         }
 
-        foreach (['category', 'sku', 'url'] as $field) {
+        foreach (['category', 'sku', 'url', 'image_url'] as $field) {
             if (($fields[$field] ?? null) !== null && $fields[$field] !== '') {
                 $row[$field] = (string) $fields[$field];
             }

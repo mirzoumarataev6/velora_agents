@@ -7,6 +7,7 @@ use App\Models\Channel;
 use App\Models\Conversation;
 use App\Models\Customer;
 use App\Models\Deal;
+use App\Models\Task;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -26,6 +27,18 @@ class DealBoardTest extends TestCase
         foreach (Deal::allStages() as $stage) {
             $response->assertSee(__('crm.stages.'.$stage));
         }
+    }
+
+    public function test_deal_deletion_confirmation_does_not_use_a_blocking_browser_dialog(): void
+    {
+        $owner = User::factory()->create();
+
+        $this->actingAs($owner)->get(route('crm.board'))
+            ->assertOk()
+            ->assertSee('data-crm-nav', false)
+            ->assertSee('role="alertdialog"', false)
+            ->assertSee('confirmDelete()', false)
+            ->assertDontSee('confirm(labels.deleteConfirm)', false);
     }
 
     public function test_the_poll_returns_only_the_owners_deals(): void
@@ -73,6 +86,46 @@ class DealBoardTest extends TestCase
         $response->assertJsonPath('deals.0.last_activity', fn ($v) => $v !== null);
     }
 
+    public function test_repeat_customers_are_grouped_and_the_profile_keeps_every_order_and_conversation(): void
+    {
+        $owner = User::factory()->create();
+        $agent = Agent::factory()->for($owner)->create();
+        $channel = Channel::factory()->for($agent)->whatsapp()->create();
+        $customer = Customer::factory()->for($owner)->create(['name' => 'Фарид']);
+
+        $conversationIds = [];
+        foreach (range(1, 3) as $number) {
+            $conversation = Conversation::factory()->for($agent)->for($channel)->create([
+                'customer_id' => $customer->id,
+                'external_user_name' => "Диалог {$number}",
+            ]);
+            $conversationIds[] = $conversation->id;
+            Deal::factory()->for($owner)->for($customer)->create([
+                'conversation_id' => $conversation->id,
+                'title' => "Покупка {$number}",
+                'payment_status' => 'paid',
+            ]);
+        }
+
+        $this->actingAs($owner)->getJson(route('crm.deals.poll'))
+            ->assertOk()
+            ->assertJsonCount(1, 'deals')
+            ->assertJsonPath('deals.0.customer_name', 'Фарид')
+            ->assertJsonPath('deals.0.customer_purchase_count', 3)
+            ->assertJsonPath('deals.0.customer_conversation_count', 3)
+            ->assertJsonPath('deals.0.customer_purchase_count_label', '3 покупки')
+            ->assertJsonPath('deals.0.customer_conversation_count_label', '3 диалога');
+
+        $profile = $this->get(route('crm.customers.show', $customer));
+        $profile->assertOk();
+        foreach (['Покупка 1', 'Покупка 2', 'Покупка 3'] as $entry) {
+            $profile->assertSee($entry);
+        }
+        foreach ($conversationIds as $conversationId) {
+            $profile->assertSee('conversation='.$conversationId, false);
+        }
+    }
+
     public function test_the_poll_applies_the_stage_filter_on_the_server(): void
     {
         $owner = User::factory()->create();
@@ -86,6 +139,34 @@ class DealBoardTest extends TestCase
         $response->assertJsonCount(1, 'deals');
         $response->assertJsonPath('deals.0.title', 'Торг');
         $response->assertJsonPath('pagination.total', 1);
+    }
+
+    public function test_summary_card_filter_sentinels_select_their_matching_deals(): void
+    {
+        $owner = User::factory()->create();
+        $customer = Customer::factory()->for($owner);
+        Deal::factory()->for($owner)->for($customer)->stage('new_lead')->create(['title' => 'Новая заявка']);
+        Deal::factory()->for($owner)->for($customer)->stage('haggling')->create(['title' => 'Обсуждение цены']);
+        Deal::factory()->for($owner)->for($customer)->stage('payment')->create(['title' => 'Оплачивается']);
+        Deal::factory()->for($owner)->for($customer)->stage('cancelled')->create(['title' => 'Отменённая']);
+
+        $this->actingAs($owner)->getJson(route('crm.deals.poll', ['stage' => 'in_progress']))
+            ->assertOk()->assertJsonCount(2, 'deals');
+        $this->getJson(route('crm.deals.poll', ['stage' => 'resolved']))
+            ->assertOk()->assertJsonCount(2, 'deals');
+    }
+
+    public function test_a_customer_purchase_deep_link_is_scoped_and_seeds_that_deal(): void
+    {
+        $owner = User::factory()->create();
+        $deal = Deal::factory()->for($owner)->create(['title' => 'Нужная покупка']);
+        $foreign = Deal::factory()->create(['title' => 'Чужая покупка']);
+
+        $this->actingAs($owner)->get(route('crm.board', ['deal' => $deal->id]))
+            ->assertOk()->assertSee('Нужная покупка')->assertSee('initialDeal');
+
+        $this->get(route('crm.board', ['deal' => $foreign->id]))
+            ->assertOk()->assertDontSee('Чужая покупка');
     }
 
     public function test_search_is_applied_to_the_full_owner_dataset_on_the_server(): void
@@ -112,10 +193,11 @@ class DealBoardTest extends TestCase
     public function test_amount_sort_is_applied_by_the_server(): void
     {
         $owner = User::factory()->create();
-        $customer = Customer::factory()->for($owner);
+        $cheapCustomer = Customer::factory()->for($owner)->create();
+        $expensiveCustomer = Customer::factory()->for($owner)->create();
 
-        Deal::factory()->for($owner)->for($customer)->create(['title' => 'Дешёвое', 'amount' => 100]);
-        Deal::factory()->for($owner)->for($customer)->create(['title' => 'Дорогое', 'amount' => 9000]);
+        Deal::factory()->for($owner)->for($cheapCustomer)->create(['title' => 'Дешёвое', 'amount' => 100]);
+        Deal::factory()->for($owner)->for($expensiveCustomer)->create(['title' => 'Дорогое', 'amount' => 9000]);
 
         $this->actingAs($owner)->getJson(route('crm.deals.poll', ['sort' => 'amount', 'dir' => 'desc']))
             ->assertJsonPath('deals.0.title', 'Дорогое')
@@ -433,9 +515,9 @@ class DealBoardTest extends TestCase
     public function test_the_poll_paginates_without_a_hidden_dataset_cap(): void
     {
         $owner = User::factory()->create();
-        $customer = Customer::factory()->for($owner);
 
         for ($i = 0; $i < 31; $i++) {
+            $customer = Customer::factory()->for($owner)->create();
             Deal::factory()->for($owner)->for($customer)->create(['title' => "Deal {$i}"]);
         }
 
@@ -492,7 +574,7 @@ class DealBoardTest extends TestCase
         $owner = User::factory()->create();
         $customer = Customer::factory()->for($owner)->create();
         $deal = Deal::factory()->for($owner)->for($customer)->create();
-        \App\Models\Task::factory()->for($owner)->for($customer)->for($deal)->create([
+        Task::factory()->for($owner)->for($customer)->for($deal)->create([
             'title' => 'Позвонить завтра', 'due_at' => now()->addDay(),
         ]);
 

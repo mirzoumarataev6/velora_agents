@@ -42,10 +42,13 @@
     <div class="grid gap-6 lg:grid-cols-[minmax(0,13rem)_minmax(0,1fr)] lg:items-start">
 
         {{-- Section nav: a sticky rail on desktop, a scrollable pill row on mobile --}}
-        <nav class="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 lg:mx-0 lg:sticky lg:top-6 lg:flex-col lg:overflow-visible lg:px-0"
+        <div class="flex min-w-0 items-start gap-1 lg:block">
+        <button type="button" class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand lg:hidden"
+            @click="$refs.settingsTabs.scrollBy({ left: -180, behavior: 'smooth' })" aria-label="{{ __('agents.show.previous_tabs') }}">‹</button>
+        <nav x-ref="settingsTabs" class="-mx-1 flex min-w-0 flex-1 gap-2 overflow-x-auto px-1 pb-1 lg:mx-0 lg:sticky lg:top-6 lg:flex-col lg:overflow-visible lg:px-0"
             aria-label="{{ __('settings.index.heading') }}">
             @foreach ($tabs as $key)
-                <button type="button" @click="go('{{ $key }}')"
+                <button type="button" x-ref="settingsTab_{{ $key }}" @click="go('{{ $key }}')"
                     :aria-current="tab === '{{ $key }}' ? 'page' : 'false'"
                     :class="tab === '{{ $key }}'
                         ? 'bg-brand-circle text-brand-strong'
@@ -55,6 +58,9 @@
                 </button>
             @endforeach
         </nav>
+        <button type="button" class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand lg:hidden"
+            @click="$refs.settingsTabs.scrollBy({ left: 180, behavior: 'smooth' })" aria-label="{{ __('agents.show.next_tabs') }}">›</button>
+        </div>
 
         <div class="min-w-0 space-y-6">
 
@@ -220,7 +226,7 @@
                                 <label class="cursor-pointer">
                                     <input type="radio" name="locale" value="{{ $loc }}" class="peer sr-only"
                                         @checked(old('locale', $user->locale ?? app()->getLocale()) === $loc) />
-                                    <span class="block rounded-xl px-4 py-2 text-sm font-medium transition-colors peer-checked:border-brand peer-checked:bg-brand/10 peer-checked:text-brand">
+                                    <span class="block rounded-xl border border-transparent px-4 py-2 text-sm font-medium transition-colors peer-checked:border-brand peer-checked:bg-brand/10 peer-checked:text-brand peer-focus-visible:ring-2 peer-focus-visible:ring-brand">
                                         {{ __("settings.locales.$loc") }}
                                     </span>
                                 </label>
@@ -240,7 +246,7 @@
                                     <input type="radio" name="theme" value="{{ $themeOption }}" class="peer sr-only"
                                         @checked(old('theme', $user->theme ?? 'system') === $themeOption)
                                         @change="previewTheme('{{ $themeOption }}')" />
-                                    <span class="block rounded-xl px-4 py-2 text-sm font-medium transition-colors peer-checked:border-brand peer-checked:bg-brand/10 peer-checked:text-brand">
+                                    <span class="block rounded-xl border border-transparent px-4 py-2 text-sm font-medium transition-colors peer-checked:border-brand peer-checked:bg-brand/10 peer-checked:text-brand peer-focus-visible:ring-2 peer-focus-visible:ring-brand">
                                         <span data-i18n="settings.themes.{{ $themeOption }}">{{ __("settings.themes.$themeOption") }}</span>
                                     </span>
                                 </label>
@@ -396,6 +402,7 @@
                 if (fromHash && {{ Js::from($tabs) }}.includes(fromHash) && initialTab === 'profile') {
                     this.tab = fromHash;
                 }
+                this.$nextTick(() => this.$refs['settingsTab_' + this.tab]?.scrollIntoView({ block: 'nearest', inline: 'center' }));
                 if (flash) window.showToast?.(flash, 'success');
                 if (this.deleteOpen) this.$nextTick(() => this.$refs.confirmInput?.focus());
             },
@@ -403,6 +410,7 @@
             go(tab) {
                 this.tab = tab;
                 window.history.replaceState({}, '', '#' + tab);
+                this.$nextTick(() => this.$refs['settingsTab_' + tab]?.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' }));
             },
 
             openDelete() {

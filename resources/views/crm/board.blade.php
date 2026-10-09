@@ -1,9 +1,9 @@
-@extends('layouts.dashboard')
+@extends(request()->header('X-CRM-Partial') === '1' ? 'layouts.crm-partial' : 'layouts.dashboard')
 
 @section('title', __('crm.board.title'))
 
 @section('content')
-<div x-data="dealList({
+<div class="crm-page" x-data="dealList({
         deals: {{ Js::from($deals) }},
         leads: {{ Js::from($leads) }},
         leadsBucket: @js($leadsBucket),
@@ -27,7 +27,8 @@
         // load, and the modal's own x-show state has no way to survive that
         // on its own. Only its own fields' errors trigger this: an error
         // anywhere else on the page must not pop this modal open.
-        openCreate: @js($errors->hasAny(['customer_id', 'new_customer_name', 'new_customer_phone', 'title', 'amount', 'deal_date'])),
+        openCreate: @js($errors->hasAny(['customer_id', 'new_customer_name', 'new_customer_phone', 'title', 'amount', 'deal_date', 'sales_origin'])),
+        initialDeal: {{ Js::from($initialDeal) }},
         labels: {{ Js::from([
             'moveFailed' => __('crm.board.move_failed'),
             'saveFailed' => __('crm.board.save_failed'),
@@ -39,9 +40,16 @@
             'stages' => __('crm.stages'),
             'stageBadge' => collect(\App\Models\Deal::allStages())->mapWithKeys(fn ($s) => [$s => \App\Models\Deal::badgeClass($s)]),
             'payment' => __('crm.payment_statuses'),
+            'origins' => __('crm.sales_origins'),
+            'originsShort' => __('crm.sales_origins_short'),
             'matchPrefix' => __('crm.board.phone_match_prefix'),
+            'workspaceDeleteConfirm' => __('crm.workspaces.delete_confirm'),
         ]) }},
-    })" x-init="start()" @beforeunload.window="stop()">
+        workspaces: {{ Js::from($workspaces->map(fn ($workspace) => ['id' => $workspace->id, 'name' => $workspace->displayName(), 'is_default' => $workspace->is_default, 'color' => $workspace->color])->values()) }},
+        defaultWorkspaceId: @js($defaultWorkspaceId),
+        workspaceUpdateUrlBase: '{{ route('crm.workspaces.update', ['workspace' => '__ID__']) }}',
+        workspaceDeleteUrlBase: '{{ route('crm.workspaces.destroy', ['workspace' => '__ID__']) }}',
+    })" x-init="start(); return () => stop()">
 
     <div class="page-header">
         <div>
@@ -59,38 +67,102 @@
 
     @include('crm.partials.subnav')
 
-    <section class="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="{{ __('crm.board.overview_heading') }}">
-        <article class="card card-pad-sm">
+    <nav class="mt-5 grid grid-cols-2 border-b border-hairline dark:border-white/10" aria-label="{{ __('crm.origins.heading') }}">
+        @foreach (['social', 'in_person'] as $origin)
+            <button type="button" @click="setOrigin('{{ $origin }}')"
+                class="flex min-w-0 items-center justify-center gap-2 border-b-2 px-3 py-3 text-sm font-semibold transition-colors"
+                :class="filters.origin === '{{ $origin }}' ? 'border-brand text-brand' : 'border-transparent text-muted hover:text-ink dark:text-night-muted dark:hover:text-night-ink'">
+                <span>{{ __('crm.sales_origins_short.'.$origin) }}</span>
+                <span class="tnum text-xs font-normal text-muted dark:text-night-muted" x-text="overview.origin_counts['{{ $origin }}'] || 0"></span>
+            </button>
+        @endforeach
+    </nav>
+
+    <section class="mt-4 flex flex-col gap-3 border-b border-hairline pb-4 dark:border-white/10 sm:flex-row sm:items-center sm:justify-between">
+        <div class="min-w-0 w-full">
+            <p class="hidden text-xs font-semibold uppercase tracking-wide text-muted dark:text-night-muted sm:block">{{ __('crm.workspaces.heading') }}</p>
+            <div class="flex items-center gap-2 sm:hidden">
+                <select class="field min-w-0 flex-1 text-sm" aria-label="{{ __('crm.workspaces.heading') }}"
+                    :value="filters.workspace_id ?? ''" @change="setWorkspace($event.target.value ? Number($event.target.value) : null)">
+                    <option value="">{{ __('crm.workspaces.all') }}</option>
+                    @foreach ($workspaces as $workspace)
+                        <option value="{{ $workspace->id }}">{{ $workspace->displayName() }}</option>
+                    @endforeach
+                </select>
+                <button type="button" @click="createWorkspace()" class="btn btn-ghost btn-sm shrink-0">+ {{ __('crm.workspaces.create') }}</button>
+            </div>
+            <div class="mt-2 hidden max-w-full flex-wrap items-center gap-2 sm:flex">
+                <button type="button" @click="setWorkspace(null)"
+                    class="inline-flex max-w-full items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors"
+                    :class="!filters.workspace_id ? 'border-brand bg-brand/5 text-brand' : 'border-hairline text-ink hover:bg-sunk dark:border-white/10 dark:text-night-ink dark:hover:bg-night-raised'">
+                    <span>{{ __('crm.workspaces.all') }}</span>
+                </button>
+                @foreach ($workspaces as $workspace)
+                    <div class="inline-flex max-w-full items-center overflow-hidden rounded-lg border transition-colors"
+                        :class="filters.workspace_id === {{ $workspace->id }} ? 'border-brand bg-brand/5 text-brand' : 'border-hairline dark:border-white/10'">
+                        <button type="button" @click="setWorkspace({{ $workspace->id }})"
+                            class="inline-flex min-w-0 max-w-[15rem] items-center gap-2 px-3 py-2 text-sm text-ink dark:text-night-ink">
+                            <span class="h-2 w-2 shrink-0" :class="{
+                                'bg-brand': {{ Js::from($workspace->color === 'blue') }},
+                                'bg-purple-500': {{ Js::from($workspace->color === 'violet') }},
+                                'bg-green-500': {{ Js::from($workspace->color === 'green') }},
+                                'bg-amber-500': {{ Js::from($workspace->color === 'amber') }},
+                                'bg-rose-500': {{ Js::from($workspace->color === 'rose') }},
+                                'bg-slate-500': {{ Js::from($workspace->color === 'slate') }},
+                            }"></span>
+                            <span class="truncate">{{ $workspace->displayName() }}</span>
+                        </button>
+                        @if (! $workspace->is_default)
+                            <button type="button" @click="manageWorkspace({{ $workspace->id }}, @js($workspace->name))"
+                                class="border-l border-hairline px-2 py-2 text-muted hover:text-brand dark:border-white/10 dark:text-night-muted"
+                                aria-label="{{ __('crm.workspaces.manage', ['name' => $workspace->name]) }}">···</button>
+                        @endif
+                    </div>
+                @endforeach
+                <button type="button" @click="createWorkspace()"
+                    class="inline-flex items-center gap-2 rounded-lg border border-dashed border-hairline px-3 py-2 text-sm text-muted transition-colors hover:border-brand hover:text-brand dark:border-white/15 dark:text-night-muted">
+                    <span aria-hidden="true">+</span><span>{{ __('crm.workspaces.create') }}</span>
+                </button>
+            </div>
+        </div>
+    </section>
+
+    {{-- On a 320px workbench, two rows of summary tiles put the first actual
+         deal below the fold. Keep every metric available, but make the list
+         the first visible work object until the owner asks for the overview. --}}
+    <button type="button" class="card mt-4 flex w-full items-center justify-between gap-3 px-4 py-3 text-left sm:hidden"
+        @click="metricsOpen = !metricsOpen" :aria-expanded="metricsOpen" aria-controls="crm-overview">
+        <span class="text-sm font-semibold">{{ __('crm.board.overview_short') }}</span>
+        <span class="flex items-center gap-2 text-xs text-muted dark:text-night-muted"><span class="tnum" x-text="activeDealsCount()"></span> {{ __('crm.board.metric_active') }} <span aria-hidden="true" x-text="metricsOpen ? '−' : '+'"></span></span>
+    </button>
+    <section id="crm-overview" x-show="metricsOpen" x-cloak class="mt-3 grid grid-cols-2 gap-2 sm:mt-5 sm:!grid sm:gap-3 xl:grid-cols-4" aria-label="{{ __('crm.board.overview_heading') }}">
+        <button type="button" @click="setStage('in_progress')" class="card card-pad-sm group w-full cursor-pointer text-left transition-all hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">
             <p class="text-xs font-medium text-muted dark:text-night-muted">{{ __('crm.board.metric_active') }}</p>
             <p class="mt-1 tnum text-2xl font-semibold" x-text="activeDealsCount()"></p>
             <p class="mt-1 text-xs text-muted dark:text-night-muted">{{ __('crm.board.metric_active_hint') }}</p>
-        </article>
-        <article class="card card-pad-sm">
+        </button>
+        <button type="button" @click="setStage('payment')" class="card card-pad-sm group w-full cursor-pointer text-left transition-all hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">
             <p class="text-xs font-medium text-muted dark:text-night-muted">{{ __('crm.board.metric_paid') }}</p>
             <p class="mt-1 tnum text-2xl font-semibold" x-text="overview.counts.payment"></p>
             <p class="mt-1 text-xs text-muted dark:text-night-muted"><span x-text="formatMoney(overview.paid_value)"></span> · {{ __('crm.board.metric_paid_value') }}</p>
-        </article>
-        <article class="card card-pad-sm">
+        </button>
+        <button type="button" @click="setStage('resolved')" class="card card-pad-sm group w-full cursor-pointer text-left transition-all hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">
             <p class="text-xs font-medium text-muted dark:text-night-muted">{{ __('crm.board.metric_conversion') }}</p>
             <p class="mt-1 tnum text-2xl font-semibold" x-text="overview.conversion === null ? '—' : `${overview.conversion}%`"></p>
-            <p class="mt-1 text-xs text-muted dark:text-night-muted">{{ __('crm.board.metric_conversion_hint') }}</p>
-        </article>
-        <article class="card card-pad-sm">
+            <p class="mt-1 text-xs text-muted dark:text-night-muted">{{ __('crm.board.metric_conversion_hint') }} · <span class="tnum" x-text="`${overview.counts.payment} / ${overview.counts.payment + overview.counts.cancelled}`"></span></p>
+        </button>
+        <button type="button" @click="setStage(cancelledStage)" class="card card-pad-sm group w-full cursor-pointer text-left transition-all hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">
             <p class="text-xs font-medium text-muted dark:text-night-muted">{{ __('crm.board.metric_lost') }} <span class="tnum" x-text="overview.counts.cancelled"></span></p>
             <template x-if="overview.cancel_reasons.length">
                 <div class="mt-2 flex flex-wrap gap-1.5">
                     <template x-for="reason in overview.cancel_reasons.slice(0, 2)" :key="reason.reason">
-                        <span class="badge badge-neutral text-[11px]"><span x-text="reason.reason === 'unspecified' ? @js(__('crm.board.reason_unspecified')) : reason.reason"></span> · <span x-text="reason.total"></span></span>
+                        <span class="badge badge-neutral crm-reason-badge text-xs"><span x-text="reason.reason === 'unspecified' ? @js(__('crm.board.reason_unspecified')) : reason.reason"></span><span class="shrink-0" x-text="reason.total"></span></span>
                     </template>
                 </div>
             </template>
             <p x-show="!overview.cancel_reasons.length" class="mt-1 text-xs text-muted dark:text-night-muted">{{ __('crm.board.metric_lost_hint') }}</p>
-        </article>
+        </button>
     </section>
-
-    @if (session('status'))
-        <div class="card card-pad-sm mt-4 border-brand/30 bg-brand/5 text-sm">{{ session('status') }}</div>
-    @endif
 
     {{-- One panel, not two floating pieces: the filter bar sits inside the
          same card as the rows it filters, divided by a hairline rather than a
@@ -103,6 +175,12 @@
                     {{ __('crm.board.filter_all') }}
                     <span class="badge badge-neutral tnum" x-text="totalDealsCount()"></span>
                 </button>
+                <button type="button" @click="setStage('in_progress')" class="tab" :class="filters.stage === 'in_progress' && 'tab-active'">
+                    {{ __('crm.board.filter_in_progress') }}
+                </button>
+                <button type="button" @click="setStage('resolved')" class="tab" :class="filters.stage === 'resolved' && 'tab-active'">
+                    {{ __('crm.board.filter_resolved') }}
+                </button>
                 {{-- The set-apart stage stays a normal tab — a row's own badge
                      already keeps a cancelled deal visually distinct, so there
                      is no collapsed column left here to keep it out of. It is
@@ -112,7 +190,7 @@
                     <button type="button" @click="setStage(stage)" class="tab"
                         :class="{
                             'tab-active': filters.stage === stage,
-                            'text-muted/70 dark:text-night-muted/70': stage === cancelledStage && filters.stage !== stage,
+                            'text-muted dark:text-night-muted': stage === cancelledStage && filters.stage !== stage,
                         }">
                         <span x-text="labels.stages[stage]"></span>
                         <span class="badge badge-neutral tnum" x-text="overview.counts[stage]"></span>
@@ -135,11 +213,11 @@
             <div class="ml-auto flex items-center gap-2">
                 <div class="flex overflow-hidden rounded-full border border-black/10 text-xs dark:border-white/10">
                     <button type="button" @click="sortBy('date')"
-                        class="px-3 py-1.5 font-medium transition-colors" :class="filters.sort === 'date' ? 'bg-brand/10 text-brand' : 'text-muted hover:bg-black/5 dark:text-night-muted dark:hover:bg-white/5'">
+                        class="min-h-10 px-3 py-1.5 font-medium transition-colors" :class="filters.sort === 'date' ? 'bg-brand/10 text-brand' : 'text-muted hover:bg-black/5 dark:text-night-muted dark:hover:bg-white/5'">
                         <span x-text="labels_sortDate"></span> <span x-show="filters.sort === 'date'" x-text="filters.dir === 'asc' ? '↑' : '↓'"></span>
                     </button>
                     <button type="button" @click="sortBy('amount')"
-                        class="border-l border-black/10 px-3 py-1.5 font-medium transition-colors dark:border-white/10" :class="filters.sort === 'amount' ? 'bg-brand/10 text-brand' : 'text-muted hover:bg-black/5 dark:text-night-muted dark:hover:bg-white/5'">
+                        class="min-h-10 border-l border-black/10 px-3 py-1.5 font-medium transition-colors dark:border-white/10" :class="filters.sort === 'amount' ? 'bg-brand/10 text-brand' : 'text-muted hover:bg-black/5 dark:text-night-muted dark:hover:bg-white/5'">
                         <span x-text="labels_sortAmount"></span> <span x-show="filters.sort === 'amount'" x-text="filters.dir === 'asc' ? '↑' : '↓'"></span>
                     </button>
                 </div>
@@ -165,7 +243,7 @@
              hovered, so a resting list reads as calm data, not a control panel. --}}
         <div class="crm-deals-scroll">
             <table class="table-flat">
-                <thead class="text-muted dark:text-night-muted/70">
+                <thead class="text-muted dark:text-night-muted">
                     <tr>
                         <th class="w-10 px-4 py-3 font-medium">#</th>
                         <th class="px-4 py-3 font-medium">{{ __('crm.board.col_client') }}</th>
@@ -178,16 +256,29 @@
                 </thead>
                 <tbody x-show="filters.stage !== leadsBucket">
                     <template x-for="(deal, index) in visibleDeals()" :key="deal.id">
-                        <tr class="group cursor-pointer border-t border-hairline transition-colors hover:bg-azure-50 dark:border-white/10 dark:hover:bg-night-raised"
-                            @click="open(deal)">
-                            <td class="tnum px-4 py-3.5 text-xs text-muted/70 dark:text-night-muted" x-text="(pagination.from || 1) + index"></td>
+                        <tr tabindex="-1" class="group cursor-pointer border-t border-hairline transition-colors hover:bg-azure-50 dark:border-white/10 dark:hover:bg-night-raised"
+                            @click="open(deal, $event.currentTarget)">
+                            <td class="tnum px-4 py-3.5 text-xs text-muted dark:text-night-muted" x-text="(pagination.from || 1) + index"></td>
                             <td class="max-w-[12rem] px-4 py-3.5">
-                                <div class="flex items-center gap-2">
-                                    <span x-html="channelIcon(deal.channel)" class="shrink-0"></span>
-                                    <span class="truncate font-medium" x-text="deal.customer_name"></span>
-                                </div>
+                                <a :href="customerUrl(deal.customer_id)" @click.stop
+                                    class="flex min-w-0 items-start gap-2 hover:text-brand hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand">
+                                    <span x-html="channelIcon(deal.channel)" class="mt-0.5 shrink-0"></span>
+                                    <span class="grid min-w-0 gap-0.5">
+                                        <span class="truncate font-medium" x-text="deal.customer_name"></span>
+                                        <span x-show="deal.customer_purchase_count > 1 || deal.customer_conversation_count > 1" x-cloak class="flex flex-wrap gap-x-1.5 text-xs font-normal text-muted dark:text-night-muted">
+                                            <span x-show="deal.customer_purchase_count > 1" x-text="deal.customer_purchase_count_label"></span>
+                                            <span x-show="deal.customer_purchase_count > 1 && deal.customer_conversation_count > 1" aria-hidden="true">·</span>
+                                            <span x-show="deal.customer_conversation_count > 1" x-text="deal.customer_conversation_count_label"></span>
+                                        </span>
+                                    </span>
+                                </a>
                             </td>
-                            <td class="max-w-[14rem] truncate px-4 py-3.5 text-muted dark:text-night-muted" x-text="deal.title || '—'"></td>
+                            <td class="max-w-[14rem] px-4 py-3.5 text-muted dark:text-night-muted">
+                                <span class="block truncate" x-text="deal.title || '—'"></span>
+                                <span class="mt-1 inline-flex rounded-full bg-sunk px-2 py-0.5 text-xs font-medium text-muted dark:bg-night-raised dark:text-night-muted"
+                                    :title="labels.origins[deal.sales_origin || 'social']"
+                                    x-text="labels.originsShort[deal.sales_origin || 'social']"></span>
+                            </td>
                             <td class="tnum px-4 py-3.5 font-semibold" x-text="deal.amount || '—'"></td>
                             <td class="px-4 py-3.5">
                                 <div class="flex flex-wrap items-center gap-1.5">
@@ -212,16 +303,18 @@
                             </td>
                             <td class="px-4 py-3.5">
                                 <p class="text-xs text-ink dark:text-night-ink" x-text="deal.last_activity || '—'"></p>
-                                <p x-show="deal.in_stage" x-cloak class="text-[11px] text-muted dark:text-night-muted">
+                                <p x-show="deal.in_stage" x-cloak class="text-xs text-muted dark:text-night-muted">
                                     <span x-text="deal.in_stage"></span> <span x-text="labels.inStage"></span>
                                 </p>
-                                <p x-show="deal.next_task" x-cloak class="mt-1 flex items-center gap-1 text-[11px]" :class="deal.next_task?.overdue ? 'font-semibold text-danger' : 'text-muted dark:text-night-muted'">
+                                <p x-show="deal.next_task" x-cloak class="mt-1 flex items-center gap-1 text-xs" :class="deal.next_task?.overdue ? 'font-semibold text-danger' : 'text-muted dark:text-night-muted'">
                                     <span aria-hidden="true">◷</span><span x-text="deal.next_task?.title"></span><span x-show="deal.next_task?.due_at" x-text="'· ' + deal.next_task?.due_at"></span>
                                 </p>
                             </td>
                             <td class="px-4 py-3.5 text-right">
+                                <button type="button" data-qa="open-deal" @click.stop="open(deal, $el)"
+                                    class="btn btn-ghost btn-sm min-h-10">{{ __('crm.board.open_deal') }}</button>
                                 <button type="button" @click.stop="destroy(deal)"
-                                    class="btn btn-ghost btn-sm opacity-0 transition-opacity focus:opacity-100 group-hover:opacity-100" aria-label="{{ __('crm.board.delete') }}">
+                                    class="btn btn-ghost btn-sm min-h-10 min-w-10 opacity-0 transition-opacity focus:opacity-100 group-hover:opacity-100" aria-label="{{ __('crm.board.delete') }}">
                                     <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 7h12M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m2 0-1 13a2 2 0 01-2 2H8a2 2 0 01-2-2L5 7h14z"/></svg>
                                 </button>
                             </td>
@@ -235,7 +328,7 @@
                 <tbody x-show="filters.stage === leadsBucket">
                     <template x-for="(lead, index) in visibleLeads()" :key="lead.id">
                         <tr class="border-t border-hairline dark:border-white/10">
-                            <td class="tnum px-4 py-3.5 text-xs text-muted/70 dark:text-night-muted" x-text="(pagination.from || 1) + index"></td>
+                            <td class="tnum px-4 py-3.5 text-xs text-muted dark:text-night-muted" x-text="(pagination.from || 1) + index"></td>
                             <td class="max-w-[12rem] px-4 py-3.5">
                                 <a :href="customerUrl(lead.id)" class="flex items-center gap-2 hover:underline">
                                     <span x-html="channelIcon(lead.channel)" class="shrink-0"></span>
@@ -292,14 +385,64 @@
                 <p class="empty-state-text">{{ __('crm.board.no_leads_description') }}</p>
             </div>
         </div>
-    </div>
 
     @include('crm.partials.deal-modal')
     @include('crm.partials.deal-create', ['initialCustomer' => $initialCustomer])
+    @include('crm.partials.workspace-modal')
+
+    <div x-show="pendingDelete" x-cloak x-transition.opacity
+        class="fixed inset-0 z-[70] flex items-center justify-center bg-black/45 p-4"
+        @click.self="cancelDelete()" @keydown.escape.window="cancelDelete()">
+        <section role="alertdialog" aria-modal="true" aria-labelledby="crm-delete-heading" class="card w-full max-w-md p-5 shadow-xl">
+            <h2 id="crm-delete-heading" class="text-base font-semibold">{{ __('crm.board.delete_dialog_heading') }}</h2>
+            <p class="mt-2 text-sm text-muted dark:text-night-muted">{{ __('crm.board.delete_confirm') }}</p>
+            <div class="mt-5 flex justify-end gap-2">
+                <button type="button" @click="cancelDelete()" class="btn btn-secondary btn-sm" :disabled="deleting">{{ __('crm.tasks.cancel') }}</button>
+                <button type="button" @click="confirmDelete()" class="btn btn-danger-soft btn-sm" :disabled="deleting">
+                    <span x-text="deleting ? @js(__('crm.tasks.saving')) : @js(__('crm.board.delete'))"></span>
+                </button>
+            </div>
+        </section>
+    </div>
 </div>
 
 @push('scripts')
-<script>
+<script data-crm-page-script>
+    // Native date inputs take their visible format from the browser, not from
+    // <html lang>, and showed mm/dd/yyyy even on the Russian CRM. These two
+    // helpers keep the human field local while every server request stays ISO.
+    function crmFormatDate(iso, european) {
+        if (!iso) return '';
+        const match = String(iso).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        return match && european ? `${match[3]}.${match[2]}.${match[1]}` : String(iso);
+    }
+
+    function crmParseDate(value, european) {
+        if (!value?.trim()) return '';
+        const match = european
+            ? value.trim().match(/^(\d{2})\.(\d{2})\.(\d{4})$/)
+            : value.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (!match) return null;
+        const iso = european ? `${match[3]}-${match[2]}-${match[1]}` : value.trim();
+        const date = new Date(`${iso}T00:00:00Z`);
+        return Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== iso ? null : iso;
+    }
+
+    function crmFormatDateTime(value, european) {
+        if (!value) return '';
+        const match = String(value).match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/);
+        return match ? `${crmFormatDate(match[1], european)} ${match[2]}` : String(value);
+    }
+
+    function crmParseDateTime(value, european) {
+        if (!value?.trim()) return '';
+        const match = value.trim().match(/^(.+)\s+(\d{2}):(\d{2})$/);
+        if (!match) return null;
+        const date = crmParseDate(match[1], european);
+        const hour = Number(match[2]), minute = Number(match[3]);
+        return date && hour <= 23 && minute <= 59 ? `${date}T${match[2]}:${match[3]}` : null;
+    }
+
     /**
      * The deal list: the server returns only the requested page after
      * filtering and sorting. Search is debounced, and stage changes fetch
@@ -315,6 +458,7 @@
     function dealList({
         deals, leads, leadsBucket, stages, cancelledStage, filters, pagination, leadsCount, overview, pollUrlBase, listUrlBase,
         updateUrlBase, activityUrlBase, deleteUrlBase, customerUrlBase, customerUpdateUrlBase, chatUrlBase, openCreate, labels,
+        workspaces, defaultWorkspaceId, workspaceUpdateUrlBase, workspaceDeleteUrlBase, initialDeal,
     }) {
         return {
             deals,
@@ -327,11 +471,20 @@
             leadsCount,
             overview,
             labels,
+            workspaces,
+            defaultWorkspaceId,
+            workspaceUpdateUrlBase,
+            workspaceDeleteUrlBase,
             // Two-word i18n strings for the sort toggle, read once here so the
             // template above stays a plain x-text without another translation helper call.
             labels_sortDate: @js(__('crm.board.sort_date')),
             labels_sortAmount: @js(__('crm.board.sort_amount')),
             adding: openCreate,
+            workspaceModal: @js($errors->hasAny(['name', 'color'])),
+            workspaceMode: @js(old('workspace_mode', 'create')),
+            workspaceEditId: @js(old('workspace_id')),
+            workspaceName: @js(old('name', '')),
+            workspaceColor: @js(old('color', 'blue')),
             // A customer id (and name, for the dropdown option if they are
             // outside its own top-200) the "+ Сделка" button on a lead row
             // wants the create-deal modal pre-selected to. Read once, by the
@@ -340,16 +493,25 @@
             presetCustomerId: null,
             presetCustomerName: null,
             selected: null,
+            dealTrigger: null,
+            pendingDelete: null,
+            deleting: false,
             activityItems: [],
+            activityOpen: false,
             activityLoading: false,
             loading: false,
             editForm: { title: '', amount: '', payment_status: 'unpaid', note: '', stage: '', deal_date: '', cancelled_reason: '', closed: false },
+            editDateDisplay: '',
+            dateEuropean: @js(app()->getLocale() !== 'en'),
+            metricsOpen: false,
             taskForm: { title: '', due_at: '' },
+            taskDueDisplay: '',
             taskErrors: {},
             taskSaving: false,
             editErrors: {},
             editSaving: false,
             _timer: null,
+            _visibilityHandler: null,
             _seq: 0,
             _lastRefreshAt: Date.now(),
             _lastFeedSignature: null,
@@ -369,13 +531,17 @@
                     if (document.visibilityState === 'visible' && !this.selected) this.refresh();
                 }, 30000);
 
-                document.addEventListener('visibilitychange', () => {
+                if (initialDeal) this.open(initialDeal);
+
+                this._visibilityHandler = () => {
                     if (document.visibilityState === 'visible' && !this.selected) this.refresh();
-                });
+                };
+                document.addEventListener('visibilitychange', this._visibilityHandler);
             },
 
             stop() {
                 clearInterval(this._timer);
+                if (this._visibilityHandler) document.removeEventListener('visibilitychange', this._visibilityHandler);
             },
 
             /** Already scoped, searched, sorted and paginated on the server. */
@@ -407,6 +573,8 @@
                 const params = new URLSearchParams();
                 if (this.filters.stage && this.filters.stage !== 'all') params.set('stage', this.filters.stage);
                 if (this.filters.q) params.set('q', this.filters.q);
+                if (this.filters.origin && this.filters.origin !== 'all') params.set('origin', this.filters.origin);
+                if (this.filters.workspace_id) params.set('workspace', this.filters.workspace_id);
                 if (this.filters.sort && this.filters.sort !== 'date') params.set('sort', this.filters.sort);
                 if (this.filters.dir && this.filters.dir !== 'desc') params.set('dir', this.filters.dir);
                 if (this.pagination.current_page > 1) params.set('page', this.pagination.current_page);
@@ -460,6 +628,37 @@
                 this.loadPage();
             },
 
+            setOrigin(origin) {
+                if (!['social', 'in_person'].includes(origin)) return;
+                this.filters.origin = origin;
+                this.filters.stage = 'all';
+                this.pagination.current_page = 1;
+                this.loadPage();
+            },
+
+            setWorkspace(id) {
+                this.filters.workspace_id = id;
+                this.filters.stage = 'all';
+                this.pagination.current_page = 1;
+                this.loadPage();
+            },
+
+            createWorkspace() {
+                this.workspaceMode = 'create';
+                this.workspaceEditId = null;
+                this.workspaceName = '';
+                this.workspaceColor = 'blue';
+                this.workspaceModal = true;
+            },
+
+            manageWorkspace(id, name) {
+                this.workspaceMode = 'edit';
+                this.workspaceEditId = id;
+                this.workspaceName = name;
+                this.workspaceColor = this.workspaces.find((workspace) => workspace.id === id)?.color || 'blue';
+                this.workspaceModal = true;
+            },
+
             /** The search box. Instant, for the same reason. */
             search() {
                 this.pagination.current_page = 1;
@@ -503,20 +702,28 @@
             },
 
             /** Opens the detail/edit view for a row, seeded from what the list already has. */
-            open(deal) {
+            open(deal, trigger = null) {
+                this.dealTrigger = trigger;
                 this.selected = deal;
                 this.editErrors = {};
+                this.activityOpen = false;
+                this.taskForm = { title: '', due_at: '' };
+                this.taskDueDisplay = '';
                 this.editForm = {
                     title: deal.title || '',
                     amount: deal.amount_raw || '',
                     payment_status: deal.payment_status,
+                    sales_origin: deal.sales_origin || 'social',
+                    crm_workspace_id: String(deal.crm_workspace_id || defaultWorkspaceId),
                     note: deal.note || '',
                     stage: deal.stage,
                     deal_date: deal.deal_date || '',
                     cancelled_reason: deal.cancelled_reason || '',
                     closed: !!deal.is_closed,
                 };
+                this.editDateDisplay = crmFormatDate(this.editForm.deal_date, this.dateEuropean);
                 this.loadActivity(deal);
+                this.$nextTick(() => this.$refs.dealClose?.focus());
             },
 
             async loadActivity(deal) {
@@ -536,8 +743,11 @@
 
             async addNextTask() {
                 if (!this.selected || !this.taskForm.title.trim()) return;
-                this.taskSaving = true;
                 this.taskErrors = {};
+                const due = crmParseDateTime(this.taskDueDisplay, this.dateEuropean);
+                if (due === null) { this.taskErrors.due_at = [@js(__('crm.board.invalid_datetime'))]; return; }
+                this.taskForm.due_at = due;
+                this.taskSaving = true;
                 try {
                     const response = await fetch(taskStoreUrl, {
                         method: 'POST',
@@ -557,6 +767,7 @@
                     if (!response.ok) throw new Error('task failed');
                     const data = await response.json();
                     this.taskForm = { title: '', due_at: '' };
+                    this.taskDueDisplay = '';
                     const dealId = this.selected.id;
                     await this.loadPage(false);
                     this.selected = this.deals.find((deal) => deal.id === dealId) || this.selected;
@@ -571,6 +782,9 @@
 
             close() {
                 this.selected = null;
+                const trigger = this.dealTrigger;
+                this.dealTrigger = null;
+                this.$nextTick(() => trigger?.isConnected && trigger.focus());
             },
 
             /** The "+ Сделка" button on a lead-without-a-deal row. */
@@ -591,6 +805,14 @@
 
                 this.editSaving = true;
                 this.editErrors = {};
+
+                const parsedDate = crmParseDate(this.editDateDisplay, this.dateEuropean);
+                if (parsedDate === null) {
+                    this.editErrors.deal_date = [@js(__('crm.board.invalid_date'))];
+                    this.editSaving = false;
+                    return;
+                }
+                this.editForm.deal_date = parsedDate;
 
                 try {
                     const res = await fetch(updateUrlBase.replace('__ID__', this.selected.id), {
@@ -627,10 +849,19 @@
                 }
             },
 
-            /** Delete, from a row's own button or from the open detail view — same confirm, same call. */
-            async destroy(deal) {
-                if (!confirm(labels.deleteConfirm)) return;
+            /** In-page confirmation: window.confirm blocks all CRM navigation. */
+            destroy(deal) {
+                this.pendingDelete = deal;
+            },
 
+            cancelDelete() {
+                if (!this.deleting) this.pendingDelete = null;
+            },
+
+            async confirmDelete() {
+                const deal = this.pendingDelete;
+                if (!deal || this.deleting) return;
+                this.deleting = true;
                 try {
                     const res = await fetch(deleteUrlBase.replace('__ID__', deal.id), {
                         method: 'DELETE',
@@ -641,10 +872,13 @@
 
                     this.deals = this.deals.filter((d) => d.id !== deal.id);
                     if (this.selected?.id === deal.id) this.selected = null;
+                    this.pendingDelete = null;
                     window.showToast?.(labels.deleted, 'success');
                     await this.loadPage(false);
                 } catch (e) {
                     window.showToast?.(labels.deleteFailed, 'error');
+                } finally {
+                    this.deleting = false;
                 }
             },
 
@@ -705,9 +939,22 @@
             customerDropdownOpen: false,
             name: initial.name,
             phone: initial.phone,
+            dateEuropean: @js(app()->getLocale() !== 'en'),
+            dateDisplay: crmFormatDate(initial.date, @js(app()->getLocale() !== 'en')),
+            dateError: '',
             match: null,
             _checkSeq: 0,
             _searchSeq: 0,
+
+            dateIso() { return crmParseDate(this.dateDisplay, this.dateEuropean); },
+            validateDate(event) {
+                this.dateError = '';
+                if (this.dateIso() === null) {
+                    event.preventDefault();
+                    this.dateError = @js(__('crm.board.invalid_date'));
+                    this.$nextTick(() => document.getElementById('deal-new-date')?.focus());
+                }
+            },
 
             async searchCustomers() {
                 const term = this.customerSearch.trim();

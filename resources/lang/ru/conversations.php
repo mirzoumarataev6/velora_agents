@@ -11,6 +11,7 @@ return [
         'all_channels' => 'Все каналы',
         'date_from' => 'С',
         'date_to' => 'По',
+        'invalid_date' => 'Введите реальную дату в формате ДД.ММ.ГГГГ.',
         'reset_filters' => 'Сбросить фильтры',
         'unread_badge' => 'непрочитано',
         'load_more' => 'Показать ещё',

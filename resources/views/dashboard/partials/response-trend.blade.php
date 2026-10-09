@@ -106,7 +106,7 @@
             <span class="sr-only">{{ __('dashboard.response_trend.description') }}</span>
         </div>
 
-        <div class="mt-3 flex justify-between text-[10px] text-muted dark:text-night-muted">
+        <div class="mt-3 flex justify-between text-xs text-muted dark:text-night-muted">
             <span>{{ $series[0]['label'] }}</span>
             <span class="font-medium">{{ $format($peak) }}</span>
             <span>{{ end($series)['label'] }}</span>

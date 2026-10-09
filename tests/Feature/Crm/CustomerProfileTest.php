@@ -6,7 +6,9 @@ use App\Models\Agent;
 use App\Models\Channel;
 use App\Models\Conversation;
 use App\Models\Customer;
+use App\Models\Deal;
 use App\Models\Lead;
+use App\Models\Task;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -63,6 +65,22 @@ class CustomerProfileTest extends TestCase
 
         $this->actingAs($owner)->get(route('crm.customers.show', [$customer, 'timeline_page' => 2]))
             ->assertOk()->assertSee('Message 0');
+    }
+
+    public function test_customer_profile_keeps_history_in_page_flow_and_links_purchase_to_its_deal(): void
+    {
+        $owner = User::factory()->create();
+        $customer = Customer::factory()->for($owner)->create();
+        $deal = Deal::factory()->for($owner)->for($customer)->create([
+            'title' => 'Ноутбук для Бахрома', 'payment_status' => 'paid', 'stage' => 'payment', 'sales_origin' => 'social',
+        ]);
+
+        $this->actingAs($owner)->get(route('crm.customers.show', $customer))
+            ->assertOk()
+            ->assertDontSee('max-h-[36rem]', false)
+            ->assertSee(__('crm.customers.back'))
+            // HTML escapes the query-string ampersand, so assert the stable deal target.
+            ->assertSee('deal='.$deal->id, false);
     }
 
     public function test_another_owners_customer_is_not_reachable(): void
@@ -136,6 +154,8 @@ class CustomerProfileTest extends TestCase
 
         $keep = $first->fresh()->customer;
         $absorb = $second->fresh()->customer;
+        $deal = Deal::factory()->for($owner)->for($absorb)->create();
+        $task = Task::factory()->for($owner)->for($absorb)->create();
 
         $this->actingAs($owner)
             ->post(route('crm.customers.merge', $keep), ['customer_id' => $absorb->id])
@@ -144,6 +164,8 @@ class CustomerProfileTest extends TestCase
         $this->assertSame(1, Customer::count());
         $this->assertSame($keep->id, $first->fresh()->customer_id);
         $this->assertSame($keep->id, $second->fresh()->customer_id);
+        $this->assertSame($keep->id, $deal->fresh()->customer_id);
+        $this->assertSame($keep->id, $task->fresh()->customer_id);
     }
 
     public function test_a_merge_cannot_reach_another_owners_customer(): void

@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 #[Fillable([
-    'name', 'price', 'stock', 'category', 'description', 'sku', 'url', 'extra', 'position',
+    'name', 'price', 'stock', 'category', 'description', 'sku', 'url', 'image_url', 'extra', 'position',
     'search_text', 'category_key',
 ])]
 class DatasetProduct extends Model

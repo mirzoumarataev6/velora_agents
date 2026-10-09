@@ -11,6 +11,7 @@ return [
         'all_channels' => 'All channels',
         'date_from' => 'From',
         'date_to' => 'To',
+        'invalid_date' => 'Enter a real date in YYYY-MM-DD format.',
         'reset_filters' => 'Reset filters',
         'unread_badge' => 'unread',
         'load_more' => 'Load more',

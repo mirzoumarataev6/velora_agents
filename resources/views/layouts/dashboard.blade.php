@@ -50,7 +50,11 @@
 </head>
 <body class="page-enter min-h-screen bg-paper text-ink antialiased transition-colors duration-300 dark:bg-night dark:text-night-ink">
 
-<div id="toast-container" class="pointer-events-none fixed left-1/2 top-4 z-[100] flex w-[calc(100%_-_2rem)] max-w-sm -translate-x-1/2 flex-col px-2" role="status" aria-live="polite" aria-atomic="true"></div>
+<div id="toast-container" class="pointer-events-none fixed left-1/2 top-4 z-[100] flex w-[calc(100%_-_2rem)] max-w-sm -translate-x-1/2 flex-col px-2" role="status" aria-live="polite" aria-atomic="true">
+    @if (session('status'))
+        <div data-flash-toast class="toast mt-2 rounded-2xl bg-ink px-4 py-3 text-sm font-medium text-white shadow-xl dark:bg-night-ink dark:text-night">{{ session('status') }}</div>
+    @endif
+</div>
 
 {{-- Raised off the account itself rather than off a redirect flash, so it
      reaches a Google sign-up too — that path never touches register(). The
@@ -144,6 +148,18 @@
                 <span data-i18n="agents.nav.crm" :class="railCollapsed && 'lg:hidden'">{{ __('agents.nav.crm') }}</span>
             </a>
 
+            {{-- Данные sits after CRM and before Заявки: the analytics page at the
+                 top reports on the ASSISTANTS, this section answers questions about
+                 whatever the owner uploads. Both are reading rather than working,
+                 so they bracket the two sections where work happens. --}}
+            <a href="{{ route('bi.dashboards.index') }}" aria-label="{{ __('agents.nav.bi') }}" data-i18n-al="agents.nav.bi"
+                @if (request()->routeIs('bi.*')) aria-current="page" @endif
+                :class="railCollapsed && 'lg:justify-center'"
+                class="nav-item {{ request()->routeIs('bi.*') ? 'nav-item-active' : '' }}">
+                <svg class="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 7c0-1.657 3.582-3 8-3s8 1.343 8 3-3.582 3-8 3-8-1.343-8-3z"/><path stroke-linecap="round" stroke-linejoin="round" d="M20 7v5c0 1.657-3.582 3-8 3s-8-1.343-8-3V7M20 12v5c0 1.657-3.582 3-8 3s-8-1.343-8-3v-5"/></svg>
+                <span data-i18n="agents.nav.bi" :class="railCollapsed && 'lg:hidden'">{{ __('agents.nav.bi') }}</span>
+            </a>
+
             <a href="{{ route('leads.index') }}" aria-label="{{ __('agents.nav.leads') }}" data-i18n-al="agents.nav.leads"
                 @if (request()->routeIs('leads.*')) aria-current="page" @endif
                 :class="railCollapsed && 'lg:justify-center'"
@@ -158,7 +174,7 @@
                 <span data-i18n="agents.nav.leads" :class="railCollapsed && 'lg:hidden'">{{ __('agents.nav.leads') }}</span>
                 <span x-show="count > 0" x-cloak x-text="count > 99 ? '99+' : count"
                     :class="railCollapsed && 'lg:hidden'"
-                    class="btn btn-primary ml-auto min-w-[20px] text-[10px]"></span>
+                    class="nav-unread-count ml-auto" aria-live="polite"></span>
             </a>
 
             <a href="{{ route('settings.index') }}" aria-label="{{ __('agents.nav.settings') }}" data-i18n-al="agents.nav.settings"
@@ -226,7 +242,7 @@
     {{-- Main --}}
     <div class="flex min-w-0 flex-1 flex-col">
         <header class="flex h-16 items-center gap-3 bg-surface px-4 dark:bg-night-card lg:hidden">
-            <button @click="mobileNavOpen = true" type="button" aria-label="{{ __('agents.nav.open_menu') }}" data-i18n-al="agents.nav.open_menu" class="flex h-9 w-9 items-center justify-center rounded-lg text-ink dark:text-night-ink">
+            <button @click="mobileNavOpen = true" type="button" aria-label="{{ __('agents.nav.open_menu') }}" data-i18n-al="agents.nav.open_menu" class="flex h-10 w-10 items-center justify-center rounded-lg text-ink dark:text-night-ink">
                 <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16"/></svg>
             </button>
             <span data-i18n="common.brand" class="text-sm font-semibold">{{ __('common.brand') }}</span>
@@ -246,13 +262,7 @@
              enough that a line of body copy never runs an unreadable measure
              (individual blocks still set their own `measure` where it matters).
              Pages no longer set a width of their own. --}}
-        <main class="mx-auto w-full max-w-[100rem] flex-1 px-4 py-6 sm:px-6 lg:px-10 lg:py-8">
-            @if (session('status') && ! ($statusAsToast ?? false))
-                <div class="card-tinted reveal is-visible mb-6 px-4 py-3 text-sm font-medium" role="status">
-                    {{ session('status') }}
-                </div>
-            @endif
-
+        <main data-app-main data-crm-navigation-failed="{{ __('crm.navigation_failed') }}" class="mx-auto w-full max-w-[100rem] flex-1 px-4 py-6 sm:px-6 lg:px-10 lg:py-8">
             @yield('content')
         </main>
     </div>

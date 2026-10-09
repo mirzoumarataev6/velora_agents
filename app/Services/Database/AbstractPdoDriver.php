@@ -2,6 +2,9 @@
 
 namespace App\Services\Database;
 
+use App\Services\Bi\Query\ExternalMySqlQueryCompiler;
+use App\Services\Bi\Query\ExternalPostgresQueryCompiler;
+use App\Services\Bi\Query\QuerySpec;
 use App\Services\Database\Discovery\Join;
 use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
@@ -33,6 +36,19 @@ use Throwable;
  */
 abstract class AbstractPdoDriver implements DatabaseDriver
 {
+    public function queryBi(QuerySpec $spec): array
+    {
+        return $this->guarded(function () use ($spec) {
+            $compiler = $this->engine() === 'pgsql'
+                ? new ExternalPostgresQueryCompiler
+                : new ExternalMySqlQueryCompiler;
+            $compiled = $compiler->compile($spec);
+            $this->assertSelectOnly($compiled->sql);
+
+            return $this->select($compiled->sql, $compiled->bindings);
+        });
+    }
+
     /**
      * Characters an identifier may never contain, whatever the engine. Quoting
      * already makes these harmless; rejecting them means a name that could only

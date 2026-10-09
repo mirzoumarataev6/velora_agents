@@ -128,7 +128,10 @@
              Five across at xl, where 1600px gives each tile ~300px — enough
              for an icon, a figure, a pill and a sparkline without crowding.
              Two across on a phone. --}}
-        <div class="reveal grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+        <div class="flex flex-col md:contents">
+        {{-- A phone is used to act on the day, so the decision card precedes
+             metrics there. Desktop keeps the comparison grid before it. --}}
+        <div class="reveal order-2 grid grid-cols-2 gap-3 md:order-1 md:grid-cols-3 xl:grid-cols-5">
             {{-- Messages, and it leads the row on purpose: it is the only
                  headline metric with a full daily series behind it, so it is
                  the one that can show its own shape. --}}
@@ -189,7 +192,10 @@
              decision deserves: full width, accent gradient, and a link to the
              screen where it gets made. Every other card here reports; this one
              asks. --}}
-        @include('dashboard.partials.highlight')
+        <div class="order-1 mb-3 md:order-2 md:mb-0">
+            @include('dashboard.partials.highlight')
+        </div>
+        </div>
 
         {{-- Row 3 · volume over time (2/3) beside what needs the owner (1/3) --}}
         <div class="reveal mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -207,39 +213,30 @@
             @include('dashboard.partials.ratings')
         </div>
 
-        {{-- The first screen answers how business is doing and what needs
-             action. Deeper diagnostics stay one click away without making the
-             presentation or the daily owner workflow scroll past every chart. --}}
-        <details class="analytics-more mt-5">
-            <summary class="analytics-more-toggle">
-                <span>
-                    <strong>{{ __('dashboard.details.title') }}</strong>
-                    <span class="analytics-more-description">{{ __('dashboard.details.description') }}</span>
-                </span>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="m6 9 6 6 6-6"/></svg>
-            </summary>
+        {{-- Keep diagnostics visible as part of analytics; only the extra
+             disclosure row was removed because it hid useful reports behind
+             an ambiguous control. --}}
+        <div class="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-2">
+            @include('dashboard.partials.funnel')
+            @include('dashboard.partials.leads-status')
+        </div>
 
-            <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
-                @include('dashboard.partials.funnel')
-                @include('dashboard.partials.leads-status')
+        <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+            @include('dashboard.partials.response-trend')
+            @include('dashboard.partials.heatmap')
+        </div>
+
+        @if ($metrics['agent_comparison'] !== [])
+            <div class="mt-4">
+                @include('dashboard.partials.agents-compare')
             </div>
+        @endif
 
-            <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
-                @include('dashboard.partials.response-trend')
-                @include('dashboard.partials.heatmap')
-            </div>
+        <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+            @include('dashboard.partials.products')
+            @include('dashboard.partials.unanswered')
+        </div>
 
-            @if ($metrics['agent_comparison'] !== [])
-                <div class="mt-4">
-                    @include('dashboard.partials.agents-compare')
-                </div>
-            @endif
-
-            <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
-                @include('dashboard.partials.products')
-                @include('dashboard.partials.unanswered')
-            </div>
-        </details>
     @endif
 </div>
 @endsection

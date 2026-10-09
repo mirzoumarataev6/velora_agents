@@ -3,20 +3,23 @@
 namespace App\Http\Controllers\Crm;
 
 use App\Http\Controllers\Controller;
-use App\Models\Conversation;
+use App\Models\CrmWorkspace;
 use App\Models\Customer;
+use App\Models\Deal;
 use App\Models\Message;
 use App\Services\Crm\CustomerResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Str;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
 /**
- * The customer profile: everything about one person, reached from a deal
- * (or from search) rather than browsed as its own directory.
+ * The customer book and the profile behind each entry. The directory is the
+ * at-a-glance view; the profile is where the complete history lives.
  *
  * A view over conversations and leads — nothing here duplicates that state, it
  * groups it by the person the CustomerResolver decided is behind it.
@@ -25,6 +28,58 @@ class CustomerController extends Controller
 {
     /** How much of the last message a profile's thread list previews. */
     protected const EXCERPT = 140;
+
+    /** Searchable customer book with business-focused segments. */
+    public function index(Request $request): View
+    {
+        $data = $request->validate([
+            'q' => ['nullable', 'string', 'max:120'],
+            'status' => ['nullable', 'string', Rule::in(Customer::STATUSES)],
+            'segment' => ['nullable', 'string', Rule::in(['all', 'repeat', 'buyers', 'no_purchases'])],
+            'origin' => ['nullable', 'string', Rule::in(Deal::SALES_ORIGINS)],
+            'workspace' => ['nullable', 'integer'],
+        ]);
+        $workspaceId = isset($data['workspace']) && CrmWorkspace::ownedBy($request->user())->whereKey($data['workspace'])->exists()
+            ? (int) $data['workspace']
+            : null;
+        $paidDeal = fn ($query) => $query->where('payment_status', 'paid')->where('stage', '!=', Deal::STAGE_CANCELLED);
+        $repeatBuyer = fn ($query) => $query->where('payment_status', 'paid')
+            ->where('stage', '!=', Deal::STAGE_CANCELLED)
+            // whereHas starts with SELECT *, which MySQL rejects with ONLY_FULL_GROUP_BY.
+            // Replace it with the sole grouped column; selectRaw would append to *.
+            ->select('customer_id')->groupBy('customer_id')->havingRaw('COUNT(*) >= 2');
+
+        $customers = Customer::ownedBy($request->user())
+            ->with('workspace:id,name,color,is_default')
+            ->withCount('conversations')
+            ->withCount(['deals as purchase_count' => $paidDeal])
+            ->withSum(['deals as purchase_value' => $paidDeal], 'amount')
+            ->when($workspaceId, fn ($query) => $query->where('crm_workspace_id', $workspaceId))
+            ->when(filled($data['status'] ?? null), fn ($query) => $query->where('status', $data['status']))
+            ->when(filled($data['q'] ?? null), fn ($query) => $query->search($data['q']))
+            ->when(($data['segment'] ?? 'all') === 'repeat', fn ($query) => $query->whereHas('deals', $repeatBuyer))
+            ->when(($data['segment'] ?? 'all') === 'buyers', fn ($query) => $query->whereHas('deals', $paidDeal))
+            ->when(($data['segment'] ?? 'all') === 'no_purchases', fn ($query) => $query->whereDoesntHave('deals', $paidDeal))
+            ->when(filled($data['origin'] ?? null), fn ($query) => $query->whereHas('deals', fn ($deals) => $paidDeal($deals)->where('sales_origin', $data['origin'])))
+            ->orderByDesc('last_contact_at')->orderByDesc('id')
+            ->paginate(25)->withQueryString();
+
+        if ($request->ajax()) {
+            return view('crm.customers.partials.results', ['customers' => $customers]);
+        }
+
+        return view('crm.customers.index', [
+            'i18nExtraNamespaces' => ['crm'],
+            'customers' => $customers,
+            'filters' => array_merge(['q' => '', 'status' => '', 'segment' => 'all', 'origin' => '', 'workspace' => $workspaceId], $data),
+            'workspaces' => CrmWorkspace::ownedBy($request->user())->orderByDesc('is_default')->orderBy('name')->get(),
+            'counts' => [
+                'all' => Customer::ownedBy($request->user())->count(),
+                'buyers' => Customer::ownedBy($request->user())->whereHas('deals', $paidDeal)->count(),
+                'repeat' => Customer::ownedBy($request->user())->whereHas('deals', $repeatBuyer)->count(),
+            ],
+        ]);
+    }
 
     /**
      * Does this phone number already belong to somebody? Backs the live check
@@ -77,12 +132,14 @@ class CustomerController extends Controller
         $this->authorize('view', $customer);
 
         $customer->load([
+            'workspace',
             'conversations' => fn ($q) => $q->orderByDesc('last_message_at'),
             'conversations.channel:id,type',
             'conversations.agent:id,name,slug',
             'leads' => fn ($q) => $q->latest('id'),
             'leads.agent:id,name,slug',
             'deals' => fn ($q) => $q->orderByDesc('id'),
+            'deals.workspace:id,name,is_default',
             // Open tasks first, soonest due first: a profile should answer
             // "what do I owe this person" before "what did I already do".
             'tasks' => fn ($q) => $q->orderByRaw('done_at is not null')
@@ -93,6 +150,7 @@ class CustomerController extends Controller
         return view('crm.customers.show', [
             'i18nExtraNamespaces' => ['crm'],
             'customer' => $customer,
+            'workspaces' => CrmWorkspace::ownedBy($request->user())->orderByDesc('is_default')->orderBy('name')->get(),
             'timeline' => $this->timeline($customer),
             // Candidates for a manual merge: same owner, and no phone number of
             // their own, since a profile that HAS one was already matched
@@ -122,6 +180,7 @@ class CustomerController extends Controller
             'status' => ['sometimes', 'required', 'string', 'in:'.implode(',', Customer::STATUSES)],
             'tags' => ['sometimes', 'nullable', 'string', 'max:500'],
             'note' => ['sometimes', 'nullable', 'string', 'max:5000'],
+            'crm_workspace_id' => ['sometimes', 'required', 'integer', Rule::exists('crm_workspaces', 'id')->where('user_id', $request->user()->id)],
         ]);
 
         $updates = [];
@@ -142,7 +201,17 @@ class CustomerController extends Controller
             $updates['note'] = $data['note'];
         }
 
-        $customer->update($updates);
+        if (array_key_exists('crm_workspace_id', $data)) {
+            $updates['crm_workspace_id'] = $data['crm_workspace_id'];
+        }
+
+        DB::transaction(function () use ($customer, $updates) {
+            $customer->update($updates);
+
+            if (array_key_exists('crm_workspace_id', $updates)) {
+                $customer->deals()->update(['crm_workspace_id' => $updates['crm_workspace_id']]);
+            }
+        });
 
         if ($request->wantsJson()) {
             return response()->json(['status' => $customer->status]);

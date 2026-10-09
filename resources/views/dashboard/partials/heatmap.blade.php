@@ -41,7 +41,7 @@
             <div class="space-y-1">
                 @foreach ($heatmap['grid'] as $dayIndex => $hours)
                     <div class="flex items-center gap-1">
-                        <span class="w-7 shrink-0 text-[10px] text-muted dark:text-night-muted">{{ $days[$dayIndex] ?? '' }}</span>
+                        <span class="w-7 shrink-0 text-xs text-muted dark:text-night-muted">{{ $days[$dayIndex] ?? '' }}</span>
                         @foreach ($hours as $hour => $count)
                             <div class="h-4 flex-1 rounded-[3px] {{ $steps[$level($count)] }}"
                                 title="{{ __('dashboard.heatmap.cell', [
@@ -56,7 +56,7 @@
 
             <div class="mt-2 flex items-center gap-1 pl-8">
                 @foreach ([0, 6, 12, 18] as $tick)
-                    <span class="flex-1 text-[10px] text-muted dark:text-night-muted">{{ str_pad((string) $tick, 2, '0', STR_PAD_LEFT) }}:00</span>
+                    <span class="flex-1 text-xs text-muted dark:text-night-muted">{{ str_pad((string) $tick, 2, '0', STR_PAD_LEFT) }}:00</span>
                 @endforeach
             </div>
         </div>
@@ -67,14 +67,14 @@
              DashboardMetrics::heatmap() / local()) — this just says so, so an
              owner comparing it to their own clock isn't left guessing which
              clock the grid is drawn on. --}}
-        <span class="text-[10px] text-muted dark:text-night-muted">{{ __('dashboard.heatmap.timezone_label') }}</span>
+        <span class="text-xs text-muted dark:text-night-muted">{{ __('dashboard.heatmap.timezone_label') }}</span>
 
         <span class="flex items-center gap-1.5">
-            <span class="text-[10px] text-muted dark:text-night-muted">{{ __('dashboard.heatmap.less') }}</span>
+            <span class="text-xs text-muted dark:text-night-muted">{{ __('dashboard.heatmap.less') }}</span>
             @foreach ($steps as $step)
                 <span class="h-3 w-3 rounded-[3px] {{ $step }}"></span>
             @endforeach
-            <span class="text-[10px] text-muted dark:text-night-muted">{{ __('dashboard.heatmap.more') }}</span>
+            <span class="text-xs text-muted dark:text-night-muted">{{ __('dashboard.heatmap.more') }}</span>
         </span>
     </div>
 </div>

@@ -3,8 +3,12 @@
 namespace App\Services\Crm;
 
 use App\Models\Conversation;
+use App\Models\CrmWorkspace;
 use App\Models\Customer;
+use App\Models\Deal;
 use App\Models\Lead;
+use App\Models\Task;
+use App\Models\User;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 
@@ -125,6 +129,7 @@ class CustomerResolver
                 // under another account.
                 ?? Customer::forceCreate([
                     'user_id' => $userId,
+                    'crm_workspace_id' => CrmWorkspace::defaultFor(User::findOrFail($userId))->id,
                     'name' => $lead->customer_name,
                     'phone' => $phone,
                     'phone_key' => $this->phoneKey($phone),
@@ -203,6 +208,13 @@ class CustomerResolver
         DB::transaction(function () use ($from, $into) {
             Conversation::where('customer_id', $from->id)->update(['customer_id' => $into->id]);
             Lead::where('customer_id', $from->id)->update(['customer_id' => $into->id]);
+            // Deals and reminders are customer history too. Move them before
+            // deleting the duplicate profile or their customer FK would erase
+            // the very purchase trail the merge is supposed to preserve.
+            Deal::where('user_id', $into->user_id)->where('customer_id', $from->id)
+                ->update(['customer_id' => $into->id]);
+            Task::where('user_id', $into->user_id)->where('customer_id', $from->id)
+                ->update(['customer_id' => $into->id]);
 
             // Acquisition is a fact about the FIRST contact, so the channel
             // recorded is the one belonging to whichever profile started earlier.
@@ -284,6 +296,7 @@ class CustomerResolver
         try {
             return Customer::forceCreate([
                 'user_id' => $userId,
+                'crm_workspace_id' => CrmWorkspace::defaultFor(User::findOrFail($userId))->id,
                 'name' => $conversation->external_user_name,
                 'phone' => $key !== null ? $phone : null,
                 'phone_key' => $key,

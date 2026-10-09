@@ -2,6 +2,7 @@
 
 namespace Tests\Support;
 
+use App\Services\Bi\Query\QuerySpec;
 use App\Services\Database\DatabaseConnectionException;
 use App\Services\Database\DatabaseDriver;
 use App\Services\Database\ProductQuery;
@@ -22,6 +23,17 @@ use App\Services\Database\ProductQuery;
  */
 class FakeDatabaseDriver implements DatabaseDriver
 {
+    /** @var array<int, QuerySpec> */
+    public array $biQueries = [];
+
+    /** @return array<int, array<string, mixed>> */
+    public function queryBi(QuerySpec $spec): array
+    {
+        $this->biQueries[] = $spec;
+
+        return $this->rows;
+    }
+
     /** @var array<int, ProductQuery> */
     public array $queries = [];
 

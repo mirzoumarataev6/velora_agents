@@ -416,6 +416,8 @@ abstract class FakeUnsupportedDriver implements ChannelDriverInterface
         $this->sent[] = $text;
     }
 
+    public function sendImage(Channel $channel, string $externalUserId, string $url, string $caption = ''): void {}
+
     public function verifyWebhook(Request $request, Channel $channel): ?Response
     {
         return null;

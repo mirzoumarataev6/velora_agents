@@ -57,6 +57,9 @@ return [
 
     'demo' => [
         'heading' => 'Example conversation',
+        'off' => 'Off',
+        'subtle' => 'Subtle',
+        'active' => 'Active',
         'agent' => 'Atlas Store',
         'status' => 'AI agent · example',
         'composer' => 'Message',
@@ -75,11 +78,11 @@ return [
     'why' => [
         'eyebrow' => 'Why it works',
         'title' => 'An agent that answers from your own data.',
-        'sub' => 'Every reply comes from your catalog. Every conversation that shows intent ends as a lead in your inbox.',
+        'sub' => 'The agent uses your catalog and documents to answer. When a customer shows interest, the lead and conversation stay available to you.',
         'items' => [
             [
                 'title' => 'Answers from your catalog — not from thin air',
-                'line' => 'Point it at an XML feed, a CSV, a PDF price list or your website. It retrieves the real item, the real price, the real availability. If it isn’t in your catalog, it doesn’t get invented.',
+                'line' => 'Connect an XML feed, CSV, PDF price list or website. The agent looks up products and details in your sources; test its answers in the playground before going live.',
             ],
             [
                 'title' => 'Captures the lead the moment intent appears',
@@ -106,7 +109,7 @@ return [
 
     'sources' => [
         'eyebrow' => 'Inputs and outputs',
-        'title' => 'Feed it anything. Reach them anywhere.',
+        'title' => 'Connect your data and channels.',
         'sub' => 'Two lists that actually matter: what the agent can learn from, and where it can speak.',
         'inputs_label' => 'Knowledge it ingests',
         'channels_label' => 'Channels it answers on',
@@ -125,7 +128,7 @@ return [
 
     'how' => [
         'eyebrow' => 'How it works',
-        'title' => 'Three steps. One afternoon.',
+        'title' => 'Three steps to a first conversation.',
         'steps' => [
             ['title' => 'Feed it what you sell', 'line' => 'Drop in a catalog feed, upload a price list, or paste your site’s URL. Velora ingests it and keeps it fresh.'],
             ['title' => 'Shape the agent', 'line' => 'Set the tone, choose how proactive it should be, and rehearse in the playground until it sounds like your shop.'],
@@ -137,7 +140,7 @@ return [
         'items' => [
             ['value' => '24/7', 'label' => 'The agent is online'],
             ['value' => '3', 'label' => 'Channels, one agent'],
-            ['value' => '4', 'label' => 'Languages, chosen per message'],
+            ['value' => '3', 'label' => 'Interface and reply languages'],
             ['value' => '1', 'label' => 'CRM for leads and deals'],
         ],
     ],
@@ -154,7 +157,7 @@ return [
         'items' => [
             [
                 'q' => 'Will it make things up about my products?',
-                'a' => 'No. Replies are grounded in the catalog and documents you upload. When something isn’t there, the agent says so and offers to pass the question to you rather than guessing a price or a spec.',
+                'a' => 'The agent looks up answers in the connected data, but AI can make mistakes. Test replies in the playground, especially prices and specifications; if data is missing, update the source or pass the question to a person.',
             ],
             [
                 'q' => 'What do I need to get started?',
@@ -178,7 +181,7 @@ return [
     'cta' => [
         'title' => 'Put your first agent to work',
         'emphasis' => 'today.',
-        'sub' => 'Create an agent, feed it your catalog, connect Telegram. For most shops that is one afternoon.',
+        'sub' => 'Create an agent, add your catalog, test replies in the playground, then connect a channel.',
         'primary' => 'Create your agent',
         'secondary' => 'I already have an account',
     ],

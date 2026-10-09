@@ -197,6 +197,18 @@ class WhatsAppDriver implements ChannelDriverInterface
         }
     }
 
+    public function sendImage(Channel $channel, string $externalUserId, string $url, string $caption = ''): void
+    {
+        $this->assertWithinMessagingWindow($channel, $externalUserId);
+        $result = $this->call($this->accessToken($channel), $this->phoneNumberId($channel), [
+            'messaging_product' => 'whatsapp', 'to' => $externalUserId, 'type' => 'image',
+            'image' => array_filter(['link' => $url, 'caption' => mb_substr($caption, 0, 900)], fn ($v) => $v !== ''),
+        ]);
+        if (empty($result['messages'][0]['id'])) {
+            throw new RuntimeException('WhatsApp did not confirm image delivery.');
+        }
+    }
+
     // Отправляет индикатор набора текста (WhatsApp Cloud API его не поддерживает)
     public function sendTypingIndicator(Channel $channel, string $externalUserId): void {}
 

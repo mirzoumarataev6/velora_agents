@@ -2,9 +2,15 @@
 
 namespace App\Providers;
 
-use App\Services\Database\DriverManager;
+use App\Models\BiDataset;
+use App\Models\BiSource;
 use App\Models\Deal;
+use App\Models\User;
+use App\Observers\BiDatasetObserver;
+use App\Observers\BiSourceObserver;
 use App\Observers\DealObserver;
+use App\Observers\UserObserver;
+use App\Services\Database\DriverManager;
 use App\Services\Llm\GeminiProvider;
 use App\Services\Llm\LlmProviderInterface;
 use App\Services\Llm\OpenAiProvider;
@@ -78,8 +84,19 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Deal::observe(DealObserver::class);
+
+        // The BI module stores each dataset as a real table plus a directory of
+        // shards, neither of which a SQL cascade can remove. These three observers
+        // are the chain that makes "delete" mean it — see UserObserver for why
+        // account deletion in particular depends on it.
+        User::observe(UserObserver::class);
+        BiSource::observe(BiSourceObserver::class);
+        BiDataset::observe(BiDatasetObserver::class);
+
         $this->recordWorkerHeartbeat();
         $this->limitDatabaseConnectionTests();
+        $this->limitBiUploads();
+        $this->limitBiLayoutWrites();
     }
 
     /**
@@ -93,6 +110,40 @@ class AppServiceProvider extends ServiceProvider
     {
         RateLimiter::for('database-test', function (Request $request) {
             $perMinute = max(1, (int) config('agent.database.test_rate_limit', 10));
+
+            return Limit::perMinute($perMinute)->by((string) ($request->user()?->id ?? $request->ip()));
+        });
+    }
+
+    /**
+     * A BI upload stages a file of up to 100MB on our disk and queues minutes of
+     * worker time on the `ingest` queue. Unthrottled, one account could fill the
+     * disk and monopolize that worker with a held-down button — so the limit is
+     * low and per account, which is the thing worth limiting behind auth.
+     */
+    protected function limitBiUploads(): void
+    {
+        RateLimiter::for('bi-upload', function (Request $request) {
+            $perMinute = max(1, (int) config('agent.bi.ingest.upload_rate_limit', 6));
+
+            return Limit::perMinute($perMinute)->by((string) ($request->user()?->id ?? $request->ip()));
+        });
+    }
+
+    /**
+     * A board drag writes every card's slot at once.
+     *
+     * Gridstack fires a change event on every drop, and a held-down resize can
+     * produce a burst of them — so without a limiter one gesture can become a
+     * write per animation frame. The ceiling is far higher than the upload
+     * limiter's because the operation is cheap (a handful of small UPDATEs, and
+     * LayoutUpdater skips the rows that did not move); it exists to bound a
+     * runaway client rather than to ration anything.
+     */
+    protected function limitBiLayoutWrites(): void
+    {
+        RateLimiter::for('bi-layout', function (Request $request) {
+            $perMinute = max(1, (int) config('agent.bi.query.layout_rate_limit', 60));
 
             return Limit::perMinute($perMinute)->by((string) ($request->user()?->id ?? $request->ip()));
         });

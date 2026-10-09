@@ -172,6 +172,11 @@ class InstagramDriver implements ChannelDriverInterface
         }
     }
 
+    public function sendImage(Channel $channel, string $externalUserId, string $url, string $caption = ''): void
+    {
+        throw new RuntimeException('Outbound images are not enabled for this Instagram integration.');
+    }
+
     // Отправляет индикатор набора текста пользователю Instagram
     public function sendTypingIndicator(Channel $channel, string $externalUserId): void
     {

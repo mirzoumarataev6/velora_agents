@@ -1,7 +1,164 @@
 import Alpine from 'alpinejs';
 
 window.Alpine = Alpine;
+
+/**
+ * Gridstack, loaded only by the page that needs it.
+ *
+ * A dynamic import rather than a top-level one, so Vite splits it into its own
+ * chunk: the library and its stylesheet are about 70KB, and every other page in
+ * this product — the inbox, the CRM board, the agent wizard — would otherwise
+ * pay for a drag-and-drop grid it never renders.
+ *
+ * The CSS is imported here beside the JS rather than in app.css for the same
+ * reason: `@import` in the stylesheet would inline it into the main bundle and
+ * undo the split.
+ *
+ * Resolved once and memoized — a board that re-initializes (after a widget is
+ * added, say) must not fetch the chunk again.
+ *
+ * DEFINED BEFORE `Alpine.start()`, AND THAT IS LOAD-BEARING. Alpine initializes
+ * every `x-data` component synchronously inside start(), so a component whose
+ * `x-init` calls this would run before the assignment and get
+ * "loadGridStack is not a function" — which is exactly what happened the first
+ * time, and it fails silently as an Alpine expression warning rather than as
+ * anything a page looks broken enough to notice. Anything on `window` that a
+ * component touches during init belongs above that call.
+ */
+let gridStackModule = null;
+
+window.loadGridStack = async function loadGridStack() {
+    gridStackModule ??= (async () => {
+        const [{ GridStack }] = await Promise.all([
+            import('gridstack'),
+            import('gridstack/dist/gridstack.min.css'),
+        ]);
+
+        return GridStack;
+    })();
+
+    return gridStackModule;
+};
+
+// Only analysis pages request ApexCharts. Keeping this import behind the board
+// component means the inbox and agent setup never download a charting runtime.
+let biChartModule = null;
+window.loadBiCharts = async function loadBiCharts() {
+    biChartModule ??= import('./bi-charts.js').then(module => module.mountBiCharts);
+    return biChartModule;
+};
+
 Alpine.start();
+
+/**
+ * CRM section links swap only the content column. The app shell and Alpine's
+ * long-lived sidebar stay mounted, so moving between CRM work areas feels
+ * immediate while the URL/history still behave like ordinary navigation.
+ * Page-specific inline components are explicitly re-evaluated before Alpine
+ * initializes the new tree; executing every script in fetched HTML would also
+ * rerun the theme bootstrap and the global app bundle.
+ */
+let crmNavigationSequence = 0;
+let crmNavigationController = null;
+
+async function navigateCrm(url, push = true) {
+    const sequence = ++crmNavigationSequence;
+    crmNavigationController?.abort();
+    crmNavigationController = new AbortController();
+    const currentMain = document.querySelector('main[data-app-main]');
+    if (!currentMain || !url) return;
+    currentMain.classList.add('crm-nav-loading');
+
+    try {
+        const response = await fetch(url, {
+            headers: { Accept: 'text/html', 'X-CRM-Partial': '1' },
+            signal: crmNavigationController.signal,
+        });
+        if (sequence !== crmNavigationSequence) return;
+        if (!response.ok) throw new Error('CRM navigation failed');
+        const html = await response.text();
+        const parsed = new DOMParser().parseFromString(html, 'text/html');
+        const incoming = parsed.querySelector('main[data-app-main]');
+        if (!incoming) throw new Error('CRM page content missing');
+
+        window.Alpine?.destroyTree(currentMain);
+        const replacement = document.importNode(incoming, true);
+        currentMain.replaceWith(replacement);
+        document.title = parsed.title;
+        document.querySelectorAll('script[data-crm-page-script]').forEach(script => script.remove());
+        parsed.querySelectorAll('script[data-crm-page-script]').forEach(source => {
+            const script = document.createElement('script');
+            script.dataset.crmPageScript = '';
+            script.textContent = source.textContent;
+            document.body.appendChild(script);
+        });
+        window.Alpine?.initTree(replacement);
+        if (push) window.history.pushState({ crm: true }, '', url);
+        // A section switch is not a long-page navigation; smooth scrolling made
+        // the new page feel slower even after its content had arrived.
+        window.scrollTo(0, 0);
+        replacement.classList.add('crm-nav-enter');
+        requestAnimationFrame(() => replacement.classList.remove('crm-nav-enter'));
+    } catch (error) {
+        if (error.name === 'AbortError' || sequence !== crmNavigationSequence) return;
+        // A failed partial request must leave the current workspace usable.
+        // Falling back to location.assign made a transient timeout look like
+        // ordinary CRM navigation and discarded the user's in-page state.
+        window.showToast?.(currentMain.dataset.crmNavigationFailed || 'Could not load this CRM section. Please try again.', 'error');
+    } finally {
+        if (sequence === crmNavigationSequence) {
+            document.querySelector('main[data-app-main]')?.classList.remove('crm-nav-loading');
+        }
+    }
+}
+
+document.addEventListener('click', event => {
+    const link = event.target.closest('a[href]');
+    if (!link || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || link.target === '_blank') return;
+    const target = new URL(link.href, window.location.href);
+    if (target.origin !== window.location.origin || !target.pathname.startsWith('/crm')) return;
+    event.preventDefault();
+    navigateCrm(target.href);
+});
+
+document.addEventListener('change', event => {
+    const select = event.target.closest('[data-crm-filter-form] select');
+    if (!select) return;
+    const form = select.form;
+    const url = new URL(form.action, window.location.href);
+    new FormData(form).forEach((value, key) => { if (value) url.searchParams.set(key, value); });
+    navigateCrm(url.href);
+});
+
+document.addEventListener('submit', async event => {
+    const form = event.target.closest('form[data-task-toggle]');
+    if (!form) return;
+    event.preventDefault();
+    const input = form.querySelector('[name="done"]');
+    const button = form.querySelector('button');
+    const label = form.parentElement?.querySelector('[data-task-label]');
+    const nextDone = input.value === '1';
+    const before = label?.classList.contains('line-through') ?? false;
+    label?.classList.toggle('line-through', nextDone);
+    button.disabled = true;
+    try {
+        const response = await fetch(form.action, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content },
+            body: JSON.stringify({ done: nextDone }),
+        });
+        if (!response.ok) throw new Error('Task update failed');
+        input.value = nextDone ? '0' : '1';
+        window.showToast?.(form.dataset.success, 'success');
+    } catch (error) {
+        label?.classList.toggle('line-through', before);
+        window.showToast?.(form.dataset.failure, 'error');
+    } finally { button.disabled = false; }
+});
+
+window.addEventListener('popstate', () => {
+    if (window.location.pathname.startsWith('/crm')) navigateCrm(window.location.href, false);
+});
 
 const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -63,6 +220,14 @@ function countUpNumbers() {
 
 document.addEventListener('DOMContentLoaded', () => {
     requestAnimationFrame(() => document.body.classList.add('ready'));
+
+    document.querySelectorAll('[data-flash-toast]').forEach(toast => {
+        requestAnimationFrame(() => toast.classList.add('show'));
+        setTimeout(() => {
+            toast.classList.remove('show');
+            toast.addEventListener('transitionend', () => toast.remove(), { once: true });
+        }, 4000);
+    });
 
     if (reduceMotion) {
         document.querySelectorAll('.reveal').forEach((el) => el.classList.add('is-visible'));

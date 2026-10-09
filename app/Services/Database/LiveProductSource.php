@@ -35,7 +35,7 @@ class LiveProductSource implements ProductSource
     use PresentsProducts;
 
     /** Fields the search reads. `extra` has no meaning against a live table. */
-    public const FIELDS = ['name', 'price', 'stock', 'category', 'description', 'sku', 'url'];
+    public const FIELDS = ['name', 'price', 'stock', 'category', 'description', 'sku', 'url', 'image_url'];
 
     /** Columns a free-text query is matched against, in order of usefulness. */
     // The category is searched as text as well as filtered on, for the same

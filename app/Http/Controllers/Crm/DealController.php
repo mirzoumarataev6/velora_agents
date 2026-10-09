@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Crm;
 
 use App\Http\Controllers\Controller;
+use App\Models\CrmWorkspace;
 use App\Models\Customer;
 use App\Models\Deal;
 use App\Models\DealActivity;
@@ -15,6 +16,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
+use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
 /**
@@ -37,11 +39,23 @@ class DealController extends Controller
 
     public function index(Request $request): View
     {
+        $defaultWorkspace = CrmWorkspace::defaultFor($request->user());
         $filters = $this->filters($request);
+        $workspaces = CrmWorkspace::ownedBy($request->user())->orderByDesc('is_default')->orderBy('name')->get();
+        $selectedWorkspace = $filters['workspace_id'] ? $workspaces->firstWhere('id', $filters['workspace_id']) : null;
         $showLeads = $filters['stage'] === self::LEADS_BUCKET;
+        $hasLeadsBucket = $filters['origin'] === 'social' && $filters['workspace_id'] === null;
         $dealPage = $showLeads ? null : $this->board->list($request->user(), $filters);
         $leadPage = $showLeads ? $this->board->leadsWithoutDeals($request->user(), $filters) : null;
-        $leadsCount = $showLeads ? $leadPage->total() : $this->board->leadsWithoutDealsCount($request->user(), $filters);
+        $leadsCount = $showLeads ? $leadPage->total() : ($hasLeadsBucket ? $this->board->leadsWithoutDealsCount($request->user(), $filters) : 0);
+        $deepLinkedDeal = ctype_digit((string) $request->query('deal'))
+            ? Deal::ownedBy($request->user())->with(['customer', 'conversation.channel', 'tasks' => fn ($query) => $query->open()->orderBy('due_at')->limit(1)])->find($request->integer('deal'))
+            : null;
+        $initialDeal = $deepLinkedDeal ? $this->board->card(
+            $deepLinkedDeal,
+            $deepLinkedDeal->customer?->deals()->where('payment_status', 'paid')->count() ?? 0,
+            $deepLinkedDeal->customer?->conversations()->count() ?? 0,
+        ) : null;
 
         return view('crm.board', [
             'i18nExtraNamespaces' => ['crm'],
@@ -49,14 +63,18 @@ class DealController extends Controller
             'leads' => $leadPage?->items() ?? [],
             'pagination' => $this->pagination($showLeads ? $leadPage : $dealPage),
             'leadsCount' => $leadsCount,
-            'summary' => $this->board->overview($request->user()),
+            'summary' => $this->board->overview($request->user(), $filters),
             'filters' => $filters,
+            'workspaces' => $workspaces,
+            'selectedWorkspace' => $selectedWorkspace,
+            'defaultWorkspaceId' => $defaultWorkspace->id,
             'stages' => Deal::allStages(),
             'cancelledStage' => Deal::STAGE_CANCELLED,
             'leadsBucket' => self::LEADS_BUCKET,
             'initialCustomer' => ctype_digit((string) old('customer_id'))
                 ? Customer::ownedBy($request->user())->find(old('customer_id'))
                 : null,
+            'initialDeal' => $initialDeal,
         ]);
     }
 
@@ -70,16 +88,17 @@ class DealController extends Controller
     {
         $filters = $this->filters($request);
         $showLeads = $filters['stage'] === self::LEADS_BUCKET;
+        $hasLeadsBucket = $filters['origin'] === 'social' && $filters['workspace_id'] === null;
         $dealPage = $showLeads ? null : $this->board->list($request->user(), $filters);
         $leadPage = $showLeads ? $this->board->leadsWithoutDeals($request->user(), $filters) : null;
-        $leadsCount = $showLeads ? $leadPage->total() : $this->board->leadsWithoutDealsCount($request->user(), $filters);
+        $leadsCount = $showLeads ? $leadPage->total() : ($hasLeadsBucket ? $this->board->leadsWithoutDealsCount($request->user(), $filters) : 0);
 
         return response()->json([
             'deals' => $dealPage?->items() ?? [],
             'leads' => $leadPage?->items() ?? [],
             'pagination' => $this->pagination($showLeads ? $leadPage : $dealPage),
             'leadsCount' => $leadsCount,
-            'summary' => $this->board->overview($request->user()),
+            'summary' => $this->board->overview($request->user(), $filters),
         ]);
     }
 
@@ -176,6 +195,8 @@ class DealController extends Controller
             'title' => ['required', 'string', 'max:255'],
             'amount' => ['required', 'numeric', 'gt:0', 'max:99999999.99'],
             'deal_date' => ['nullable', 'date'],
+            'sales_origin' => ['sometimes', 'required', 'string', 'in:'.implode(',', Deal::SALES_ORIGINS)],
+            'crm_workspace_id' => ['nullable', 'integer', Rule::exists('crm_workspaces', 'id')->where('user_id', $request->user()->id)],
         ], [
             'customer_id.required' => __('crm.board.customer_required'),
             'new_customer_name.required' => __('crm.board.customer_name_required'),
@@ -189,6 +210,7 @@ class DealController extends Controller
                 $request->user(),
                 $data['new_customer_name'],
                 $data['new_customer_phone'] ?? null,
+                isset($data['crm_workspace_id']) ? (int) $data['crm_workspace_id'] : null,
             );
         } else {
             // Scoped, not a bare find: a customer id that exists but belongs
@@ -205,6 +227,7 @@ class DealController extends Controller
         $deal = new Deal;
         $deal->forceFill([
             'user_id' => $request->user()->id,
+            'crm_workspace_id' => $data['crm_workspace_id'] ?? CrmWorkspace::defaultFor($request->user())->id,
             'customer_id' => $customer->id,
             // The customer's most recent thread, so the row can show a
             // channel icon like every other deal in the list. A brand-new
@@ -214,6 +237,7 @@ class DealController extends Controller
             'title' => $data['title'],
             'amount' => $data['amount'],
             'deal_date' => $data['deal_date'] ?? now()->toDateString(),
+            'sales_origin' => $data['sales_origin'] ?? 'social',
             'stage' => Deal::STAGES[0],
             'stage_changed_at' => now(),
             // Opened by hand, so it counts as the owner's own placement.
@@ -239,7 +263,7 @@ class DealController extends Controller
      * @return array{0: Customer, 1: bool} the customer, and whether it was
      *                                     matched rather than created
      */
-    private function resolveOrCreateCustomer(User $user, string $name, ?string $phone): array
+    private function resolveOrCreateCustomer(User $user, string $name, ?string $phone, ?int $workspaceId = null): array
     {
         $key = $this->customers->phoneKey($phone);
 
@@ -255,6 +279,7 @@ class DealController extends Controller
         // request payload can file a customer under another account.
         $customer = Customer::forceCreate([
             'user_id' => $user->id,
+            'crm_workspace_id' => $workspaceId ?? CrmWorkspace::defaultFor($user)->id,
             'name' => $name,
             'phone' => $key !== null ? $phone : null,
             'phone_key' => $key,
@@ -310,6 +335,8 @@ class DealController extends Controller
             'note' => ['nullable', 'string', 'max:5000'],
             'stage' => ['nullable', 'string', 'in:'.implode(',', Deal::allStages())],
             'deal_date' => ['nullable', 'date'],
+            'sales_origin' => ['sometimes', 'required', 'string', 'in:'.implode(',', Deal::SALES_ORIGINS)],
+            'crm_workspace_id' => ['sometimes', 'required', 'integer', Rule::exists('crm_workspaces', 'id')->where('user_id', $request->user()->id)],
             'closed' => ['nullable', 'boolean'],
             'cancelled_reason' => [($request->input('stage', $deal->stage) === Deal::STAGE_CANCELLED ? 'required' : 'nullable'), 'string', 'max:2000'],
         ], [
@@ -319,7 +346,7 @@ class DealController extends Controller
             'cancelled_reason.required' => __('crm.board.cancel_reason_required'),
         ]);
 
-        $deal->update(Arr::only($data, ['title', 'amount', 'payment_status', 'note']));
+        $deal->update(Arr::only($data, ['title', 'amount', 'payment_status', 'sales_origin', 'crm_workspace_id', 'note']));
 
         // Through the same door a drag used to go through, and the row's own
         // quick-select still does — the guard that keeps the automation from
@@ -330,7 +357,9 @@ class DealController extends Controller
             $deal->update(['cancelled_reason' => $data['cancelled_reason']]);
         }
 
-        if (! empty($data['deal_date'])) $this->board->setDealDate($deal, $data['deal_date']);
+        if (! empty($data['deal_date'])) {
+            $this->board->setDealDate($deal, $data['deal_date']);
+        }
 
         // Only when the field was actually sent — the edit form only ever
         // includes it while the deal sits in Оплата, and a save from any
@@ -365,17 +394,34 @@ class DealController extends Controller
      * keeps holding across the 12-second refresh instead of resetting to
      * "everything" the next time the page quietly re-fetches.
      *
-     * @return array{stage: string, q: ?string, sort: string, dir: string}
+     * @return array{stage: string, q: ?string, sort: string, dir: string, origin: string, workspace_id: ?int}
      */
     private function filters(Request $request): array
     {
         $stage = $request->query('stage');
         $sort = $request->query('sort');
+        $origin = in_array($request->query('origin'), Deal::SALES_ORIGINS, true) ? $request->query('origin') : 'social';
+        $workspaceId = ctype_digit((string) $request->query('workspace')) && CrmWorkspace::ownedBy($request->user())->whereKey($request->query('workspace'))->exists()
+            ? (int) $request->query('workspace')
+            : null;
+        $stage = in_array($stage, array_merge(['all', self::LEADS_BUCKET, 'in_progress', 'resolved'], Deal::allStages()), true) ? $stage : 'all';
+
+        // People without deals have no origin or folder yet. Keep that bucket
+        // available only in the online, account-wide view where its records
+        // have a meaningful place.
+        if ($stage === self::LEADS_BUCKET && ($origin !== 'social' || $workspaceId !== null)) {
+            $stage = 'all';
+        }
 
         return [
-            'stage' => in_array($stage, array_merge(['all', self::LEADS_BUCKET], Deal::allStages()), true) ? $stage : 'all',
+            'stage' => $stage,
             'q' => trim((string) $request->query('q')) ?: null,
             'sort' => in_array($sort, DealBoard::SORTS, true) ? $sort : 'date',
+            // Online is the focused landing view; offline has its own explicit
+            // tab so a mixed pipeline never makes the two revenue streams look
+            // like one indistinguishable list.
+            'origin' => $origin,
+            'workspace_id' => $workspaceId,
             'dir' => $request->query('dir') === 'asc' ? 'asc' : 'desc',
             'page' => max(1, (int) $request->query('page', 1)),
         ];

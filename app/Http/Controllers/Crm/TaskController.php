@@ -3,21 +3,22 @@
 namespace App\Http\Controllers\Crm;
 
 use App\Http\Controllers\Controller;
+use App\Models\CrmWorkspace;
 use App\Models\Customer;
 use App\Models\Deal;
 use App\Models\Task;
 use App\Models\User;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
 /**
- * Reminders. Deliberately the smallest thing that works: a title, a date, and
- * a checkbox — anything more is a project manager, and the owner already has a
- * board for the work that has structure.
+ * Lightweight CRM follow-ups. Tasks stay deliberately smaller than a project
+ * manager, while priority and type make the next action scannable at a glance.
  */
 class TaskController extends Controller
 {
@@ -28,6 +29,11 @@ class TaskController extends Controller
 
     public function index(Request $request): View
     {
+        $workspaces = CrmWorkspace::ownedBy($request->user())->orderByDesc('is_default')->orderBy('name')->get();
+        $requestedWorkspace = $request->query('workspace');
+        $workspace = ctype_digit((string) $requestedWorkspace)
+            ? $workspaces->firstWhere('id', (int) $requestedWorkspace)
+            : null;
         $filter = in_array($request->query('filter'), self::FILTERS, true)
             ? $request->query('filter')
             : self::FILTERS[0];
@@ -37,6 +43,14 @@ class TaskController extends Controller
             ->when($filter === 'today', fn ($q) => $q->dueToday())
             ->when($filter === 'overdue', fn ($q) => $q->overdue())
             ->when($filter === 'done', fn ($q) => $q->whereNotNull('done_at'))
+            ->when($workspace, fn ($q) => $q->where(function ($scope) use ($workspace) {
+                $scope->whereHas('customer', fn ($customer) => $customer->where('crm_workspace_id', $workspace->id))
+                    ->orWhereHas('deal', fn ($deal) => $deal->where('crm_workspace_id', $workspace->id));
+
+                if ($workspace->is_default) {
+                    $scope->orWhere(fn ($unassigned) => $unassigned->whereNull('customer_id')->whereNull('deal_id'));
+                }
+            }))
             ->with(['customer:id,name', 'deal:id,title'])
             // Soonest first, and undated tasks last: a date is a commitment and
             // outranks a someday.
@@ -51,8 +65,8 @@ class TaskController extends Controller
             'tasks' => $tasks,
             'activeFilter' => $filter,
             'counts' => self::counts($request->user()),
-            'customers' => Customer::ownedBy($request->user())
-                ->orderByDesc('last_contact_at')->limit(200)->get(['id', 'name', 'phone']),
+            'workspaces' => $workspaces,
+            'activeWorkspace' => $workspace,
         ]);
     }
 
@@ -71,29 +85,65 @@ class TaskController extends Controller
             'title' => ['required', 'string', 'max:255'],
             'due_at' => ['nullable', 'date'],
             'customer_id' => ['nullable', 'integer', Rule::exists('customers', 'id')->where('user_id', $ownerId)],
+            'new_customer_name' => ['nullable', 'string', 'max:255'],
             'deal_id' => ['nullable', 'integer', $dealExists],
+            'priority' => ['nullable', 'string', Rule::in(Task::PRIORITIES)],
+            'type' => ['nullable', 'string', Rule::in(Task::TYPES)],
         ], [
             'customer_id.exists' => __('crm.tasks.customer_invalid'),
             'deal_id.exists' => __('crm.tasks.deal_invalid'),
         ]);
 
-        $task = new Task;
+        $task = DB::transaction(function () use ($request, $data): Task {
+            $customerId = $data['customer_id'] ?? null;
 
-        $task->forceFill([
-            'user_id' => $request->user()->id,
-            'title' => $data['title'],
-            'due_at' => $data['due_at'] ?? null,
-            'customer_id' => $data['customer_id'] ?? null,
-            'deal_id' => $data['deal_id'] ?? null,
-        ])->save();
+            if (blank($customerId) && filled($data['new_customer_name'] ?? null)) {
+                $customer = Customer::forceCreate([
+                    'user_id' => $request->user()->id,
+                    'crm_workspace_id' => CrmWorkspace::defaultFor($request->user())->id,
+                    'name' => trim($data['new_customer_name']),
+                    'status' => 'lead',
+                ]);
+                $customerId = $customer->id;
+            }
+
+            $task = new Task;
+            $task->forceFill([
+                'user_id' => $request->user()->id,
+                'title' => $data['title'],
+                'due_at' => $data['due_at'] ?? null,
+                'customer_id' => $customerId,
+                'deal_id' => $data['deal_id'] ?? null,
+                'priority' => $data['priority'] ?? 'normal',
+                'type' => $data['type'] ?? 'follow_up',
+            ])->save();
+
+            return $task;
+        });
 
         if ($request->wantsJson()) {
+            $task->load(['customer', 'deal']);
+
             return response()->json([
                 'task' => [
                     'id' => $task->id,
                     'title' => $task->title,
                     'due_at' => $task->due_at?->translatedFormat('d M, H:i'),
                     'overdue' => $task->isOverdue(),
+                    'priority' => $task->priority,
+                    'priority_label' => __('crm.tasks.priorities.'.$task->priority),
+                    'type' => $task->type,
+                    'done' => false,
+                    'type_label' => __('crm.tasks.types.'.$task->type),
+                    'url' => route('crm.tasks.update', $task),
+                    'delete_url' => route('crm.tasks.destroy', $task),
+                    'delete_label' => __('crm.tasks.delete'),
+                    'delete_confirm' => __('crm.tasks.delete_confirm'),
+                    'done_label' => __('crm.tasks.done_label'),
+                    'no_due' => __('crm.tasks.no_due'),
+                    'customer_name' => $task->customer?->displayName(),
+                    'customer_url' => $task->customer ? route('crm.customers.show', $task->customer) : null,
+                    'deal_title' => $task->deal?->title,
                 ],
             ], 201);
         }
@@ -105,7 +155,7 @@ class TaskController extends Controller
      * Edit, or tick off. Ticking is the common case and arrives as `done`
      * alone, so everything else is optional.
      */
-    public function update(Request $request, Task $task): RedirectResponse
+    public function update(Request $request, Task $task): RedirectResponse|JsonResponse
     {
         $this->authorize('update', $task);
 
@@ -113,6 +163,8 @@ class TaskController extends Controller
             'title' => ['nullable', 'string', 'max:255'],
             'due_at' => ['nullable', 'date'],
             'done' => ['nullable', 'boolean'],
+            'priority' => ['sometimes', 'required', 'string', Rule::in(Task::PRIORITIES)],
+            'type' => ['sometimes', 'required', 'string', Rule::in(Task::TYPES)],
         ]);
 
         $changes = array_filter([
@@ -128,16 +180,30 @@ class TaskController extends Controller
                 : null;
         }
 
+        foreach (['priority', 'type'] as $field) {
+            if (array_key_exists($field, $data)) {
+                $changes[$field] = $data[$field];
+            }
+        }
+
         $task->forceFill($changes)->save();
+
+        if ($request->wantsJson()) {
+            return response()->json(['message' => __('crm.tasks.saved'), 'done' => $task->isDone()]);
+        }
 
         return back()->with('status', __('crm.tasks.saved'));
     }
 
-    public function destroy(Request $request, Task $task): RedirectResponse
+    public function destroy(Request $request, Task $task): RedirectResponse|JsonResponse
     {
         $this->authorize('delete', $task);
 
         $task->delete();
+
+        if ($request->wantsJson()) {
+            return response()->json(['message' => __('crm.tasks.deleted')]);
+        }
 
         return back()->with('status', __('crm.tasks.deleted'));
     }
@@ -157,5 +223,4 @@ class TaskController extends Controller
             'open' => Task::ownedBy($user)->open()->count(),
         ];
     }
-
 }

@@ -97,6 +97,7 @@ class DatasetProductSource implements ProductSource
             'category' => $product->category,
             'sku' => $product->sku,
             'url' => $product->url,
+            'image_url' => $product->image_url,
             'description' => $product->description,
             'details' => $product->extra,
         ]);

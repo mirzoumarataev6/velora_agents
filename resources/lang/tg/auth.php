@@ -4,6 +4,12 @@
 // (AI-generated Tajik translation — please have a native speaker review before shipping.)
 
 return [
+    'journey' => [
+        'eyebrow' => 'аз муроҷиат то натиҷа',
+        'signal' => 'Муштарӣ муроҷиат мекунад',
+        'dialogue' => 'Агент суҳбатро пеш мебарад',
+        'result' => 'Даста натиҷаро мебинад',
+    ],
     'login' => [
         'title' => 'Воридшавӣ',
         'subtitle' => 'Хуш омадед! Барои идомаи кор бо агентҳо ворид шавед.',
@@ -24,7 +30,7 @@ return [
     ],
     'register' => [
         'title' => 'Бақайдгирӣ',
-        'subtitle' => 'Ҳисоб созед ва аввалин агенти худро дар 5 дақиқа оғоз кунед.',
+        'subtitle' => 'Ҳисоб созед, агентро танзим кунед ва пеш аз оғоз ҷавобҳояшро санҷед.',
         'google_cta' => 'Бо Google идома диҳед',
         'divider' => 'Ё тавассути почтаи электронӣ',
         'name_label' => 'Ном',

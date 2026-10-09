@@ -2,6 +2,8 @@
 
 namespace App\Services\Database;
 
+use App\Services\Bi\Query\QuerySpec;
+
 /**
  * One database engine, as this feature needs to see it.
  *
@@ -18,6 +20,14 @@ namespace App\Services\Database;
  */
 interface DatabaseDriver
 {
+    /**
+     * A BI aggregate over a table registered for this owner's BI connection.
+     * The driver accepts validated structure, never SQL from a caller.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function queryBi(QuerySpec $spec): array;
+
     /** The engine key this driver is registered under ('mysql', 'pgsql'). */
     public function engine(): string;
 

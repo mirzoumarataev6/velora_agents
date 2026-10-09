@@ -219,6 +219,27 @@ class GreenApiDriver implements ChannelDriverInterface
         }
     }
 
+    public function sendImage(Channel $channel, string $externalUserId, string $url, string $caption = ''): void
+    {
+        $this->assertWithinMessagingWindow($channel, $externalUserId);
+        $query = [];
+        parse_str((string) parse_url($url, PHP_URL_QUERY), $query);
+        $candidateName = (string) ($query['filename'] ?? basename((string) parse_url($url, PHP_URL_PATH)));
+        $extension = strtolower(pathinfo($candidateName, PATHINFO_EXTENSION));
+        if (! in_array($extension, ['jpg', 'jpeg', 'png', 'webp'], true)) {
+            $extension = 'jpg';
+        }
+        $response = $this->call($channel, 'post', 'sendFileByUrl', [
+            'chatId' => $this->chatId($externalUserId),
+            'urlFile' => $url,
+            'fileName' => 'product-image.'.$extension,
+            'caption' => mb_substr($caption, 0, 900),
+        ]);
+        if ($response->failed() || ! $response->json('idMessage')) {
+            throw new RuntimeException('Green API did not confirm image delivery: '.$this->errorOf($response));
+        }
+    }
+
     // Приводит идентификатор пользователя к формату chatId Green API
     public function chatId(string $externalUserId): string
     {

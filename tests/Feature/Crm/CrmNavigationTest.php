@@ -7,7 +7,6 @@ use App\Models\Deal;
 use App\Models\Task;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Route;
 use Tests\TestCase;
 
 class CrmNavigationTest extends TestCase
@@ -45,7 +44,7 @@ class CrmNavigationTest extends TestCase
         $response->assertSee(__('agents.nav.leads'));
     }
 
-    /** Two tabs now, not three: Клиенты was folded into the deal panel. */
+    /** CRM destinations are all first-class and the active section is clear. */
     public function test_every_crm_sub_page_is_reachable_and_marks_itself_active(): void
     {
         $user = User::factory()->create();
@@ -65,10 +64,28 @@ class CrmNavigationTest extends TestCase
         }
     }
 
-    /** The standalone customer directory is gone — no tab, no route. */
-    public function test_there_is_no_standalone_customer_directory(): void
+    public function test_the_customer_directory_is_a_first_class_crm_destination(): void
     {
-        $this->assertFalse(Route::has('crm.customers.index'));
+        $response = $this->actingAs(User::factory()->create())->get(route('crm.customers.index'));
+
+        $response->assertOk();
+        $response->assertSee(__('crm.nav.customers'));
+        $response->assertSee(__('crm.customers.directory.heading'));
+    }
+
+    public function test_crm_partial_navigation_returns_only_the_content_shell(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)->get(route('crm.tasks.index'), ['X-CRM-Partial' => '1'])
+            ->assertOk()
+            ->assertSee('<main data-app-main', false)
+            ->assertSee(__('crm.tasks.heading'))
+            ->assertDontSee('data-sidebar', false);
+
+        $this->actingAs($user)->get(route('crm.tasks.index'))
+            ->assertOk()
+            ->assertSee('data-sidebar', false);
     }
 
     public function test_the_profile_links_a_customers_deals_and_tasks(): void
@@ -84,6 +101,8 @@ class CrmNavigationTest extends TestCase
         $response->assertSee('Ковёр 3х4');
         $response->assertSee('Перезвонить завтра');
         $response->assertSee(__('crm.stages.payment'));
+        $response->assertSee('lg:flex-1', false);
+        $response->assertSee('lg:min-h-0 lg:flex-1', false);
     }
 
     /**

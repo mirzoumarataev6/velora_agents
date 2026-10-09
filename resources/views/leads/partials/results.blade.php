@@ -70,7 +70,7 @@
                     </div>
                     <div class="flex flex-col items-end gap-1 text-right">
                         @if ($lead->awaitsPriceApproval())
-                            <span class="inline-flex items-center gap-1 rounded-full bg-warning px-2 py-0.5 text-[11px] font-semibold text-white">
+                            <span class="inline-flex items-center gap-1 rounded-full bg-warning px-2 py-0.5 text-xs font-semibold text-white">
                                 {{ __('leads.haggle.waiting_badge') }}
                             </span>
                         @endif
@@ -140,27 +140,28 @@
                                  from the owner's side. --}}
                             <div class="flex items-center gap-2" x-data="{ price: '' }">
                                 <input type="number" min="0" step="0.01" x-model="price"
+                                    aria-label="{{ __('leads.haggle.price_placeholder') }}"
                                     placeholder="{{ __('leads.haggle.price_placeholder') }}"
-                                    class="field w-28 px-3 py-1.5 text-xs" />
-                                <button type="button" @click="approvePrice({{ $lead->id }}, price)"
-                                    class="rounded-lg bg-success px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:opacity-90">
+                                    class="field min-h-10 w-28 px-3 py-1.5 text-sm" />
+                                <button type="button" data-requested-price="{{ \App\Models\Lead::formatPrice($lead->requested_price) }}" @click="approvePrice({{ $lead->id }}, price, $el.dataset.requestedPrice)"
+                                    class="min-h-10 rounded-lg bg-success px-3 py-1.5 text-sm font-semibold text-white transition-colors hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">
                                     {{ __('leads.haggle.approve') }}
                                 </button>
                                 <button type="button" @click="declinePrice({{ $lead->id }}, price)"
-                                    class="rounded-lg px-3 py-1.5 text-xs font-semibold text-muted transition-colors hover:border-danger/30 hover:text-danger dark:text-night-muted">
+                                    class="min-h-10 rounded-lg px-3 py-1.5 text-sm font-semibold text-muted transition-colors hover:border-danger/30 hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand dark:text-night-muted">
                                     {{ __('leads.haggle.decline') }}
                                 </button>
                             </div>
                         @else
                         <select @change="updateStatus({{ $lead->id }}, $event.target.value)"
-                            class="field px-3 py-1.5 text-xs font-medium">
+                            class="field min-h-10 px-3 py-1.5 text-sm font-medium">
                             @foreach (['new', 'in_progress', 'done'] as $statusOption)
                                 <option value="{{ $statusOption }}" @selected($lead->status === $statusOption)>{{ __("leads.status.$statusOption") }}</option>
                             @endforeach
                         </select>
                         @endif
                         <button type="button" @click="remove({{ $lead->id }})" aria-label="{{ __('leads.index.delete') }}"
-                            class="flex h-8 w-8 items-center justify-center rounded-full text-muted transition-colors hover:border-danger/30 hover:bg-danger/5 hover:text-danger dark:text-night-muted">
+                            class="flex h-10 w-10 items-center justify-center rounded-full text-muted transition-colors hover:border-danger/30 hover:bg-danger/5 hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand dark:text-night-muted">
                             <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
                         </button>
                     </div>

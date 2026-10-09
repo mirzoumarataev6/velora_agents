@@ -4,7 +4,7 @@ namespace App\Services\Dataset;
 
 class ColumnMapper
 {
-    public const FIELDS = ['name', 'price', 'stock', 'category', 'description', 'sku', 'url', 'extra'];
+    public const FIELDS = ['name', 'price', 'stock', 'category', 'description', 'sku', 'url', 'image_url', 'extra'];
 
     public const REQUIRED_FIELDS = ['name'];
 
@@ -45,6 +45,11 @@ class ColumnMapper
             'url', 'link', 'page', 'product url', 'permalink', 'website',
             'ссылка', 'адрес', 'страница', 'сайт',
             'пайванд', 'истинод',
+        ],
+        'image_url' => [
+            'image url', 'image', 'photo', 'photo url', 'picture', 'picture url', 'image link',
+            'фото', 'фотография', 'изображение', 'ссылка на фото', 'ссылка на изображение',
+            'акси мол', 'расм', 'сурати мол',
         ],
     ];
 

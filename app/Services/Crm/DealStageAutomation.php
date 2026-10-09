@@ -3,6 +3,7 @@
 namespace App\Services\Crm;
 
 use App\Models\Conversation;
+use App\Models\CrmWorkspace;
 use App\Models\Customer;
 use App\Models\Deal;
 use App\Models\Lead;
@@ -64,6 +65,7 @@ class DealStageAutomation
 
         $deal->forceFill([
             'user_id' => $customer->user_id,
+            'crm_workspace_id' => CrmWorkspace::defaultFor($customer->user)->id,
             'customer_id' => $customer->id,
             'conversation_id' => $conversation->id,
             'agent_id' => $conversation->agent_id,
