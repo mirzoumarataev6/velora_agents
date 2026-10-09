@@ -18,6 +18,7 @@
         "vite": "^8.0.0"
     },
     "dependencies": {
+        "@hotwired/turbo": "^8.0.23",
         "alpinejs": "^3.15.12",
         "apexcharts": "^7.1.0",
         "gridstack": "^14.0.0"

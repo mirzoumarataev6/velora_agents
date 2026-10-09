@@ -1,4 +1,4 @@
-@extends(request()->header('X-CRM-Partial') === '1' ? 'layouts.crm-partial' : 'layouts.dashboard')
+@extends('layouts.dashboard')
 
 @section('title', __('crm.tasks.title'))
 
@@ -193,7 +193,7 @@
     @if ($tasks->hasPages())<div class="mt-6">{{ $tasks->links() }}</div>@endif
 </div>
 
-<script data-crm-page-script>
+<script>
 function crmTaskBoard({ items, storeUrl, customerSearchUrl, labels }) {
     return {
         items, storeUrl, customerSearchUrl, labels, adding: false, saving: false,

@@ -1,4 +1,4 @@
-@extends(request()->header('X-CRM-Partial') === '1' ? 'layouts.crm-partial' : 'layouts.dashboard')
+@extends('layouts.dashboard')
 
 @section('title', $customer->displayName())
 
@@ -195,7 +195,12 @@
                 <div class="space-y-1.5">
                     @foreach ($customer->tasks as $task)
                         <div class="flex items-center gap-2 text-sm">
-                            <form method="POST" action="{{ route('crm.tasks.update', $task) }}" data-task-toggle data-success="{{ __('crm.tasks.saved') }}" data-failure="{{ __('crm.tasks.save_failed') }}" class="flex shrink-0">
+                            {{-- data-turbo="false": this form is already fully owned by the
+                                 document-level submit handler in app.js (a lightweight JSON
+                                 PATCH, no navigation at all) — without this, Turbo's own form
+                                 interception (registered before that handler, so it would see
+                                 the submit event first) would turn it into a full page visit. --}}
+                            <form method="POST" action="{{ route('crm.tasks.update', $task) }}" data-task-toggle data-turbo="false" data-success="{{ __('crm.tasks.saved') }}" data-failure="{{ __('crm.tasks.save_failed') }}" class="flex shrink-0">
                                 @csrf
                                 @method('PATCH')
                                 <input type="hidden" name="done" value="{{ $task->isDone() ? 0 : 1 }}" />
@@ -334,7 +339,7 @@
 @endsection
 
 @push('scripts')
-<script data-crm-page-script>
+<script>
 function customerDueDate() {
     return {
         display: '', error: '', european: @js(app()->getLocale() !== 'en'),

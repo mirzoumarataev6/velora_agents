@@ -119,6 +119,23 @@ export function refreshBiChart(element, payload) {
     entry.chart.updateOptions(options(payload), false, true);
 }
 
+/**
+ * Destroys every mounted chart and forgets it. `charts` is keyed by the DOM
+ * element each chart was rendered into; under full-page reloads that map
+ * simply vanished with the rest of the JS realm, but Turbo keeps this module
+ * alive across navigations, so without this the map would keep growing by
+ * one detached element every time a BI page is left — see app.js's
+ * `turbo:before-cache` listener, the only caller.
+ */
+export function destroyAllCharts() {
+    for (const {chart} of charts.values()) {
+        try {
+            chart.destroy();
+        } catch (e) { /* already gone — nothing left to clean up */ }
+    }
+    charts.clear();
+}
+
 const themeObserver = new MutationObserver(() => {
     for (const {chart, payload} of charts.values()) chart.updateOptions(options(payload), false, true);
 });

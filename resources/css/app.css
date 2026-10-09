@@ -578,17 +578,55 @@ html.dark {
     opacity: 0.85;
 }
 
-/* Whole-page fade on load / before an internal navigation. */
-.page-enter {
-    opacity: 0;
-    transition: opacity 0.35s ease;
-}
-.page-enter.ready {
-    opacity: 1;
+/* Whole-page fade+rise on load and on every Turbo navigation (see
+   `turbo:load` in resources/js/app.js, which adds `.ready` each time).
+   `<body>` is one of the elements Turbo actually replaces on a visit, so a
+   fresh copy of this class — opacity 0 again — arrives with every new page,
+   and this is what the request-for-request navigation reads as motion rather
+   than a jump cut.
+
+   Scoped to browsers WITHOUT the View Transitions API: where Turbo can use
+   `::view-transition-*` instead (see below), that already animates the
+   whole-page swap more smoothly than a plain opacity/transform transition on
+   an element that is mid-replacement can, and running both at once would be
+   two animations competing for the same 250ms. */
+@supports not (view-transition-name: none) {
+    .page-enter {
+        opacity: 0;
+        transform: translateY(8px);
+        transition: opacity 0.25s ease-out, transform 0.25s ease-out;
+    }
+    .page-enter.ready {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 .page-exit {
     opacity: 0 !important;
     transition: opacity 0.2s ease;
+}
+
+/* The View Transitions path: Turbo wraps its page swap in
+   document.startViewTransition() automatically once <meta name="view-transition">
+   is present (see layouts/dashboard.blade.php), capturing the outgoing and
+   incoming page as `::view-transition-old(root)` / `::view-transition-new(root)`
+   and cross-fading between them by default. Overridden here so the incoming
+   page also rises slightly instead of only fading, matching the non-VT
+   fallback above — "a soft cross-fade" rather than the default's flatter dissolve. */
+@media (prefers-reduced-motion: no-preference) {
+    ::view-transition-old(root) {
+        animation: page-cross-fade-out 180ms ease-out both;
+    }
+    ::view-transition-new(root) {
+        animation: page-cross-fade-in 250ms ease-out both;
+    }
+}
+@keyframes page-cross-fade-out {
+    to { opacity: 0; }
+}
+@keyframes page-cross-fade-in {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
 }
 
 .spinner {
@@ -756,6 +794,17 @@ html.dark {
     .page-exit {
         opacity: 1 !important;
         transition: none;
+    }
+    /* Without this, the browser's OWN default view-transition cross-fade
+       would still play — the `no-preference` guard around our custom
+       keyframes above only withholds the custom animation, not the native
+       one the UA stylesheet supplies for every `document.startViewTransition()`
+       call regardless of CSS. `animation: none` here makes the swap instant,
+       on both the outgoing and incoming page captures. */
+    ::view-transition-group(*),
+    ::view-transition-old(*),
+    ::view-transition-new(*) {
+        animation: none !important;
     }
     .welcome-backdrop,
     .welcome-card {
@@ -2686,24 +2735,12 @@ html.dark {
     position: static !important;
     margin-bottom: 1rem;
 }
-/* CRM content navigation replaces one page tree without flashing the shared
-   shell; the active URL still changes and browser back restores the prior view. */
-.crm-nav-loading {
-    position: relative;
-}
-.crm-nav-loading::before {
-    position: absolute;
-    z-index: 20;
-    inset: 0 auto auto 0;
-    width: 34%;
-    height: 2px;
-    background: var(--color-brand);
-    content: "";
-    animation: crm-nav-progress 900ms ease-in-out infinite alternate;
-}
-@keyframes crm-nav-progress {
-    from { transform: translateX(0); }
-    to { transform: translateX(190%); }
+/* Turbo's own top-of-page progress bar (resources/js/app.js). Navigation is
+   fast enough on its own that the bar read as visual noise rather than useful
+   feedback — hidden rather than left to Turbo's own styling, since Turbo
+   still adds/removes the element itself on every visit regardless. */
+.turbo-progress-bar {
+    display: none;
 }
 
 .crm-customer-table-scroll {
@@ -2721,15 +2758,6 @@ html.dark {
 }
 .crm-task-title-text--done {
     text-decoration-color: currentColor;
-}
-
-.crm-nav-enter {
-    animation: crm-nav-enter 110ms ease-out both;
-}
-
-@keyframes crm-nav-enter {
-    from { opacity: .85; transform: translateY(2px); }
-    to { opacity: 1; transform: translateY(0); }
 }
 
 /* Auth is the bridge from the landing's signal motif to a quiet working form.

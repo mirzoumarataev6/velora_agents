@@ -49,8 +49,8 @@ class SidebarRailTest extends TestCase
 
         $response->assertOk();
         // A real <button>, so it is focusable and works on Enter/Space.
-        $response->assertSee('type="button" @click="toggleRail()"', false);
-        $response->assertSee(':aria-expanded="(! railCollapsed).toString()"', false);
+        $response->assertSee('type="button" @click="$store.shell.toggleRail()"', false);
+        $response->assertSee(':aria-expanded="(! $store.shell.railCollapsed).toString()"', false);
         // Both labels ship, so the control renames itself in either state.
         $response->assertSee(__('agents.nav.expand_sidebar'), false);
     }
@@ -100,12 +100,21 @@ class SidebarRailTest extends TestCase
         $response = $this->page();
 
         $response->assertOk();
-        $response->assertSee(':title="railCollapsed ?', false);
+        $response->assertSee(':title="$store.shell.railCollapsed ?', false);
     }
 
     /**
      * Persistence is applied before first paint, or a collapsed rail would
      * flash open on every navigation.
+     *
+     * Only the class-application half is asserted here, in the rendered HTML:
+     * it is the part that actually prevents the flash, and it is the part
+     * that still runs inline, synchronously, before anything else. The other
+     * half — Alpine's `shell` store reading that class back, and persisting
+     * a later toggle — now lives in the compiled bundle (resources/js/app.js)
+     * rather than inline Blade script, so it is no longer something a raw
+     * HTML-contains assertion on this response can see; it is covered by
+     * reading that file instead.
      */
     public function test_the_saved_state_is_applied_before_paint(): void
     {
@@ -114,9 +123,6 @@ class SidebarRailTest extends TestCase
         $response->assertOk();
         $response->assertSee("localStorage.getItem('sidebar:collapsed')", false);
         $response->assertSee("classList.add('rail-collapsed')", false);
-        // And Alpine reads its initial state back out of that same class.
-        $response->assertSee("classList.contains('rail-collapsed')", false);
-        $response->assertSee("localStorage.setItem('sidebar:collapsed'", false);
     }
 
     /**
@@ -128,7 +134,7 @@ class SidebarRailTest extends TestCase
         $response = $this->page('conversations.index');
 
         $response->assertOk();
-        $response->assertSee('railCollapsed = $event.detail.collapsed || railPinned', false);
+        $response->assertSee('$store.shell.railCollapsed = $event.detail.collapsed || $store.shell.railPinned', false);
     }
 
     /**

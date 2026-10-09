@@ -1,4 +1,4 @@
-@extends(request()->header('X-CRM-Partial') === '1' ? 'layouts.crm-partial' : 'layouts.dashboard')
+@extends('layouts.dashboard')
 
 @section('title', __('crm.board.title'))
 
@@ -407,7 +407,7 @@
 </div>
 
 @push('scripts')
-<script data-crm-page-script>
+<script>
     // Native date inputs take their visible format from the browser, not from
     // <html lang>, and showed mm/dd/yyyy even on the Russian CRM. These two
     // helpers keep the human field local while every server request stays ISO.

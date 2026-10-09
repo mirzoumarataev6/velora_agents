@@ -73,18 +73,18 @@ class CrmNavigationTest extends TestCase
         $response->assertSee(__('crm.customers.directory.heading'));
     }
 
-    public function test_crm_partial_navigation_returns_only_the_content_shell(): void
+    /**
+     * CRM navigation now goes through Turbo, the same as every other route —
+     * there is no more server-side "partial" response mode (the retired
+     * X-CRM-Partial header / layouts.crm-partial). Every CRM page is always
+     * the full page, chrome included; Turbo decides client-side what to swap.
+     */
+    public function test_crm_pages_always_render_the_full_chrome(): void
     {
-        $user = User::factory()->create();
-
-        $this->actingAs($user)->get(route('crm.tasks.index'), ['X-CRM-Partial' => '1'])
+        $this->actingAs(User::factory()->create())->get(route('crm.tasks.index'))
             ->assertOk()
             ->assertSee('<main data-app-main', false)
             ->assertSee(__('crm.tasks.heading'))
-            ->assertDontSee('data-sidebar', false);
-
-        $this->actingAs($user)->get(route('crm.tasks.index'))
-            ->assertOk()
             ->assertSee('data-sidebar', false);
     }
 

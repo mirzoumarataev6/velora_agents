@@ -1,4 +1,4 @@
-@extends(request()->header('X-CRM-Partial') === '1' ? 'layouts.crm-partial' : 'layouts.dashboard')
+@extends('layouts.dashboard')
 
 @section('title', __('crm.customers.directory.title'))
 
@@ -94,7 +94,7 @@
 @endsection
 
 @push('scripts')
-<script data-crm-page-script>
+<script>
     function crmCustomerDirectory() {
         return {
             searching: false,
