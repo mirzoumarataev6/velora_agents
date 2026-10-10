@@ -37,22 +37,23 @@ class DealBoard
         // existing quick stage/edit actions useful from the pipeline.
         $query = $this->filteredDeals($user, $filters);
         $direction = ($filters['dir'] ?? 'desc') === 'asc' ? 'asc' : 'desc';
+        $sortByAmount = ($filters['sort'] ?? 'date') === 'amount';
         $groups = (clone $query)
             ->reorder()
-            ->selectRaw('customer_id, COUNT(*) as matching_deal_count, MAX(id) as representative_deal_id')
+            ->selectRaw('customer_id, COUNT(*) as matching_deal_count')
             ->groupBy('customer_id')
-            ->when(($filters['sort'] ?? 'date') === 'amount', fn ($builder) => $builder->orderByRaw("MAX(amount) {$direction}"))
-            ->when(($filters['sort'] ?? 'date') !== 'amount', fn ($builder) => $builder->orderByRaw("MAX(COALESCE(deal_date, DATE(created_at))) {$direction}"))
+            ->when($sortByAmount, fn ($builder) => $builder->orderByRaw("MAX(amount) {$direction}"))
+            ->when(! $sortByAmount, fn ($builder) => $builder->orderByRaw("MAX(COALESCE(deal_date, DATE(created_at))) {$direction}"))
             ->orderBy('customer_id', $direction)
             ->paginate(self::PER_PAGE, ['*'], 'page', max(1, (int) request()->query('page', 1)))
             ->withQueryString();
 
         if ($groups->isEmpty() && $groups->currentPage() > 1) {
             $groups = (clone $query)->reorder()
-                ->selectRaw('customer_id, COUNT(*) as matching_deal_count, MAX(id) as representative_deal_id')
+                ->selectRaw('customer_id, COUNT(*) as matching_deal_count')
                 ->groupBy('customer_id')
-                ->when(($filters['sort'] ?? 'date') === 'amount', fn ($builder) => $builder->orderByRaw("MAX(amount) {$direction}"))
-                ->when(($filters['sort'] ?? 'date') !== 'amount', fn ($builder) => $builder->orderByRaw("MAX(COALESCE(deal_date, DATE(created_at))) {$direction}"))
+                ->when($sortByAmount, fn ($builder) => $builder->orderByRaw("MAX(amount) {$direction}"))
+                ->when(! $sortByAmount, fn ($builder) => $builder->orderByRaw("MAX(COALESCE(deal_date, DATE(created_at))) {$direction}"))
                 ->orderBy('customer_id', $direction)
                 ->paginate(self::PER_PAGE, ['*'], 'page', max(1, $groups->lastPage()))
                 ->withQueryString();
@@ -60,7 +61,16 @@ class DealBoard
 
         $rows = $groups->getCollection();
         $customerIds = $rows->pluck('customer_id')->all();
-        $representativeIds = $rows->pluck('representative_deal_id')->all();
+        // Which deal actually earned each customer's spot in the list: the
+        // highest-amount deal when sorted by amount, the newest otherwise.
+        // Deliberately NOT part of the grouped query above — MAX(id) there
+        // would pick the newest deal regardless of sort, so a board sorted by
+        // amount could show the right position but the wrong deal's number
+        // on the card. Resolved in PHP, the same way purchaseCounts and
+        // customers below are: a second, bounded query over this page's
+        // customers only.
+        $representativeByCustomer = $this->representativeDealIds($user, $filters, $customerIds, $sortByAmount);
+        $representativeIds = array_values($representativeByCustomer);
         $deals = Deal::ownedBy($user)->whereIn('id', $representativeIds)
             ->with([
                 'customer:id,name,phone,status,tags',
@@ -77,14 +87,21 @@ class DealBoard
             // aggregate queries must drop it for MySQL ONLY_FULL_GROUP_BY.
             ->reorder()
             ->whereIn('customer_id', $customerIds)
-            ->where('payment_status', 'paid')
+            // Both conditions, not just the flag: a deal can have
+            // payment_status='paid' without ever having reached the Оплата
+            // stage (the edit form's payment_status field and the stage are
+            // independently settable — see DealController::update()), and
+            // counting those would inflate how many times this customer has
+            // actually paid. Requiring the stage too makes this count match
+            // what the board itself calls "paid" everywhere else.
+            ->where('payment_status', 'paid')->where('stage', 'payment')
             ->selectRaw('customer_id, COUNT(*) as total')
             ->groupBy('customer_id')->pluck('total', 'customer_id');
         $customers = $customerIds === [] ? collect() : Customer::ownedBy($user)
             ->whereIn('id', $customerIds)->withCount('conversations')->get(['id'])->keyBy('id');
 
-        $groups->setCollection($rows->map(function ($row) use ($deals, $purchaseCounts, $customers) {
-            $deal = $deals->get($row->representative_deal_id);
+        $groups->setCollection($rows->map(function ($row) use ($deals, $purchaseCounts, $customers, $representativeByCustomer) {
+            $deal = $deals->get($representativeByCustomer[$row->customer_id] ?? null);
             if (! $deal) {
                 return null;
             }
@@ -102,6 +119,60 @@ class DealBoard
         })->filter()->values());
 
         return $groups;
+    }
+
+    /**
+     * Which deal represents each customer's row on this page — the one that
+     * actually produced the value the group is sorted by, not just whichever
+     * happens to have the highest id.
+     *
+     * Sorted by amount: the highest-amount deal among this customer's
+     * matching rows (ties broken by the newest, since that is still the most
+     * likely to be what the owner means by "their" deal at that amount).
+     * Any other sort: the newest matching deal, same as before this method
+     * existed — `MAX(id)` was always right for that case, it was only wrong
+     * once amount-sorting also started relying on it.
+     *
+     * A second, bounded query rather than a correlated subquery on the
+     * grouped one: `filteredDeals()` applies `ownedBy()`'s `deals.`-qualified
+     * column, and self-joining the same table to pick a per-group extreme
+     * needs an aliased copy of it — resolving it here in PHP, over at most
+     * this page's customers, is simpler and no slower for a page this size.
+     *
+     * @param  int[]  $customerIds
+     * @return array<int, int> customer_id => deal_id
+     */
+    private function representativeDealIds(User $user, array $filters, array $customerIds, bool $sortByAmount): array
+    {
+        if ($customerIds === []) {
+            return [];
+        }
+
+        return $this->filteredDeals($user, $filters)->reorder()
+            ->whereIn('customer_id', $customerIds)
+            ->get(['id', 'customer_id', 'amount'])
+            ->groupBy('customer_id')
+            ->map(function ($deals) use ($sortByAmount) {
+                return $deals->reduce(function (?Deal $best, Deal $deal) use ($sortByAmount) {
+                    if ($best === null) {
+                        return $deal;
+                    }
+
+                    if ($sortByAmount) {
+                        $bestAmount = $best->amount !== null ? (float) $best->amount : -INF;
+                        $dealAmount = $deal->amount !== null ? (float) $deal->amount : -INF;
+
+                        if ($dealAmount !== $bestAmount) {
+                            return $dealAmount > $bestAmount ? $deal : $best;
+                        }
+                    }
+
+                    // Newest wins: either the sort itself (not by amount), or
+                    // the tie-break when two deals share the top amount.
+                    return $deal->id > $best->id ? $deal : $best;
+                })->id;
+            })
+            ->all();
     }
 
     /** One row, as both the Blade view and the poll consume it. */
@@ -148,6 +219,7 @@ class DealBoard
             'sales_origin' => $deal->sales_origin ?: 'social',
             'note' => $deal->note,
             'cancelled_reason' => $deal->cancelled_reason,
+            'won_reason' => $deal->won_reason,
             'conversation_id' => $deal->conversation_id,
             // Rendered server-side: "3 дня" has to be in the owner's language,
             // and the client has no localisation of its own for durations.
@@ -249,8 +321,12 @@ class DealBoard
         ];
     }
 
-    /** Build exactly the same scoped filter query for list and summary totals. */
-    private function filteredDeals(User $user, array $filters): Builder
+    /**
+     * Build exactly the same scoped filter query for list, summary totals,
+     * and CSV export (DealController::export()) — one definition of "what
+     * the board is currently filtered to" for all three.
+     */
+    public function filteredDeals(User $user, array $filters): Builder
     {
         $query = Deal::ownedBy($user);
 
@@ -348,14 +424,24 @@ class DealBoard
      * silently rather than validated with an error: the control that offers
      * this is only ever shown on a deal already in Оплата, so reaching this
      * with a deal that is not is a stale click, not a real request.
+     *
+     * `$wonReason` is the won counterpart to cancelled_reason — set here,
+     * the one place a deal is ever actually attested as won, mirroring how
+     * move() is the one place cancelled_reason is set. Optional: unlike a
+     * loss, a sale needs no excuse, so a blank reason simply keeps whatever
+     * was already there rather than being forced blank on every resave.
+     * Cleared only when the deal leaves Закрыто, alongside closed_at.
      */
-    public function setClosed(Deal $deal, bool $closed): Deal
+    public function setClosed(Deal $deal, bool $closed, ?string $wonReason = null): Deal
     {
         if (! $deal->canBeClosed()) {
             return $deal;
         }
 
-        $deal->forceFill(['closed_at' => $closed ? ($deal->closed_at ?? now()) : null])->save();
+        $deal->forceFill([
+            'closed_at' => $closed ? ($deal->closed_at ?? now()) : null,
+            'won_reason' => $closed ? ($wonReason ?: $deal->won_reason) : null,
+        ])->save();
 
         return $deal;
     }

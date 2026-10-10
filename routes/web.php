@@ -10,6 +10,7 @@ use App\Http\Controllers\Bi\SourceController as BiSourceController;
 use App\Http\Controllers\Bi\WidgetController as BiWidgetController;
 use App\Http\Controllers\ChannelController;
 use App\Http\Controllers\ConversationController;
+use App\Http\Controllers\Crm\CrmNoteController;
 use App\Http\Controllers\Crm\CrmWorkspaceController;
 use App\Http\Controllers\Crm\CustomerController;
 use App\Http\Controllers\Crm\DealController;
@@ -17,8 +18,8 @@ use App\Http\Controllers\Crm\TaskController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DatabaseConnectionController;
 use App\Http\Controllers\DatasetController;
-use App\Http\Controllers\KnowledgeSourceController;
 use App\Http\Controllers\KnowledgeMediaController;
+use App\Http\Controllers\KnowledgeSourceController;
 use App\Http\Controllers\LeadController;
 use App\Http\Controllers\LeadNotificationController;
 use App\Http\Controllers\LocaleController;
@@ -86,6 +87,10 @@ Route::middleware(['auth', 'auth.session'])->group(function () {
         Route::get('/', [DealController::class, 'index'])->name('board');
         // Declared before the {deal} wildcard so it isn't bound as a model id.
         Route::get('deals/poll', [DealController::class, 'poll'])->name('deals.poll');
+        // CSV of exactly what the board is currently filtered to — see
+        // DealController::export() for why it reuses DealBoard's own filter
+        // query rather than the grouped board list.
+        Route::get('deals/export', [DealController::class, 'export'])->name('deals.export');
         Route::get('deals/{deal}/activity', [DealController::class, 'activity'])->name('deals.activity');
         Route::post('deals', [DealController::class, 'store'])->name('deals.store');
         // A drag is its own endpoint, not another field on update: moving a
@@ -94,6 +99,7 @@ Route::middleware(['auth', 'auth.session'])->group(function () {
         Route::patch('deals/{deal}/move', [DealController::class, 'move'])->name('deals.move');
         Route::patch('deals/{deal}', [DealController::class, 'update'])->name('deals.update');
         Route::delete('deals/{deal}', [DealController::class, 'destroy'])->name('deals.destroy');
+        Route::post('deals/{deal}/notes', [CrmNoteController::class, 'storeForDeal'])->name('deals.notes.store');
 
         Route::post('workspaces', [CrmWorkspaceController::class, 'store'])->name('workspaces.store');
         Route::patch('workspaces/{workspace}', [CrmWorkspaceController::class, 'update'])->name('workspaces.update');
@@ -105,16 +111,25 @@ Route::middleware(['auth', 'auth.session'])->group(function () {
         Route::patch('tasks/{task}', [TaskController::class, 'update'])->name('tasks.update');
         Route::delete('tasks/{task}', [TaskController::class, 'destroy'])->name('tasks.destroy');
 
-        // The customer directory is a first-class CRM view; search and lookup
-        // stay before the wildcard so they cannot be mistaken for profile IDs.
+        // The customer directory is a first-class CRM view; search, lookup
+        // and export stay before the wildcard so they cannot be mistaken for
+        // profile IDs.
         Route::get('customers', [CustomerController::class, 'index'])->name('customers.index');
         Route::get('customers/search', [CustomerController::class, 'search'])->name('customers.search');
         Route::get('customers/lookup', [CustomerController::class, 'lookup'])->name('customers.lookup');
+        Route::get('customers/export', [CustomerController::class, 'export'])->name('customers.export');
+        // The manual "+ Add customer" — distinct from the automatic profiles
+        // CustomerResolver opens from an inbound conversation or lead.
+        Route::post('customers', [CustomerController::class, 'store'])->name('customers.store');
         Route::get('customers/{customer}', [CustomerController::class, 'show'])->name('customers.show');
         Route::patch('customers/{customer}', [CustomerController::class, 'update'])->name('customers.update');
+        Route::post('customers/{customer}/notes', [CrmNoteController::class, 'storeForCustomer'])->name('customers.notes.store');
         // The manual override for the identities the data cannot match on its
         // own — see CustomerResolver for why that case exists at all.
         Route::post('customers/{customer}/merge', [CustomerController::class, 'merge'])->name('customers.merge');
+        Route::post('customers/{customer}/merge/{merge}/undo', [CustomerController::class, 'undoMerge'])->name('customers.merge.undo');
+
+        Route::delete('notes/{note}', [CrmNoteController::class, 'destroy'])->name('notes.destroy');
     });
 
     // Data to Dashboard (Данные) — its own top-level section, a peer of CRM.

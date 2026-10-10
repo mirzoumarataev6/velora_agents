@@ -116,13 +116,62 @@
                         placeholder="{{ __('crm.customers.tags_hint') }}" class="field w-full px-3 py-2 text-sm" />
                 </div>
 
-                <div>
-                    <label for="customer-note" class="mb-1 block text-sm font-medium">{{ __('crm.customers.note') }}</label>
-                    <textarea id="customer-note" name="note" rows="3" class="field w-full px-3 py-2 text-sm">{{ old('note', $customer->note) }}</textarea>
-                </div>
-
                 <button type="submit" class="btn btn-primary btn-sm btn-block">{{ __('crm.customers.save') }}</button>
             </form>
+
+            {{-- Notes & activity: replaces the single freeform note field above
+                 with a timestamped, authored thread that also doubles as a
+                 manual activity log (a logged call, visit or meeting). Kept as
+                 its own card rather than merged into the message timeline
+                 further down — that timeline is a dedicated, SQL-paginated
+                 feed over `messages` alone, and folding a second, differently
+                 shaped source into its single paginated query would mean
+                 paginating a UNION or re-sorting two already-paginated
+                 collections by hand. A clearly separated section costs
+                 nothing and reads just as chronologically. --}}
+            <div class="card card-pad space-y-3">
+                <p class="text-sm font-semibold">{{ __('crm.notes.heading') }}</p>
+
+                <div class="max-h-72 space-y-3 overflow-y-auto pr-1">
+                    @forelse ($customer->notes as $note)
+                        <div class="border-t border-black/5 pt-2 text-sm first:border-t-0 first:pt-0 dark:border-white/5">
+                            <div class="flex items-start justify-between gap-2">
+                                <span class="min-w-0">
+                                    <span class="badge badge-neutral">{{ __('crm.notes.kinds.'.$note->kind) }}</span>
+                                    <span class="ml-1 text-xs text-muted dark:text-night-muted">{{ $note->user->name }} · {{ $note->happened_at->diffForHumans() }}</span>
+                                </span>
+                                @if ($note->user_id === auth()->id())
+                                    <form method="POST" action="{{ route('crm.notes.destroy', $note) }}" class="shrink-0">
+                                        @csrf
+                                        @method('DELETE')
+                                        <button type="submit" class="text-xs text-muted hover:text-danger dark:text-night-muted">{{ __('crm.notes.delete') }}</button>
+                                    </form>
+                                @endif
+                            </div>
+                            <p class="mt-1 whitespace-pre-line break-words">{{ $note->body }}</p>
+                        </div>
+                    @empty
+                        <p class="text-sm text-muted dark:text-night-muted">{{ __('crm.notes.empty') }}</p>
+                    @endforelse
+                </div>
+
+                <form method="POST" action="{{ route('crm.customers.notes.store', $customer) }}" class="space-y-2 border-t border-hairline pt-3 dark:border-white/10">
+                    @csrf
+                    <div class="flex gap-2">
+                        <select name="kind" class="field w-32 shrink-0 px-2 py-1.5 text-xs">
+                            @foreach (\App\Models\CrmNote::KINDS as $kind)
+                                <option value="{{ $kind }}">{{ __('crm.notes.kinds.'.$kind) }}</option>
+                            @endforeach
+                        </select>
+                        <input type="date" name="happened_at" max="{{ now()->toDateString() }}" class="field w-32 shrink-0 px-2 py-1.5 text-xs" aria-label="{{ __('crm.notes.happened_at') }}" />
+                    </div>
+                    <textarea name="body" rows="2" maxlength="5000" required placeholder="{{ __('crm.notes.body_placeholder') }}" class="field w-full px-3 py-2 text-xs"></textarea>
+                    @error('body')
+                        <p class="text-xs text-danger">{{ $message }}</p>
+                    @enderror
+                    <button type="submit" class="btn btn-secondary btn-sm">{{ __('crm.notes.add') }}</button>
+                </form>
+            </div>
 
             <div class="card card-pad space-y-2 text-sm">
                 <div class="flex justify-between gap-3">
@@ -240,6 +289,24 @@
                     <button type="submit" aria-label="{{ __('crm.tasks.add_submit') }}" class="btn btn-secondary btn-sm min-h-10 shrink-0">+</button>
                 </form>
             </div>
+
+            {{-- Undo window for the merge this profile most recently absorbed.
+                 Shown plainly, not collapsed, since it is time-limited —
+                 CustomerController::show() already only hands this down
+                 while CustomerMerge::undoable() says it is still live. --}}
+            @if ($undoableMerge)
+                <div class="card card-pad space-y-2 border-warning/30 bg-warning/5 dark:border-warning/20" role="status">
+                    <p class="text-sm font-semibold">{{ __('crm.merge.undo_heading') }}</p>
+                    <p class="text-xs text-muted dark:text-night-muted">
+                        {{ __('crm.merge.undo_hint', ['name' => $undoableMerge->fromCustomer?->name ?: __('crm.customers.no_name')]) }}
+                    </p>
+                    <form method="POST" action="{{ route('crm.customers.merge.undo', ['customer' => $customer, 'merge' => $undoableMerge]) }}"
+                        onsubmit="return confirm(@js(__('crm.merge.undo_confirm')))">
+                        @csrf
+                        <button type="submit" class="btn btn-secondary btn-sm">{{ __('crm.merge.undo_submit') }}</button>
+                    </form>
+                </div>
+            @endif
 
             {{-- The manual escape hatch. Only offered for profiles with no phone
                  number, because those are exactly the ones no automatic rule

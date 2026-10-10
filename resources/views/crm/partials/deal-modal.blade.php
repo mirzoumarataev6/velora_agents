@@ -67,18 +67,42 @@
                     </div>
                     <p x-show="activityOpen && !activityLoading && !activityItems.length" x-cloak class="pt-2 text-xs text-muted dark:text-night-muted">{{ __('crm.board.timeline_empty') }}</p>
                     <ol x-show="activityOpen && activityItems.length" x-cloak class="mt-3 max-h-48 space-y-2 overflow-y-auto pr-1">
-                        <template x-for="(item, index) in activityItems" :key="item.kind + '-' + (item.id || index)">
+                        <template x-for="(item, index) in activityItems" :key="item.kind + '-' + (item.id || item.note_id || index)">
                             <li class="flex gap-2 text-xs">
-                                <span class="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full" :class="item.kind === 'message' ? 'bg-brand' : 'bg-muted/50'"></span>
+                                <span class="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full" :class="item.kind === 'message' ? 'bg-brand' : (item.kind === 'crm_note' ? 'bg-brand-strong' : 'bg-muted/50')"></span>
                                 <div class="min-w-0 flex-1">
-                                    <p class="font-medium" x-text="item.label"></p>
+                                    <p class="flex items-center gap-1 font-medium">
+                                        <span x-text="item.label"></span>
+                                        <span x-show="item.kind === 'crm_note'" x-cloak class="text-muted dark:text-night-muted" x-text="'· ' + item.author"></span>
+                                    </p>
                                     <p class="mt-0.5 whitespace-pre-line break-words text-muted dark:text-night-muted" x-text="item.text"></p>
                                     <p class="mt-0.5 text-xs text-muted dark:text-night-muted" x-text="new Date(item.at).toLocaleString(document.documentElement.lang)"></p>
                                 </div>
-                                <span x-html="channelIcon(item.channel)" class="mt-0.5 shrink-0"></span>
+                                <button type="button" x-show="item.kind === 'crm_note' && item.can_delete" x-cloak
+                                    @click="deleteNote(item)" class="mt-0.5 shrink-0 text-muted hover:text-danger dark:text-night-muted"
+                                    aria-label="{{ __('crm.notes.delete') }}">✕</button>
+                                <span x-show="item.kind !== 'crm_note'" x-html="channelIcon(item.channel)" class="mt-0.5 shrink-0"></span>
                             </li>
                         </template>
                     </ol>
+
+                    {{-- The "add entry" box: a note or a manually logged call/visit/meeting — posts via addNote() and prepends into the thread above. --}}
+                    <div class="mt-3 space-y-2 border-t border-hairline pt-3 dark:border-white/10">
+                        <div class="flex gap-2">
+                            <select x-model="noteForm.kind" class="field w-32 shrink-0 px-2 py-1.5 text-xs">
+                                @foreach (\App\Models\CrmNote::KINDS as $kind)
+                                    <option value="{{ $kind }}">{{ __('crm.notes.kinds.'.$kind) }}</option>
+                                @endforeach
+                            </select>
+                            <input type="date" x-model="noteForm.happened_at" :max="new Date().toISOString().slice(0, 10)"
+                                class="field w-28 shrink-0 px-2 py-1.5 text-xs" aria-label="{{ __('crm.notes.happened_at') }}" />
+                        </div>
+                        <textarea x-model="noteForm.body" rows="2" maxlength="5000" placeholder="{{ __('crm.notes.body_placeholder') }}"
+                            class="field w-full px-3 py-2 text-xs"></textarea>
+                        <p x-show="noteErrors.body" x-cloak class="text-xs text-danger" x-text="noteErrors.body?.[0]"></p>
+                        <button type="button" @click="addNote()" :disabled="noteSaving || !noteForm.body.trim()"
+                            class="btn btn-secondary btn-sm disabled:opacity-50">{{ __('crm.notes.add') }}</button>
+                    </div>
                 </section>
 
                 <hr class="rule" />
@@ -174,9 +198,13 @@
                     {{ __('crm.board.closed_hint') }}
                 </p>
 
-                <div>
-                    <label class="mb-1 block text-sm font-medium" :for="'deal-note-' + selected.id">{{ __('crm.board.note') }}</label>
-                    <textarea :id="'deal-note-' + selected.id" x-model="editForm.note" rows="3" class="field w-full px-3 py-2 text-sm"></textarea>
+                {{-- The won counterpart to the cancel-reason field above —
+                     same shape, optional rather than required, and only
+                     shown once "Закрыто" is actually ticked. --}}
+                <div x-show="editForm.stage === 'payment' && editForm.closed" x-cloak>
+                    <label class="mb-1 block text-xs font-medium" :for="'deal-won-reason-' + selected.id">{{ __('crm.board.won_reason') }}</label>
+                    <textarea :id="'deal-won-reason-' + selected.id" x-model="editForm.won_reason" rows="2"
+                        maxlength="2000" class="field w-full px-3 py-2 text-sm"></textarea>
                 </div>
 
                 <section class="rounded-md border border-hairline p-3 dark:border-white/10">

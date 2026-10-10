@@ -11,6 +11,8 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
  * One thing the business is trying to sell to one customer.
@@ -22,12 +24,14 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * for exactly which signals are still allowed to move a deal automatically,
  * and why Оплата is not one of their destinations any more).
  */
-#[Fillable(['conversation_id', 'agent_id', 'lead_id', 'crm_workspace_id', 'title', 'amount', 'deal_date', 'sales_origin', 'payment_status', 'stage', 'position', 'note', 'closed_at', 'cancelled_reason'])]
+#[Fillable(['conversation_id', 'agent_id', 'lead_id', 'crm_workspace_id', 'title', 'amount', 'deal_date', 'sales_origin', 'payment_status', 'stage', 'position', 'note', 'closed_at', 'cancelled_reason', 'won_reason'])]
 #[UsePolicy(DealPolicy::class)]
 class Deal extends Model
 {
     /** @use HasFactory<DealFactory> */
     use HasFactory;
+
+    use SoftDeletes;
 
     /**
      * The pipeline, left to right. Three stages on purpose: Новый лид (a
@@ -175,5 +179,11 @@ class Deal extends Model
     public function activities(): HasMany
     {
         return $this->hasMany(DealActivity::class)->latest('created_at');
+    }
+
+    /** The notes/activity thread — newest first, same as the activity log it doubles as. */
+    public function notes(): MorphMany
+    {
+        return $this->morphMany(CrmNote::class, 'notable')->latest('happened_at');
     }
 }

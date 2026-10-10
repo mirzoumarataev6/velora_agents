@@ -120,7 +120,8 @@ class WorkspaceTest extends TestCase
         $this->actingAs($owner)->delete(route('crm.workspaces.destroy', $workspace))
             ->assertRedirect(route('crm.board'));
 
-        $this->assertDatabaseMissing('crm_workspaces', ['id' => $workspace->id]);
+        // Soft-deleted now, not gone — see the CrmWorkspace migration.
+        $this->assertSoftDeleted('crm_workspaces', ['id' => $workspace->id]);
         $this->assertSame($default->id, $deal->fresh()->crm_workspace_id);
     }
 

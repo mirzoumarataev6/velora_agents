@@ -54,7 +54,12 @@ class DemoPresentationDataTest extends TestCase
             'id' => $edited->id,
             'title' => 'Изменено владельцем',
         ]);
-        $this->assertDatabaseMissing('deals', ['id' => $legacy->id]);
+        // Soft-deleted now, not gone — see the Deal migration. A later reseed
+        // still treats it as absent (the global scope hides trashed rows from
+        // the queries DemoSeeder matches against), so the purge's own effect
+        // — this card disappears and a fresh one can take its place — is
+        // unchanged; only how "gone" is asserted here changes.
+        $this->assertSoftDeleted('deals', ['id' => $legacy->id]);
         // The deliberately owner-edited demo deal is retained even if it is
         // already paid; count the three reproducible presentation sales apart
         // from that retained owner work.

@@ -12,6 +12,11 @@ class TaskPolicy
         return true;
     }
 
+    public function create(User $user): bool
+    {
+        return true;
+    }
+
     public function view(User $user, Task $task): bool
     {
         return $user->id === $task->user_id;

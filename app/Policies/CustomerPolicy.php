@@ -16,6 +16,17 @@ class CustomerPolicy
         return true;
     }
 
+    public function create(User $user): bool
+    {
+        return true;
+    }
+
+    /** Downloading the directory as CSV — same question as viewAny, named for what it is. */
+    public function export(User $user): bool
+    {
+        return true;
+    }
+
     public function view(User $user, Customer $customer): bool
     {
         return $user->id === $customer->user_id;

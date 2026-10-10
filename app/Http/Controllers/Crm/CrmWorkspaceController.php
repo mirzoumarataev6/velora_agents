@@ -13,6 +13,8 @@ class CrmWorkspaceController extends Controller
 {
     public function store(Request $request): RedirectResponse
     {
+        $this->authorize('create', CrmWorkspace::class);
+
         $data = $request->validate([
             'name' => [
                 'required', 'string', 'min:2', 'max:80',

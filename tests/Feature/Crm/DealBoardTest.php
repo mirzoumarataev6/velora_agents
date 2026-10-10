@@ -100,7 +100,10 @@ class DealBoardTest extends TestCase
                 'external_user_name' => "Диалог {$number}",
             ]);
             $conversationIds[] = $conversation->id;
-            Deal::factory()->for($owner)->for($customer)->create([
+            // stage('payment'), not just payment_status: a paid count now
+            // requires the deal to have actually reached Оплата — see
+            // DealController::update()'s guard against the two disagreeing.
+            Deal::factory()->for($owner)->for($customer)->stage('payment')->create([
                 'conversation_id' => $conversation->id,
                 'title' => "Покупка {$number}",
                 'payment_status' => 'paid',

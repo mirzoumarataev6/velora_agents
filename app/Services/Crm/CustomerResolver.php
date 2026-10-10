@@ -5,6 +5,7 @@ namespace App\Services\Crm;
 use App\Models\Conversation;
 use App\Models\CrmWorkspace;
 use App\Models\Customer;
+use App\Models\CustomerMerge;
 use App\Models\Deal;
 use App\Models\Lead;
 use App\Models\Task;
@@ -194,7 +195,8 @@ class CustomerResolver
 
     /**
      * Fold one profile into another: threads, leads, tags and the contact
-     * window all move, and the emptied profile is removed.
+     * window all move, and the emptied profile is soft-deleted rather than
+     * gone — see undoMerge() for reversing exactly this.
      *
      * Also the implementation behind the manual "these two are the same person"
      * action, for the customers the data could never match on its own.
@@ -206,24 +208,46 @@ class CustomerResolver
         }
 
         DB::transaction(function () use ($from, $into) {
+            // Captured before the move so undoMerge() knows exactly which
+            // rows were this profile's own — not just whatever `into` ends
+            // up holding, which after the merge also includes its OWN
+            // pre-existing history and cannot be told apart from $from's by
+            // the customer_id column alone any more.
+            $conversationIds = Conversation::where('customer_id', $from->id)->pluck('id')->all();
+            $leadIds = Lead::where('customer_id', $from->id)->pluck('id')->all();
+            $dealIds = Deal::where('user_id', $into->user_id)->where('customer_id', $from->id)->pluck('id')->all();
+            $taskIds = Task::where('user_id', $into->user_id)->where('customer_id', $from->id)->pluck('id')->all();
+
             Conversation::where('customer_id', $from->id)->update(['customer_id' => $into->id]);
             Lead::where('customer_id', $from->id)->update(['customer_id' => $into->id]);
             // Deals and reminders are customer history too. Move them before
             // deleting the duplicate profile or their customer FK would erase
             // the very purchase trail the merge is supposed to preserve.
-            Deal::where('user_id', $into->user_id)->where('customer_id', $from->id)
-                ->update(['customer_id' => $into->id]);
-            Task::where('user_id', $into->user_id)->where('customer_id', $from->id)
-                ->update(['customer_id' => $into->id]);
+            Deal::whereIn('id', $dealIds)->update(['customer_id' => $into->id]);
+            Task::whereIn('id', $taskIds)->update(['customer_id' => $into->id]);
 
             // Acquisition is a fact about the FIRST contact, so the channel
             // recorded is the one belonging to whichever profile started earlier.
             $older = $this->startedEarlier($from, $into) ? $from : $into;
+            // Read before $from is touched: once it is deleted, Customer::
+            // booted()'s own hook has already nulled its phone_key, so this
+            // is the only chance to carry the number forward.
+            $fromPhone = $from->phone;
+            $fromPhoneKey = $from->phone_key;
+
+            // Freed BEFORE $into claims it, not after: with both still
+            // holding the same phone_key at once, $into's save() below would
+            // collide with the very row it is about to replace in the
+            // unique index. Only matters when $from — not $into — is the
+            // one with a real number; CustomerController::merge()'s own
+            // candidate list never offers one, but the service method itself
+            // must be correct regardless of which side is called with which.
+            $from->delete();
 
             $into->forceFill([
                 'name' => filled($into->name) ? $into->name : $from->name,
-                'phone' => $into->phone ?: $from->phone,
-                'phone_key' => $into->phone_key ?: $from->phone_key,
+                'phone' => $into->phone ?: $fromPhone,
+                'phone_key' => $into->phone_key ?: $fromPhoneKey,
                 'note' => filled($into->note) ? $into->note : $from->note,
                 // Whichever profile was opened first is when this person became
                 // a customer of the business.
@@ -236,12 +260,71 @@ class CustomerResolver
                 'status' => $into->status !== 'lead' ? $into->status : $from->status,
             ])->save();
 
-            // Freed before the delete so the surviving row can hold the number.
-            $from->forceFill(['phone_key' => null])->save();
-            $from->delete();
+            CustomerMerge::create([
+                'user_id' => $into->user_id,
+                'from_customer_id' => $from->id,
+                'into_customer_id' => $into->id,
+                'moved_conversation_ids' => $conversationIds,
+                'moved_lead_ids' => $leadIds,
+                'moved_deal_ids' => $dealIds,
+                'moved_task_ids' => $taskIds,
+            ]);
         });
 
         return $into->refresh();
+    }
+
+    /**
+     * Reverses one merge: restores the absorbed profile and moves back
+     * exactly the rows merge() recorded as having come from it — never
+     * `into`'s own, which by now share the same customer_id and cannot be
+     * told apart any other way.
+     *
+     * Deliberately NOT a full reversal. `into` may have had its name, phone,
+     * tags, note or status filled in from `from` during the merge — those
+     * stay. Unpicking which of `into`'s current field values originated from
+     * `from` would need a snapshot of `into` too, and the one thing this
+     * action exists to guarantee safely is that nobody's conversation and
+     * order history stays misattributed — not that every trace of the merge
+     * vanishes. See the class docblock on CustomerMerge's migration.
+     *
+     * Silently a no-op outside the window or once already undone — the
+     * caller (CustomerController) only ever offers this button while
+     * CustomerMerge::undoable() says it is still live, so reaching here
+     * otherwise is a stale request, not a real one.
+     */
+    public function undoMerge(CustomerMerge $merge): ?Customer
+    {
+        if ($merge->undone_at !== null || $merge->created_at->lt(now()->subHours(CustomerMerge::UNDO_WINDOW_HOURS))) {
+            return null;
+        }
+
+        $from = $merge->fromCustomer;
+        $into = $merge->intoCustomer;
+
+        if ($from === null || $into === null) {
+            return null;
+        }
+
+        return DB::transaction(function () use ($merge, $from) {
+            $from->restore();
+
+            // Only if nobody has since claimed it — a number this profile no
+            // longer holds is not this undo's problem to fight over.
+            $key = $this->phoneKey($from->phone);
+            if ($key !== null && ! Customer::where('user_id', $from->user_id)->where('phone_key', $key)->exists()) {
+                $from->forceFill(['phone_key' => $key])->save();
+            }
+
+            Conversation::whereIn('id', $merge->moved_conversation_ids ?? [])->update(['customer_id' => $from->id]);
+            Lead::whereIn('id', $merge->moved_lead_ids ?? [])->update(['customer_id' => $from->id]);
+            Deal::whereIn('id', $merge->moved_deal_ids ?? [])->update(['customer_id' => $from->id]);
+            Task::whereIn('id', $merge->moved_task_ids ?? [])->update(['customer_id' => $from->id]);
+
+            $merge->forceFill(['undone_at' => now()])->save();
+
+            return $from;
+        });
     }
 
     /**

@@ -18,7 +18,10 @@
         updateUrlBase: '{{ route('crm.deals.update', ['deal' => '__ID__']) }}',
         activityUrlBase: '{{ route('crm.deals.activity', ['deal' => '__ID__']) }}',
         deleteUrlBase: '{{ route('crm.deals.destroy', ['deal' => '__ID__']) }}',
+        exportUrlBase: '{{ route('crm.deals.export') }}',
         taskStoreUrl: '{{ route('crm.tasks.store') }}',
+        noteStoreUrlBase: '{{ route('crm.deals.notes.store', ['deal' => '__ID__']) }}',
+        noteDeleteUrlBase: '{{ route('crm.notes.destroy', ['note' => '__ID__']) }}',
         customerUrlBase: '{{ route('crm.customers.show', ['customer' => '__ID__']) }}',
         customerUpdateUrlBase: '{{ route('crm.customers.update', ['customer' => '__ID__']) }}',
         chatUrlBase: '{{ route('conversations.index') }}',
@@ -61,6 +64,10 @@
                  never a second query that could disagree with the rows below it. --}}
         </div>
         <div class="page-actions">
+            {{-- A real link, not a fetch: the browser's own download handling
+                 is simpler and more robust than anything a click handler
+                 would have to reimplement for a file response. --}}
+            <a :href="exportUrl()" data-turbo="false" class="btn btn-secondary btn-sm">{{ __('crm.board.export') }}</a>
             <button type="button" @click="adding = true" class="btn btn-primary btn-sm">{{ __('crm.board.add') }}</button>
         </div>
     </div>
@@ -458,7 +465,8 @@
     function dealList({
         deals, leads, leadsBucket, stages, cancelledStage, filters, pagination, leadsCount, overview, pollUrlBase, listUrlBase,
         updateUrlBase, activityUrlBase, deleteUrlBase, customerUrlBase, customerUpdateUrlBase, chatUrlBase, openCreate, labels,
-        workspaces, defaultWorkspaceId, workspaceUpdateUrlBase, workspaceDeleteUrlBase, initialDeal,
+        workspaces, defaultWorkspaceId, workspaceUpdateUrlBase, workspaceDeleteUrlBase, initialDeal, exportUrlBase,
+        noteStoreUrlBase, noteDeleteUrlBase,
     }) {
         return {
             deals,
@@ -500,13 +508,16 @@
             activityOpen: false,
             activityLoading: false,
             loading: false,
-            editForm: { title: '', amount: '', payment_status: 'unpaid', note: '', stage: '', deal_date: '', cancelled_reason: '', closed: false },
+            editForm: { title: '', amount: '', payment_status: 'unpaid', stage: '', deal_date: '', cancelled_reason: '', closed: false, won_reason: '' },
             editDateDisplay: '',
             dateEuropean: @js(app()->getLocale() !== 'en'),
             metricsOpen: false,
             taskForm: { title: '', due_at: '' },
             taskDueDisplay: '',
             taskErrors: {},
+            noteForm: { kind: 'note', body: '', happened_at: '' },
+            noteSaving: false,
+            noteErrors: {},
             taskSaving: false,
             editErrors: {},
             editSaving: false,
@@ -579,6 +590,12 @@
                 if (this.filters.dir && this.filters.dir !== 'desc') params.set('dir', this.filters.dir);
                 if (this.pagination.current_page > 1) params.set('page', this.pagination.current_page);
                 return params.toString();
+            },
+
+            /** Exactly what is currently on screen — the export button's href, recomputed on every render. */
+            exportUrl() {
+                const qs = this.query();
+                return exportUrlBase + (qs ? `?${qs}` : '');
             },
 
             /** Quietly refresh no more than once per 30 seconds, even on tab focus. */
@@ -709,16 +726,18 @@
                 this.activityOpen = false;
                 this.taskForm = { title: '', due_at: '' };
                 this.taskDueDisplay = '';
+                this.noteForm = { kind: 'note', body: '', happened_at: '' };
+                this.noteErrors = {};
                 this.editForm = {
                     title: deal.title || '',
                     amount: deal.amount_raw || '',
                     payment_status: deal.payment_status,
                     sales_origin: deal.sales_origin || 'social',
                     crm_workspace_id: String(deal.crm_workspace_id || defaultWorkspaceId),
-                    note: deal.note || '',
                     stage: deal.stage,
                     deal_date: deal.deal_date || '',
                     cancelled_reason: deal.cancelled_reason || '',
+                    won_reason: deal.won_reason || '',
                     closed: !!deal.is_closed,
                 };
                 this.editDateDisplay = crmFormatDate(this.editForm.deal_date, this.dateEuropean);
@@ -777,6 +796,47 @@
                     window.showToast?.(labels.saveFailed, 'error');
                 } finally {
                     this.taskSaving = false;
+                }
+            },
+
+            /** Posts one notes/activity-thread entry and refreshes the thread in place. */
+            async addNote() {
+                if (!this.selected || !this.noteForm.body.trim()) return;
+                this.noteErrors = {};
+                this.noteSaving = true;
+                try {
+                    const response = await fetch(noteStoreUrlBase.replace('__ID__', this.selected.id), {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-CSRF-TOKEN': csrfToken() },
+                        body: JSON.stringify(this.noteForm),
+                    });
+                    if (response.status === 422) {
+                        const data = await response.json();
+                        this.noteErrors = data.errors || {};
+                        return;
+                    }
+                    if (!response.ok) throw new Error('note failed');
+                    this.noteForm = { kind: 'note', body: '', happened_at: '' };
+                    await this.loadActivity(this.selected);
+                } catch (e) {
+                    window.showToast?.(labels.saveFailed, 'error');
+                } finally {
+                    this.noteSaving = false;
+                }
+            },
+
+            /** Soft-deletes one thread entry — author-only, enforced server-side too. */
+            async deleteNote(item) {
+                if (!this.selected || !item.note_id) return;
+                try {
+                    const response = await fetch(noteDeleteUrlBase.replace('__ID__', item.note_id), {
+                        method: 'DELETE',
+                        headers: { Accept: 'application/json', 'X-CSRF-TOKEN': csrfToken() },
+                    });
+                    if (!response.ok) throw new Error('note delete failed');
+                    await this.loadActivity(this.selected);
+                } catch (e) {
+                    window.showToast?.(labels.deleteFailed, 'error');
                 }
             },
 

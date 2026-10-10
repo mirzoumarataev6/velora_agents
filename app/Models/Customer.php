@@ -11,6 +11,8 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
  * A person the business talks to, independent of which app they happened to
@@ -23,6 +25,31 @@ class Customer extends Model
 {
     /** @use HasFactory<CustomerFactory> */
     use HasFactory;
+
+    use SoftDeletes;
+
+    /**
+     * Frees the phone number the instant a profile is soft-deleted, not only
+     * on the hard-delete path the unique index itself would catch.
+     *
+     * The index on (user_id, phone_key) is a real DB constraint that knows
+     * nothing about `deleted_at` — a soft-deleted row still occupies its slot
+     * in it. Nulling phone_key here, every time, regardless of which code
+     * path deleted the row (today only CustomerResolver::merge(), but this
+     * must hold for any future one too), is what makes "a soft-deleted
+     * customer never blocks a new one with the same number" true by
+     * construction rather than by every caller remembering to do it. The
+     * original number survives on `phone` (never unique-constrained) for
+     * CustomerResolver::undoMerge() to recompute the key from on restore.
+     */
+    protected static function booted(): void
+    {
+        static::deleting(function (Customer $customer) {
+            if (! $customer->isForceDeleting()) {
+                $customer->forceFill(['phone_key' => null])->saveQuietly();
+            }
+        });
+    }
 
     /**
      * Where the customer stands with the business. Deliberately the owner's
@@ -133,5 +160,11 @@ class Customer extends Model
     public function tasks(): HasMany
     {
         return $this->hasMany(Task::class);
+    }
+
+    /** The notes/activity thread — newest first, same as the activity log it doubles as. */
+    public function notes(): MorphMany
+    {
+        return $this->morphMany(CrmNote::class, 'notable')->latest('happened_at');
     }
 }

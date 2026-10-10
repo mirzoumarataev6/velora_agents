@@ -9,7 +9,15 @@
             <h1 class="page-title">{{ __('crm.customers.directory.heading') }}</h1>
             <p class="page-sub">{{ __('crm.customers.directory.subheading') }}</p>
         </div>
+        <div class="page-actions">
+            {{-- A real link, not a fetch, so the browser's own download
+                 handling applies — same reasoning as the board's export link. --}}
+            <a :href="exportUrl()" data-turbo="false" class="btn btn-secondary btn-sm">{{ __('crm.customers.directory.export') }}</a>
+            <button type="button" @click="adding = true" class="btn btn-primary btn-sm">{{ __('crm.customers.directory.add') }}</button>
+        </div>
     </div>
+
+    @include('crm.customers.partials.add-modal')
 
     @include('crm.partials.subnav')
 
@@ -95,14 +103,34 @@
 
 @push('scripts')
 <script>
+    const customerExportUrlBase = '{{ route('crm.customers.export') }}';
+
     function crmCustomerDirectory() {
         return {
             searching: false,
             filtersOpen: window.matchMedia('(min-width: 640px)').matches,
             sequence: 0,
             request: null,
+            // The create-customer form re-opens itself after a failed
+            // submission, the same way the board's own create-deal modal
+            // does — see board.blade.php's `openCreate` for the pattern.
+            adding: @js($errors->hasAny(['name', 'phone', 'crm_workspace_id'])),
 
             filters: { segment: @js($filters['segment'] ?? 'all') },
+
+            /** Exactly what the directory is currently filtered to, as a query string. */
+            exportUrl() {
+                const params = new URLSearchParams(new FormData(this.$refs.form));
+                const query = (this.$refs.search?.value ?? '').trim();
+                if (query) params.set('q', query);
+                else params.delete('q');
+
+                const url = new URL(customerExportUrlBase, window.location.origin);
+                params.forEach((value, key) => {
+                    if (value !== '') url.searchParams.set(key, value);
+                });
+                return url.pathname + url.search;
+            },
 
             setSegment(segment) {
                 this.filters.segment = segment;

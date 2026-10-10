@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 #[Fillable(['customer_id', 'deal_id', 'title', 'due_at', 'done_at', 'priority', 'type'])]
 #[UsePolicy(TaskPolicy::class)]
@@ -21,6 +22,8 @@ class Task extends Model
 
     /** @use HasFactory<TaskFactory> */
     use HasFactory;
+
+    use SoftDeletes;
 
     protected function casts(): array
     {

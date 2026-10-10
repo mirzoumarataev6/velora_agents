@@ -72,6 +72,8 @@ class TaskController extends Controller
 
     public function store(Request $request): RedirectResponse|JsonResponse
     {
+        $this->authorize('create', Task::class);
+
         $ownerId = $request->user()->id;
         $dealExists = Rule::exists('deals', 'id')->where('user_id', $ownerId);
 

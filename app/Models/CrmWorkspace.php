@@ -9,12 +9,15 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 /** A private folder for one owner's CRM customers and sales records. */
 #[Fillable(['name', 'color'])]
 #[UsePolicy(CrmWorkspacePolicy::class)]
 class CrmWorkspace extends Model
 {
+    use SoftDeletes;
+
     public const COLORS = ['blue', 'violet', 'green', 'amber', 'rose', 'slate'];
 
     protected function casts(): array

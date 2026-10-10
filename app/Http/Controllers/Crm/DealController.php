@@ -3,10 +3,12 @@
 namespace App\Http\Controllers\Crm;
 
 use App\Http\Controllers\Controller;
+use App\Models\CrmNote;
 use App\Models\CrmWorkspace;
 use App\Models\Customer;
 use App\Models\Deal;
 use App\Models\DealActivity;
+use App\Models\Lead;
 use App\Models\Message;
 use App\Models\Task;
 use App\Models\User;
@@ -15,9 +17,12 @@ use App\Services\Crm\DealBoard;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Arr;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
+use League\Csv\Bom;
+use League\Csv\Writer;
 
 /**
  * The deal list: where the owner actually works the pipeline.
@@ -53,7 +58,9 @@ class DealController extends Controller
             : null;
         $initialDeal = $deepLinkedDeal ? $this->board->card(
             $deepLinkedDeal,
-            $deepLinkedDeal->customer?->deals()->where('payment_status', 'paid')->count() ?? 0,
+            // Both conditions — see DealBoard::list()'s identical purchase
+            // count for why payment_status alone is not enough.
+            $deepLinkedDeal->customer?->deals()->where('payment_status', 'paid')->where('stage', 'payment')->count() ?? 0,
             $deepLinkedDeal->customer?->conversations()->count() ?? 0,
         ) : null;
 
@@ -102,6 +109,51 @@ class DealController extends Controller
         ]);
     }
 
+    /**
+     * The board, exactly as filtered, as a CSV — every matching deal, not
+     * just the one representative card per customer the board itself shows
+     * (see DealBoard::list()'s own doc on why that grouping exists; an export
+     * is read in a spreadsheet, where "one row per deal" is what is useful).
+     */
+    public function export(Request $request): Response
+    {
+        $this->authorize('export', Deal::class);
+
+        $filters = $this->filters($request);
+
+        $deals = $this->board->filteredDeals($request->user(), $filters)
+            ->with(['customer:id,name,phone'])
+            ->get();
+
+        $csv = Writer::from(fopen('php://temp', 'w+'));
+        $csv->setOutputBOM(Bom::Utf8);
+        $csv->insertOne([
+            __('crm.customers.directory.col_customer'), __('crm.board.add_title'), __('crm.board.col_amount'),
+            __('crm.board.payment'), __('crm.board.col_stage'), __('crm.board.sales_origin'),
+            __('crm.board.add_date'), __('crm.board.won_reason'), __('crm.board.timeline_field_cancelled_reason'), __('crm.board.note'),
+        ]);
+
+        foreach ($deals as $deal) {
+            $csv->insertOne([
+                $deal->customer?->displayName() ?? '',
+                (string) $deal->title,
+                (string) $deal->amount,
+                __('crm.payment_statuses.'.$deal->payment_status),
+                __('crm.stages.'.$deal->stage),
+                __('crm.sales_origins.'.($deal->sales_origin ?: 'social')),
+                (string) $deal->deal_date?->toDateString(),
+                (string) $deal->won_reason,
+                (string) $deal->cancelled_reason,
+                (string) $deal->note,
+            ]);
+        }
+
+        return response($csv->toString(), 200, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="deals.csv"',
+        ]);
+    }
+
     /** Customer-wide messages, deal changes and linked tasks for the detail panel. */
     public function activity(Request $request, Deal $deal): JsonResponse
     {
@@ -137,8 +189,20 @@ class DealController extends Controller
                 'label' => $task->isDone() ? __('crm.board.timeline_task_done') : __('crm.board.timeline_task'),
             ]);
 
+        $notes = $deal->notes()->with('user:id,name')->limit(50)->get()
+            ->map(fn (CrmNote $note) => [
+                'kind' => 'crm_note',
+                'type' => $note->kind,
+                'text' => $note->body,
+                'author' => $note->user->name,
+                'note_id' => $note->id,
+                'can_delete' => $request->user()->id === $note->user_id,
+                'at' => $note->happened_at->toIso8601String(),
+                'label' => __('crm.notes.kinds.'.$note->kind),
+            ]);
+
         return response()->json([
-            'items' => $messages->concat($activities)->concat($tasks)
+            'items' => $messages->concat($activities)->concat($tasks)->concat($notes)
                 ->sortByDesc('at')->take(60)->values(),
         ]);
     }
@@ -153,7 +217,66 @@ class DealController extends Controller
                     'from' => __('crm.stages.'.($activity->data['from'] ?? 'new_lead')),
                     'to' => __('crm.stages.'.($activity->data['to'] ?? 'new_lead')),
                 ]),
+            // The won counterpart to 'stage_changed''s cancelled branch above
+            // — see DealObserver for why closing gets its own activity type.
+            'closed' => __('crm.board.timeline_closed', [
+                'reason' => $activity->data['reason'] ?: __('crm.board.reason_unspecified'),
+            ]),
+            'updated' => $this->activityChangesText($activity->data['changes'] ?? []),
             default => __('crm.board.timeline_updated'),
+        };
+    }
+
+    /**
+     * One readable line per field DealObserver recorded a change for — the
+     * "updated" activity's `data['changes']` already carries a from/to pair
+     * per field, this just renders it the way `timeline_stage` renders its
+     * own from/to. A field the renderer doesn't recognise is skipped rather
+     * than shown raw, so a future column added to the diff doesn't surface
+     * as an untranslated array key.
+     */
+    private function activityChangesText(array $changes): string
+    {
+        $lines = [];
+
+        foreach ($changes as $field => $change) {
+            $label = match ($field) {
+                'title' => __('crm.board.add_title'),
+                'amount' => __('crm.board.amount'),
+                'payment_status' => __('crm.board.payment'),
+                'cancelled_reason' => __('crm.board.timeline_field_cancelled_reason'),
+                'won_reason' => __('crm.board.won_reason'),
+                default => null,
+            };
+
+            if ($label === null) {
+                continue;
+            }
+
+            $lines[] = __('crm.board.timeline_field_change', [
+                'field' => $label,
+                'from' => $this->activityFieldValue($field, $change['from'] ?? null),
+                'to' => $this->activityFieldValue($field, $change['to'] ?? null),
+            ]);
+        }
+
+        return $lines === [] ? __('crm.board.timeline_updated') : implode("\n", $lines);
+    }
+
+    /** A changed field's value, formatted the way it is shown everywhere else on the board. */
+    private function activityFieldValue(string $field, mixed $value): string
+    {
+        if ($value === null || $value === '') {
+            return __('crm.board.timeline_field_empty');
+        }
+
+        return match ($field) {
+            // formatPrice() can itself return null (a zero or negative
+            // amount), which this method must not pass through — it is
+            // typed to always return a displayable string.
+            'amount' => Lead::formatPrice($value) ?? __('crm.board.timeline_field_empty'),
+            'payment_status' => __('crm.payment_statuses.'.$value),
+            default => (string) $value,
         };
     }
 
@@ -331,14 +454,36 @@ class DealController extends Controller
         $data = $request->validate([
             'title' => ['required', 'string', 'max:255'],
             'amount' => ['required', 'numeric', 'gt:0', 'max:99999999.99'],
-            'payment_status' => ['required', 'string', 'in:'.implode(',', Deal::PAYMENT_STATUSES)],
-            'note' => ['nullable', 'string', 'max:5000'],
+            // 'paid' is not just another value here: it is the deal's
+            // revenue and purchase-count queries' only signal that money
+            // actually arrived (see CustomerController::index() and
+            // DealBoard::list()). Оплата is what attests that — normally by
+            // DealBoard::move() setting this automatically when a deal
+            // enters the stage — so this field accepting 'paid' on its own,
+            // independent of stage, let a deal be counted as a sale it
+            // never reached. Allowed freely for 'unpaid'/'partial' (a
+            // deposit while still haggling is real); 'paid' only once the
+            // deal is actually there, whether already or in this same save.
+            'payment_status' => ['required', 'string', 'in:'.implode(',', Deal::PAYMENT_STATUSES), function ($attribute, $value, $fail) use ($request, $deal) {
+                $effectiveStage = $request->input('stage', $deal->stage);
+
+                if ($value === 'paid' && $effectiveStage !== 'payment') {
+                    $fail(__('crm.board.payment_status_requires_payment_stage'));
+                }
+            }],
+            // 'sometimes': the edit form no longer sends this field at all
+            // (replaced by the notes thread) — without 'sometimes' an absent
+            // field still validates to null, and the update() below would
+            // silently wipe the legacy column on every save.
+            'note' => ['sometimes', 'nullable', 'string', 'max:5000'],
             'stage' => ['nullable', 'string', 'in:'.implode(',', Deal::allStages())],
             'deal_date' => ['nullable', 'date'],
             'sales_origin' => ['sometimes', 'required', 'string', 'in:'.implode(',', Deal::SALES_ORIGINS)],
             'crm_workspace_id' => ['sometimes', 'required', 'integer', Rule::exists('crm_workspaces', 'id')->where('user_id', $request->user()->id)],
             'closed' => ['nullable', 'boolean'],
             'cancelled_reason' => [($request->input('stage', $deal->stage) === Deal::STAGE_CANCELLED ? 'required' : 'nullable'), 'string', 'max:2000'],
+            // Optional, unlike cancelled_reason: a win needs no excuse.
+            'won_reason' => ['nullable', 'string', 'max:2000'],
         ], [
             'title.required' => __('crm.board.title_required'),
             'amount.required' => __('crm.board.amount_required'),
@@ -365,7 +510,7 @@ class DealController extends Controller
         // includes it while the deal sits in Оплата, and a save from any
         // other state must not be read as "clear the flag".
         if ($request->has('closed')) {
-            $this->board->setClosed($deal, $request->boolean('closed'));
+            $this->board->setClosed($deal, $request->boolean('closed'), $data['won_reason'] ?? null);
         }
 
         if ($request->wantsJson()) {
