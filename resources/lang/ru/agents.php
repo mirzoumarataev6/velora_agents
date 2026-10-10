@@ -554,6 +554,21 @@ return [
             'delete_failed' => 'Не удалось удалить каталог',
             'network_error' => 'Нет соединения с сервером',
         ],
+
+        // Per-product photos — the trusted source the agent now sends
+        // before the catalog's own "Фото товара" column or Wikimedia.
+        'product_images' => [
+            'column' => 'Фото',
+            'add' => 'Добавить фото',
+            'remove' => 'Удалить фото',
+            'make_primary' => 'Сделать основным',
+            'delete_confirm' => 'Удалить это фото?',
+            'errors' => [
+                'bad_format' => 'Допустимые форматы: :formats.',
+                'too_large' => 'Файл слишком большой (максимум :size МБ).',
+                'upload_failed' => 'Не удалось загрузить фото. Попробуйте ещё раз.',
+            ],
+        ],
     ],
 
     'channels' => [

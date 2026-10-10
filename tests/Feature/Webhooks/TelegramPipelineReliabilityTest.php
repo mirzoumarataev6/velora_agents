@@ -146,7 +146,7 @@ class TelegramPipelineReliabilityTest extends TestCase
         $reply = Message::where('role', 'assistant')->sole();
         $this->assertSame('missing', $reply->meta['photo_status']);
         $this->assertStringContainsString('OMEN 16', $reply->content);
-        $this->assertStringContainsString('нет подходящего снимка', $reply->content);
+        $this->assertStringContainsString('Пока нет фото', $reply->content);
         $this->assertSame([$reply->content], $this->sentMessages());
         Http::assertNotSent(fn ($request) => str_contains($request->url(), '/sendPhoto'));
     }
@@ -187,7 +187,7 @@ class TelegramPipelineReliabilityTest extends TestCase
         $reply = Message::where('role', 'assistant')->sole();
         $this->assertSame('failed', $reply->meta['photo_status']);
         $this->assertStringContainsString('Попробуйте ещё раз', $reply->content);
-        $this->assertStringNotContainsString('нет подходящего снимка', $reply->content);
+        $this->assertStringNotContainsString('Пока нет фото', $reply->content);
         Http::assertNotSent(fn ($r) => str_contains($r->url(), '/sendPhoto'));
     }
 

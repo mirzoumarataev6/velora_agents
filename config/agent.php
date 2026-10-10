@@ -340,6 +340,27 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Owner-uploaded product photos
+    |--------------------------------------------------------------------------
+    |
+    | The trusted photo source the agent's reply pipeline checks first — see
+    | ImageReplyService. Stored on the PUBLIC disk (unlike knowledge-base
+    | uploads, which stay private behind a signed route): a product photo is
+    | meant to be shown to any customer, so it needs no per-request signature,
+    | just `php artisan storage:link` once per environment.
+    */
+    'product_images' => [
+        'disk' => env('AGENT_PRODUCT_IMAGE_DISK', 'public'),
+        'max_file_size_kb' => env('AGENT_PRODUCT_IMAGE_MAX_FILE_SIZE_KB', 5 * 1024),
+        'allowed_extensions' => ['jpg', 'jpeg', 'png', 'webp'],
+        'allowed_mimes' => ['image/jpeg', 'image/png', 'image/webp'],
+        // A product rarely needs more than a couple of angles; this also
+        // bounds what ImageReplyService::MAX_IMAGES could ever draw from.
+        'max_per_product' => 6,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Live database connections (advanced product source)
     |--------------------------------------------------------------------------
     |

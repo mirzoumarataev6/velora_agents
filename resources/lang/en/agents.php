@@ -551,6 +551,21 @@ return [
             'delete_failed' => 'The catalog could not be deleted',
             'network_error' => 'No connection to the server',
         ],
+
+        // Per-product photos — the trusted source the agent now sends
+        // before the catalog's own "Product photo" column or Wikimedia.
+        'product_images' => [
+            'column' => 'Photo',
+            'add' => 'Add photo',
+            'remove' => 'Remove photo',
+            'make_primary' => 'Make primary',
+            'delete_confirm' => 'Delete this photo?',
+            'errors' => [
+                'bad_format' => 'Allowed formats: :formats.',
+                'too_large' => 'The file is too large (maximum :size MB).',
+                'upload_failed' => 'Could not upload the photo. Please try again.',
+            ],
+        ],
     ],
 
     'channels' => [

@@ -49,9 +49,36 @@ class ImageReplyService
             $assistantMeta['product_image_candidates'] ?? [],
             $previousAssistantMeta['product_image_candidates'] ?? [],
         );
+
+        // Owned photos first, and without the URL-safety/fuzzy-name checks
+        // every other candidate still needs: they are the owner's own
+        // upload for the exact catalog row the search already resolved, not
+        // a loose text/URL match. `for_model` is still checked exactly
+        // (not fuzzily) — PhotoReplyService::replyAll() calls this method
+        // once per offered choice while accumulating candidates across
+        // calls, so an earlier choice's owned photo is still sitting in
+        // `$productCandidates` by the time a later choice is processed, and
+        // without this it would be sent again for a product it never
+        // belonged to. No attribution either — that is strictly a courtesy
+        // owed to Wikimedia's licence, further down.
         foreach ($productCandidates as $candidate) {
+            if (($candidate['owned'] ?? false) !== true || ! is_string($candidate['url'] ?? null)
+                || ($candidate['for_model'] ?? null) !== $requestedModel) {
+                continue;
+            }
+            $images[] = ['url' => $candidate['url'], 'caption' => Str::limit((string) ($candidate['name'] ?? ''), 900, '')];
+            if (count($images) === self::MAX_IMAGES) {
+                break;
+            }
+        }
+
+        foreach ($productCandidates as $candidate) {
+            if (count($images) === self::MAX_IMAGES) {
+                break;
+            }
+
             $url = $candidate['url'] ?? null;
-            if (! is_string($url) || ! $this->isSafeRemoteImage($url)
+            if (($candidate['owned'] ?? false) === true || ! is_string($url) || ! $this->isSafeRemoteImage($url)
                 || ! $this->nameContainsModel((string) ($candidate['name'] ?? ''), $requestedModel)) {
                 continue;
             }
@@ -63,9 +90,6 @@ class ImageReplyService
                 $label .= ' — '.$candidate['price'];
             }
             $images[] = ['url' => $url, 'caption' => Str::limit($label, 900, '')];
-            if (count($images) === self::MAX_IMAGES) {
-                break;
-            }
         }
 
         if ($images === []) {

@@ -21,6 +21,9 @@
         importUrl: '{{ route('agents.catalog.import', $agent) }}',
         cancelUrl: '{{ route('agents.catalog.cancel', $agent) }}',
         destroyUrl: '{{ route('agents.catalog.destroy', $agent) }}',
+        productImagesUrlBase: '{{ route('agents.catalog.products.images.store', [$agent, '__ID__']) }}',
+        productImageMoveUpUrlBase: '{{ route('agents.catalog.products.images.move_up', [$agent, '__PRODUCT__', '__IMAGE__']) }}',
+        productImageDeleteUrlBase: '{{ route('agents.catalog.products.images.destroy', [$agent, '__PRODUCT__', '__IMAGE__']) }}',
         initial: {{ Js::from($catalog) }},
     })" class="space-y-6">
 
@@ -186,6 +189,7 @@
                                      stock or article column must not be shown two empty
                                      columns headed as if it had them. --}}
                                 <tr>
+                                    <th class="px-5 py-3 font-medium">{{ __('agents.catalog.product_images.column') }}</th>
                                     <template x-for="column in previewColumns()" :key="column.key">
                                         <th class="px-5 py-3 font-medium" x-text="column.label"></th>
                                     </template>
@@ -194,6 +198,27 @@
                             <tbody>
                                 <template x-for="(product, index) in preview" :key="index">
                                     <tr class="border-t border-hairline dark:border-white/10">
+                                        <td class="px-5 py-3">
+                                            <div class="flex items-center gap-1.5">
+                                                <template x-for="(image, imgIndex) in (product.images ?? [])" :key="image.id">
+                                                    <div class="group relative h-10 w-10 shrink-0">
+                                                        <img :src="image.url" :alt="product.name" class="h-10 w-10 rounded-lg object-cover" :class="imgIndex === 0 && 'ring-2 ring-brand'" />
+                                                        <div class="absolute inset-0 hidden items-center justify-center gap-0.5 rounded-lg bg-black/50 group-hover:flex">
+                                                            <button type="button" x-show="imgIndex > 0" @click="makePrimaryProductImage(product, image)"
+                                                                class="text-white" :aria-label="primaryLabel" title="{{ __('agents.catalog.product_images.make_primary') }}">★</button>
+                                                            <button type="button" @click="removeProductImage(product, image)"
+                                                                class="text-white" :aria-label="removeLabel" title="{{ __('agents.catalog.product_images.remove') }}">✕</button>
+                                                        </div>
+                                                    </div>
+                                                </template>
+                                                <button type="button" x-show="(product.images ?? []).length < {{ (int) config('agent.product_images.max_per_product') }}"
+                                                    @click="$refs['productImageInput' + product.id].click()"
+                                                    class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-dashed border-black/15 text-muted hover:border-brand hover:text-brand dark:border-white/15 dark:text-night-muted"
+                                                    :aria-label="addPhotoLabel" title="{{ __('agents.catalog.product_images.add') }}">+</button>
+                                                <input type="file" :x-ref="'productImageInput' + product.id" accept="{{ implode(',', array_map(fn ($m) => ".$m", config('agent.product_images.allowed_extensions'))) }}" class="hidden"
+                                                    @change="uploadProductImage(product, $event.target.files[0]); $event.target.value = ''" />
+                                            </div>
+                                        </td>
                                         <template x-for="column in previewColumns()" :key="column.key">
                                             <td class="px-5 py-3"
                                                 :class="column.key === 'name'
@@ -249,12 +274,18 @@
 @once
 @push('scripts')
 <script>
-    function catalogTab({ productsUrl, analyzeUrl, importUrl, cancelUrl, destroyUrl, initial }) {
+    function catalogTab({
+        productsUrl, analyzeUrl, importUrl, cancelUrl, destroyUrl,
+        productImagesUrlBase, productImageMoveUpUrlBase, productImageDeleteUrlBase, initial,
+    }) {
         return {
             dataset: initial.dataset,
             preview: initial.preview ?? [],
             pagination: initial.pagination ?? { page: 1, last_page: 1, per_page: 10, total: 0, from: 0, to: 0 },
             pageLoading: false,
+            primaryLabel: @json(__('agents.catalog.product_images.make_primary')),
+            removeLabel: @json(__('agents.catalog.product_images.remove')),
+            addPhotoLabel: @json(__('agents.catalog.product_images.add')),
             // The analyzed-but-unconfirmed upload, or null. Doubles as the
             // "which screen am I on" flag for the whole tab.
             pending: null,
@@ -554,6 +585,61 @@
 
             replace() {
                 this.$refs.fileInput.click();
+            },
+
+            /** Uploads one photo for a row and merges the response back into its own preview entry. */
+            async uploadProductImage(product, file) {
+                if (!file) return;
+
+                const body = new FormData();
+                body.append('image', file);
+
+                try {
+                    const res = await fetch(productImagesUrlBase.replace('__ID__', product.id), {
+                        method: 'POST', headers: this.csrfHeaders(), body,
+                    });
+                    const data = await res.json().catch(() => ({}));
+                    if (!res.ok) {
+                        window.showToast?.(data.message || data.errors?.image?.[0] || @json(__('agents.catalog.product_images.errors.upload_failed')), 'error');
+                        return;
+                    }
+                    product.images = [...(product.images ?? []), data.image];
+                } catch (e) {
+                    window.showToast?.(@json(__('agents.catalog.toasts.network_error')), 'error');
+                }
+            },
+
+            /** Swaps a photo with its predecessor; reaching position 0 makes it the one the agent sends first. */
+            async makePrimaryProductImage(product, image) {
+                try {
+                    const res = await fetch(productImageMoveUpUrlBase.replace('__PRODUCT__', product.id).replace('__IMAGE__', image.id), {
+                        method: 'POST', headers: this.csrfHeaders(),
+                    });
+                    if (!res.ok) {
+                        window.showToast?.(@json(__('agents.catalog.toasts.network_error')), 'error');
+                        return;
+                    }
+                    product.images = (await res.json()).images;
+                } catch (e) {
+                    window.showToast?.(@json(__('agents.catalog.toasts.network_error')), 'error');
+                }
+            },
+
+            async removeProductImage(product, image) {
+                if (!confirm(@json(__('agents.catalog.product_images.delete_confirm')))) return;
+
+                try {
+                    const res = await fetch(productImageDeleteUrlBase.replace('__PRODUCT__', product.id).replace('__IMAGE__', image.id), {
+                        method: 'DELETE', headers: this.csrfHeaders(),
+                    });
+                    if (!res.ok) {
+                        window.showToast?.(@json(__('agents.catalog.toasts.network_error')), 'error');
+                        return;
+                    }
+                    product.images = (await res.json()).images;
+                } catch (e) {
+                    window.showToast?.(@json(__('agents.catalog.toasts.network_error')), 'error');
+                }
             },
 
             async destroy() {

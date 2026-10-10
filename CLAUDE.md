@@ -21,6 +21,7 @@ a skeleton, whatever an older version of this file said.
 | Task | Command |
 |---|---|
 | Install | `composer install` · `npm install` |
+| One-time per environment (owner-uploaded product photos) | `php artisan storage:link` — product photos live on the `public` disk; without this symlink they 404 in production even though they upload and save fine. |
 | Local dev (server + 2 queue workers + Vite + Instagram service) | `composer run dev` |
 | Local dev, backend only | `composer run dev:fast` |
 | Queue workers only | `composer run queue` |

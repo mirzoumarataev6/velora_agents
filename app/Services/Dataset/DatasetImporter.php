@@ -5,6 +5,7 @@ namespace App\Services\Dataset;
 use App\Models\Agent;
 use App\Models\Dataset;
 use App\Models\DatasetProduct;
+use App\Models\ProductImage;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
@@ -90,6 +91,10 @@ class DatasetImporter
                 'imported_at' => now(),
             ])->save();
 
+            // A replace retires every old row's id — their uploaded photos
+            // cascade at the DB level, but never their files, same reasoning
+            // as DatasetController::destroy().
+            ProductImage::purgeFilesForAgent($agent->id);
             DatasetProduct::query()->where('agent_id', $agent->id)->delete();
 
             foreach (array_chunk($products, self::INSERT_CHUNK) as $chunk) {

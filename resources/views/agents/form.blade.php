@@ -265,6 +265,20 @@
                 </div>
             </div>
 
+            {{-- Off by default: the catalog's own photos (and the owner's own
+                 uploads on each product) are the trusted source; this is only
+                 ever a fallback once those have nothing, and a web image sent
+                 as if it were the real product is exactly the trust problem
+                 this setting exists to let the owner opt into, not out of. --}}
+            <div>
+                <label class="flex items-center gap-2 text-sm">
+                    <input type="hidden" name="internet_image_search" value="0" />
+                    <input type="checkbox" name="internet_image_search" value="1" @checked(old('internet_image_search', $behavior['internet_image_search'] ?? false)) class="field-check h-4 w-4" />
+                    {{ __('agents.form.internet_image_search_label') }}
+                </label>
+                <p class="mt-1 text-xs text-muted dark:text-night-muted">{{ __('agents.form.internet_image_search_help') }}</p>
+            </div>
+
             <div class="flex justify-between pt-2">
                 <button type="button" @click="step = 2" class="btn btn-ghost">{{ __('agents.form.back_button') }}</button>
                 <button type="button" @click="step = 4" class="btn btn-primary">{{ __('agents.form.next') }}</button>

@@ -29,6 +29,7 @@ use App\Http\Controllers\OnboardingController;
 use App\Http\Controllers\PasswordResetController;
 use App\Http\Controllers\PersonaAssistantController;
 use App\Http\Controllers\PlaygroundController;
+use App\Http\Controllers\ProductImageController;
 use App\Http\Controllers\RootRedirectController;
 use App\Http\Controllers\SettingsController;
 use Illuminate\Support\Facades\Route;
@@ -326,6 +327,14 @@ Route::middleware(['auth', 'auth.session'])->group(function () {
         Route::post('import', [DatasetController::class, 'import'])->name('import');
         Route::post('cancel', [DatasetController::class, 'cancel'])->name('cancel');
         Route::delete('/', [DatasetController::class, 'destroy'])->name('destroy');
+
+        // One product's own photos — the trusted source ImageReplyService
+        // checks first. {product} is a plain id, scoped by hand inside the
+        // controller, the same convention DatasetController's own product
+        // queries already use.
+        Route::post('products/{product}/images', [ProductImageController::class, 'store'])->name('products.images.store');
+        Route::post('products/{product}/images/{image}/move-up', [ProductImageController::class, 'moveUp'])->name('products.images.move_up');
+        Route::delete('products/{product}/images/{image}', [ProductImageController::class, 'destroy'])->name('products.images.destroy');
     });
 
     // Live database connection (Подключение к базе данных) — the ADVANCED

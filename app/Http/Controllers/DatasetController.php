@@ -7,6 +7,7 @@ use App\Http\Requests\Dataset\ImportDatasetRequest;
 use App\Models\Agent;
 use App\Models\Dataset;
 use App\Models\DatasetProduct;
+use App\Models\ProductImage;
 use App\Services\Dataset\ColumnMapper;
 use App\Services\Dataset\DatasetFileReader;
 use App\Services\Dataset\DatasetImporter;
@@ -192,6 +193,10 @@ class DatasetController extends Controller
     {
         $this->authorize('update', $agent);
 
+        // Before the bulk product delete below: that single query cascades
+        // product_images at the DB level but fires no model events, so
+        // nothing else would ever remove the files themselves.
+        ProductImage::purgeFilesForAgent($agent->id);
         DatasetProduct::query()->where('agent_id', $agent->id)->delete();
         Dataset::query()->where('agent_id', $agent->id)->delete();
         Storage::disk('local')->deleteDirectory($this->pendingDirectory($agent));
@@ -278,8 +283,17 @@ class DatasetController extends Controller
             ->orderBy('position')
             ->orderBy('id')
             ->forPage($page, $perPage)
+            ->with('images')
             ->get()
             ->map(fn (DatasetProduct $product) => [
+                'id' => $product->id,
+                // The owner's own uploads for this row — what the Каталог tab's
+                // photo cell renders and targets uploads/removals at. Unrelated
+                // to the file's own image_url column below, which the preview
+                // still shows as plain imported data either way.
+                'images' => $product->images->map(fn (ProductImage $image) => [
+                    'id' => $image->id, 'url' => $image->url(), 'position' => $image->position,
+                ])->all(),
                 'name' => $product->name,
                 'price' => $product->price,
                 'stock' => $product->stock,

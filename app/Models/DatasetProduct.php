@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable([
     'name', 'price', 'stock', 'category', 'description', 'sku', 'url', 'image_url', 'extra', 'position',
@@ -107,5 +108,11 @@ class DatasetProduct extends Model
     public function dataset(): BelongsTo
     {
         return $this->belongsTo(Dataset::class);
+    }
+
+    /** Owner-uploaded photos, smallest position (primary) first. */
+    public function images(): HasMany
+    {
+        return $this->hasMany(ProductImage::class)->orderBy('position');
     }
 }

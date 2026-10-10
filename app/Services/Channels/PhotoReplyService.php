@@ -5,6 +5,7 @@ namespace App\Services\Channels;
 use App\Models\Agent;
 use App\Models\Channel;
 use App\Models\Conversation;
+use App\Models\DatasetProduct;
 use App\Models\Message;
 use App\Services\Dataset\ProductSearchService;
 use App\Services\Reply\CustomerLocale;
@@ -129,7 +130,7 @@ class PhotoReplyService
             $category = '';
             if ($this->catalog->enabledFor($conversation->agent)) {
                 $found = $this->catalog->search($conversation->agent, ['query' => $model, 'limit' => 5]);
-                $candidates = [];
+                $candidates = $this->ownedImageCandidates($conversation->agent, $found['products'] ?? [], $model);
                 foreach ($found['products'] ?? [] as $product) {
                     $category .= ' '.($product['category'] ?? '');
                     if (! empty($product['image_url'])) {
@@ -155,6 +156,44 @@ class PhotoReplyService
 
             return ['failed', 0, $meta];
         }
+    }
+
+    /**
+     * The owner's own photos for whichever catalog products the search
+     * above already resolved — the trusted source ImageReplyService sends
+     * first and without the fuzzy name/relevance check every other candidate
+     * still goes through, since these are tied to a product the catalog
+     * query, not a loose text match, already decided is the right one.
+     * Correlated by name (the only identifier search_products exposes) and
+     * only for the uploaded catalog — a live database connection has no
+     * local product row to hang a photo on.
+     *
+     * Stamped with `for_model` — the exact model this call resolved, not a
+     * substring guess — so ImageReplyService can still tell these apart once
+     * they are in play: replyAll()'s "send all" loop re-sends sendPhotoFor()
+     * per choice while *accumulating* `product_image_candidates` across
+     * calls (each call's evidence carries the previous ones forward), and
+     * without this tag an earlier choice's owned photo — never relevance-
+     * checked — would still be sitting in that accumulated evidence and get
+     * sent again on a later choice's turn.
+     */
+    private function ownedImageCandidates(Agent $agent, array $matchedProducts, string $model): array
+    {
+        if ($agent->usesLiveDatabase() || $matchedProducts === []) {
+            return [];
+        }
+
+        $names = array_unique(array_column($matchedProducts, 'name'));
+        $owned = DatasetProduct::where('agent_id', $agent->id)->whereIn('name', $names)->with('images')->get();
+
+        $candidates = [];
+        foreach ($owned as $product) {
+            foreach ($product->images as $image) {
+                $candidates[] = ['name' => $product->name, 'url' => $image->url(), 'owned' => true, 'for_model' => $model];
+            }
+        }
+
+        return $candidates;
     }
 
     /** A fresh message naming exactly one real product, with no pending menu to resolve against. */
