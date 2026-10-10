@@ -42,10 +42,13 @@ class CatalogUpdateImportTest extends TestCase
     protected function photoFor(DatasetProduct $product): ProductImage
     {
         Storage::disk('public')->put("product-images/{$product->id}.jpg", 'fixture');
+        Storage::disk('public')->put("product-images/{$product->id}-thumb.webp", 'thumb-fixture');
 
         return ProductImage::forceCreate([
             'agent_id' => $product->agent_id, 'dataset_product_id' => $product->id,
-            'path' => "product-images/{$product->id}.jpg", 'mime_type' => 'image/jpeg', 'size' => 7, 'position' => 0,
+            'path' => "product-images/{$product->id}.jpg",
+            'thumbnail_path' => "product-images/{$product->id}-thumb.webp",
+            'mime_type' => 'image/jpeg', 'size' => 7, 'position' => 0,
         ]);
     }
 
@@ -253,6 +256,31 @@ class CatalogUpdateImportTest extends TestCase
         $this->assertSame(5, DatasetProduct::where('name', 'Old Row')->sole()->stock);
     }
 
+    /** The displayed count is the catalog's real size, not the uploaded file's row count — an update file can be far shorter than the catalog it updates. */
+    public function test_an_update_with_fewer_rows_than_the_catalog_reports_the_real_total_as_row_count(): void
+    {
+        $user = User::factory()->create();
+        $agent = $this->agentWithDataset($user);
+        DatasetProduct::factory()->count(20)->create(['agent_id' => $agent->id, 'dataset_id' => $agent->dataset->id]);
+        DatasetProduct::factory()->create(['agent_id' => $agent->id, 'dataset_id' => $agent->dataset->id, 'name' => 'HP OMEN 16', 'sku' => 'OMEN-16']);
+
+        $rows = [];
+        for ($i = 1; $i <= 12; $i++) {
+            $rows[] = ["Товар {$i}", "SKU-{$i}"];
+        }
+        $rows[0] = ['HP OMEN 16', 'OMEN-16'];
+
+        $this->importer()->update($agent, 'new.csv', ['Название', 'Артикул'], $rows, ['name' => 0, 'sku' => 1]);
+
+        // 21 existing + 11 genuinely new file rows = 32, even though the
+        // file itself only had 12 rows.
+        $this->assertSame(32, DatasetProduct::where('agent_id', $agent->id)->count());
+        $this->assertSame(32, $agent->dataset->refresh()->row_count);
+
+        $this->actingAs($user)->getJson(route('agents.catalog.show', $agent))
+            ->assertOk()->assertJsonPath('dataset.row_count', 32);
+    }
+
     /** The preview endpoint reports the count the mapping step shows, without writing anything. */
     public function test_the_preview_update_endpoint_reports_the_missing_count_without_writing(): void
     {
@@ -360,9 +388,11 @@ class CatalogUpdateImportTest extends TestCase
         $product = DatasetProduct::factory()->create(['agent_id' => $agent->id, 'dataset_id' => $agent->dataset->id]);
         $image = $this->photoFor($product);
 
+        $thumbnailPath = $image->thumbnail_path;
         $this->importer()->import($agent, 'new.csv', ['Название'], [['Другой товар']], ['name' => 0]);
 
         Storage::disk('public')->assertMissing($image->path);
+        Storage::disk('public')->assertMissing($thumbnailPath);
         $this->assertDatabaseCount('product_images', 0);
     }
 

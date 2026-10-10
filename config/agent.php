@@ -363,6 +363,16 @@ return [
         // A product rarely needs more than a couple of angles; this also
         // bounds what ImageReplyService::MAX_IMAGES could ever draw from.
         'max_per_product' => 6,
+        // An original wider/taller than this gets downscaled (same aspect
+        // ratio) at upload time — an owner's phone photo is routinely
+        // 3000-4000px on the long side, and the full original is what
+        // ships to a channel driver on every send. Keeps those sends
+        // light without visibly degrading what a customer sees.
+        'max_dimension_px' => env('AGENT_PRODUCT_IMAGE_MAX_DIMENSION_PX', 2000),
+        // The admin dashboard's OWN thumbnail — see ProductImageThumbnailer
+        // and ProductImage::previewUrl(). Never sent to a channel driver.
+        'thumbnail_max_dimension_px' => env('AGENT_PRODUCT_IMAGE_THUMBNAIL_MAX_DIMENSION_PX', 160),
+        'thumbnail_quality' => env('AGENT_PRODUCT_IMAGE_THUMBNAIL_QUALITY', 75),
     ],
 
     /*

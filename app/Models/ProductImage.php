@@ -8,14 +8,19 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Facades\Storage;
 
 /** One owner-uploaded photo of a catalog product. See the creating migration's docblock. */
-#[Fillable(['path', 'mime_type', 'size', 'position'])]
+#[Fillable(['path', 'thumbnail_path', 'mime_type', 'size', 'position'])]
 class ProductImage extends Model
 {
-    /** A single, deliberate delete (the owner removing one photo) also removes its file — the bulk catalog paths use purgeFilesForAgent() instead. */
+    /** A single, deliberate delete (the owner removing one photo) also removes its file(s) — the bulk catalog paths use purgeFilesForAgent() instead. */
     protected static function booted(): void
     {
         static::deleting(function (ProductImage $image) {
-            Storage::disk(config('agent.product_images.disk'))->delete($image->path);
+            $disk = Storage::disk(config('agent.product_images.disk'));
+            $disk->delete($image->path);
+
+            if ($image->thumbnail_path !== null) {
+                $disk->delete($image->thumbnail_path);
+            }
         });
     }
 
@@ -29,10 +34,34 @@ class ProductImage extends Model
         return $this->belongsTo(Agent::class);
     }
 
-    /** The public, directly fetchable URL — what gets handed to the channel driver and the owner's own preview. */
+    /** The public, directly fetchable, ABSOLUTE URL — what gets handed to a channel driver (Telegram etc.), which has no origin of its own to resolve a relative one against. */
     public function url(): string
     {
         return Storage::disk(config('agent.product_images.disk'))->url($this->path);
+    }
+
+    /**
+     * The admin dashboard's OWN thumbnail URL — relative, never built from
+     * APP_URL. url() above is absolute, which is correct for a channel
+     * driver but wrong for the Каталог tab: APP_URL here is the ngrok
+     * tunnel domain, so opening the dashboard at http://127.0.0.1:8000
+     * made every `<img>` fetch cross-origin to ngrok, which serves its
+     * own click-through interstitial page to an unrecognized visitor
+     * instead of the file — broken thumbnails that "worked" only when
+     * the dashboard itself happened to be opened through the ngrok
+     * domain. A path-only URL instead resolves against whatever origin
+     * the dashboard is actually being viewed from. Never hand this to a
+     * channel driver — outside this request it resolves against nothing.
+     *
+     * Prefers thumbnail_path (see ProductImageThumbnailer) — a small
+     * webp/jpeg made at upload time — over the full original, so the
+     * Каталог tab's product grid loads dozens of small files instead of
+     * dozens of full-size photos. A row uploaded before thumbnails existed
+     * has none; previewUrl() falls back to the original path for those.
+     */
+    public function previewUrl(): string
+    {
+        return '/storage/'.ltrim($this->thumbnail_path ?? $this->path, '/');
     }
 
     /**
@@ -45,7 +74,11 @@ class ProductImage extends Model
     public static function purgeFilesForAgent(int $agentId): void
     {
         $disk = Storage::disk(config('agent.product_images.disk'));
-        $paths = static::where('agent_id', $agentId)->pluck('path');
+        $images = static::where('agent_id', $agentId)->get(['path', 'thumbnail_path']);
+
+        $paths = $images->pluck('path')
+            ->merge($images->pluck('thumbnail_path')->filter())
+            ->values();
 
         if ($paths->isNotEmpty()) {
             $disk->delete($paths->all());

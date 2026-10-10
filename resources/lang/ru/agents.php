@@ -568,6 +568,13 @@ return [
             'replace_confirm' => 'Это полностью заменит текущий каталог и удалит ВСЕ загруженные фото товаров. Это действие нельзя отменить. Продолжить?',
             'delete_failed' => 'Не удалось удалить каталог',
             'network_error' => 'Нет соединения с сервером',
+            // The server DID respond — just not with success. Shown only
+            // when it had no JSON message of its own to show instead.
+            'action_failed' => 'Действие не выполнено (код :code)',
+            // A 200-looking response that is not JSON at all — most often
+            // a tunnel/proxy's own click-through page (e.g. ngrok's
+            // interstitial) standing in for the real one.
+            'unexpected_response' => 'Сервер вернул неожиданный ответ. Попробуйте ещё раз.',
         ],
 
         // Per-product photos — the trusted source the agent now sends
@@ -577,11 +584,14 @@ return [
             'add' => 'Добавить фото',
             'remove' => 'Удалить фото',
             'make_primary' => 'Сделать основным',
-            'delete_confirm' => 'Удалить это фото?',
+            'primary_badge' => 'Основное фото',
+            'removed' => 'Фото удалено',
+            'undo' => 'Отменить',
             'errors' => [
                 'bad_format' => 'Допустимые форматы: :formats.',
                 'too_large' => 'Файл слишком большой (максимум :size МБ).',
                 'upload_failed' => 'Не удалось загрузить фото. Попробуйте ещё раз.',
+                'not_found' => 'Это фото уже удалено или не найдено.',
             ],
         ],
     ],

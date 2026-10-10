@@ -55,12 +55,12 @@
         ],
         "dev": [
             "Composer\\Config::disableProcessTimeout",
-            "npx concurrently -c \"#93c5fd,#c4b5fd,#fdba74,#86efac\" \"php artisan serve\" \"php artisan queue:supervise\" \"npm run dev\" \"bash instagram_service/start.sh\" --names='server,queue,vite,instagram'"
+            "npx concurrently -c \"#93c5fd,#c4b5fd,#fdba74,#86efac\" \"PHP_CLI_SERVER_WORKERS=4 php artisan serve --no-reload\" \"php artisan queue:supervise\" \"npm run dev\" \"bash instagram_service/start.sh\" --names='server,queue,vite,instagram'"
         ],
         "dev:fast": [
             "Composer\\Config::disableProcessTimeout",
             "@php artisan optimize",
-            "npx concurrently -c \"#93c5fd,#c4b5fd\" \"php artisan serve\" \"php artisan queue:supervise\" --names='server,queue'"
+            "npx concurrently -c \"#93c5fd,#c4b5fd\" \"PHP_CLI_SERVER_WORKERS=4 php artisan serve --no-reload\" \"php artisan queue:supervise\" --names='server,queue'"
         ],
         "queue": [
             "Composer\\Config::disableProcessTimeout",

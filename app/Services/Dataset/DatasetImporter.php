@@ -40,6 +40,7 @@ class DatasetImporter
             DatasetProduct::query()->where('agent_id', $agent->id)->delete();
 
             $this->insertRows($products, $dataset->id);
+            $this->syncRowCount($dataset, $agent);
         });
 
         return ['imported' => count($products), 'skipped' => $skipped, 'reasons' => $reasons];
@@ -92,18 +93,18 @@ class DatasetImporter
             }
             $this->insertRows($toInsert, $dataset->id);
 
-            if (! $markMissingOutOfStock) {
-                return;
+            if ($markMissingOutOfStock) {
+                $orphanIds = $existing->reject(fn (DatasetProduct $e) => isset($matchedExistingIds[$e->id]))->pluck('id');
+                if ($orphanIds->isNotEmpty()) {
+                    // Only stock changes — name/description/sku/category (and so
+                    // search_text) are untouched, so a plain query update is
+                    // enough; no need to load these as models.
+                    DatasetProduct::whereIn('id', $orphanIds)->update(['stock' => 0, 'updated_at' => now()]);
+                    $summary['out_of_stock'] = $orphanIds->count();
+                }
             }
 
-            $orphanIds = $existing->reject(fn (DatasetProduct $e) => isset($matchedExistingIds[$e->id]))->pluck('id');
-            if ($orphanIds->isNotEmpty()) {
-                // Only stock changes — name/description/sku/category (and so
-                // search_text) are untouched, so a plain query update is
-                // enough; no need to load these as models.
-                DatasetProduct::whereIn('id', $orphanIds)->update(['stock' => 0, 'updated_at' => now()]);
-                $summary['out_of_stock'] = $orphanIds->count();
-            }
+            $this->syncRowCount($dataset, $agent);
         });
 
         return $summary + ['skipped' => $skipped, 'reasons' => $reasons];
@@ -272,6 +273,20 @@ class DatasetImporter
                 $chunk,
             ));
         }
+    }
+
+    /**
+     * Keeps dataset.row_count meaning what the Каталог tab actually shows:
+     * the catalog's real size right now. upsertDataset() is called before
+     * any product row is written, with only this file's own row count to go
+     * on — fine for import() (a replace ends up with exactly that many
+     * rows), wrong for update() (kept + reappeared + newly out-of-stock
+     * rows can leave the catalog far bigger than the file that updated it).
+     * Called last, once every row this operation touches has been written.
+     */
+    private function syncRowCount(Dataset $dataset, Agent $agent): void
+    {
+        $dataset->update(['row_count' => DatasetProduct::where('agent_id', $agent->id)->count()]);
     }
 
     /** The one Dataset row per agent, filled in identically whichever import mode ran. */

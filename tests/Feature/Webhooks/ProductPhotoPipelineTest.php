@@ -85,7 +85,13 @@ class ProductPhotoPipelineTest extends TestCase
 
     public function test_a_product_with_an_uploaded_photo_is_sent_without_attribution_and_without_a_wikimedia_call(): void
     {
-        Storage::fake('public');
+        // Storage::fake() does not carry the disk's own 'url' config forward
+        // (see FilesystemManager::buildDiskConfiguration) — a faked disk's
+        // url() is relative by default regardless of APP_URL. Passing it
+        // back explicitly is what makes this test able to actually exercise
+        // (and tell apart) ProductImage::url()'s APP_URL-based absolute
+        // behavior from previewUrl()'s always-relative one.
+        Storage::fake('public', ['url' => config('filesystems.disks.public.url')]);
         Storage::disk('public')->put('product-images/1/omen.jpg', 'fixture');
         $this->fakeTelegramApi();
         $this->mockLlm('Вот фото.');
@@ -108,6 +114,9 @@ class ProductPhotoPipelineTest extends TestCase
         $this->assertSame('sent', $reply->meta['photo_status']);
         Http::assertSent(fn ($request) => str_contains($request->url(), '/sendPhoto')
             && str_contains($request['photo'], 'product-images/1/omen.jpg')
+            // Absolute — ProductImage::url(), not previewUrl(): Telegram has
+            // no origin of its own to resolve a relative URL against.
+            && str_starts_with((string) $request['photo'], rtrim(config('app.url'), '/').'/storage/')
             // No licence/attribution text — only Wikimedia results ever carry one.
             && ! str_contains((string) ($request['caption'] ?? ''), 'CC BY'));
     }

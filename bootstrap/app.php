@@ -5,11 +5,13 @@ use App\Http\Middleware\RestrictToLocalhost;
 use App\Http\Middleware\ServeBuiltAssetsToRemoteClients;
 use App\Http\Middleware\SetLocale;
 use Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -61,4 +63,31 @@ return Application::configure(basePath: dirname(__DIR__))
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('api/*') || $request->is('webhooks/*') || $request->expectsJson(),
         );
+
+        // Implicit route-model binding (e.g. a {image} parameter typed as
+        // ProductImage) throws ModelNotFoundException straight out of the
+        // router, before any controller code runs — so a missing/already-
+        // deleted row's own controller never gets a chance to answer with
+        // something softer. Laravel's own default JSON rendering for it is
+        // "No query results for model [App\Models\ProductImage] 13"
+        // verbatim, which is exactly the raw, class-name-leaking text an
+        // owner isn't supposed to see.
+        //
+        // This has to be registered for NotFoundHttpException, NOT
+        // ModelNotFoundException itself: the base Handler's
+        // prepareException() unconditionally rewraps every
+        // ModelNotFoundException into `new NotFoundHttpException($e
+        // ->getMessage(), $e)` — carrying the raw message forward as the
+        // HTTP exception's OWN message — before any renderable callback
+        // ever runs, so a callback typed to the original exception class
+        // is never invoked at all. Checking getPrevious() recovers the
+        // "was this actually a missing model" distinction from a plain
+        // 404 that used abort(404) directly (left alone, its message is
+        // already empty/safe).
+        $exceptions->render(function (NotFoundHttpException $e, Request $request) {
+            if (($request->is('api/*') || $request->is('webhooks/*') || $request->expectsJson())
+                && $e->getPrevious() instanceof ModelNotFoundException) {
+                return response()->json(['message' => __('common.error_not_found')], 404);
+            }
+        });
     })->create();

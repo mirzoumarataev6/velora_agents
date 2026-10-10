@@ -279,10 +279,20 @@ class DatasetController extends Controller
             return ['dataset' => null, 'preview' => [], 'pagination' => self::emptyPagination()];
         }
 
+        // page()'s own pagination.total is already a live COUNT(*) against
+        // dataset_products — computed once here and reused below, rather
+        // than also showing $dataset->row_count: that stored column is
+        // whatever the LAST import's row count happened to be, and an
+        // 'update' import can easily leave the catalog bigger (kept +
+        // reappeared + newly out-of-stock rows) or smaller than the file
+        // that touched it. Reading row_count instead of this is exactly
+        // how "Товаров: 12" disagreed with "1-10 из 32" on the same tab.
+        $page = self::page($agent, 1);
+
         return [
             'dataset' => [
                 'filename' => $dataset->original_filename,
-                'row_count' => $dataset->row_count,
+                'row_count' => $page['pagination']['total'],
                 'skipped_count' => $dataset->skipped_count,
                 'skipped_reasons' => $dataset->skipped_reasons ?? [],
                 'imported_at' => $dataset->imported_at?->diffForHumans(),
@@ -292,7 +302,7 @@ class DatasetController extends Controller
                 'columns' => $dataset->columns ?? [],
                 'mapping' => $dataset->mapping ?? [],
             ],
-            ...self::page($agent, 1),
+            ...$page,
         ];
     }
 
@@ -331,9 +341,12 @@ class DatasetController extends Controller
                 // The owner's own uploads for this row — what the Каталог tab's
                 // photo cell renders and targets uploads/removals at. Unrelated
                 // to the file's own image_url column below, which the preview
-                // still shows as plain imported data either way.
+                // still shows as plain imported data either way. previewUrl(),
+                // not url() — relative, so it loads from whatever origin this
+                // dashboard is actually being viewed from (see
+                // ProductImage::previewUrl()); channel drivers use url() instead.
                 'images' => $product->images->map(fn (ProductImage $image) => [
-                    'id' => $image->id, 'url' => $image->url(), 'position' => $image->position,
+                    'id' => $image->id, 'url' => $image->previewUrl(), 'position' => $image->position,
                 ])->all(),
                 'name' => $product->name,
                 'price' => $product->price,

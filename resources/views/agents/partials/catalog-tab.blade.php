@@ -212,6 +212,14 @@
                     </div>
                 </div>
 
+                {{-- ONE hidden input, outside the x-for below. A per-row
+                     :x-ref computed from product.id looked right but Alpine's
+                     $refs registry does not reliably track a ref whose name
+                     is itself reactive inside a loop — see pickProductPhoto()
+                     for what actually goes wrong and why this is the fix. --}}
+                <input type="file" x-ref="productPhotoInput" accept="{{ implode(',', array_map(fn ($m) => ".$m", config('agent.product_images.allowed_extensions'))) }}" class="hidden"
+                    @change="onProductPhotoPicked($event)" />
+
                 <div class="overflow-hidden rounded-2xl">
                     <div class="flex flex-wrap items-center justify-between gap-2 border-b border-hairline px-5 py-3 dark:border-white/10">
                         <span class="text-xs font-medium uppercase tracking-wide text-muted dark:text-night-muted/70">
@@ -236,24 +244,62 @@
                                 <template x-for="(product, index) in preview" :key="index">
                                     <tr class="border-t border-hairline dark:border-white/10">
                                         <td class="px-5 py-3">
-                                            <div class="flex items-center gap-1.5">
+                                            <div class="flex items-center gap-2.5">
                                                 <template x-for="(image, imgIndex) in (product.images ?? [])" :key="image.id">
-                                                    <div class="group relative h-10 w-10 shrink-0">
-                                                        <img :src="image.url" :alt="product.name" class="h-10 w-10 rounded-lg object-cover" :class="imgIndex === 0 && 'ring-2 ring-brand'" />
-                                                        <div class="absolute inset-0 hidden items-center justify-center gap-0.5 rounded-lg bg-black/50 group-hover:flex">
-                                                            <button type="button" x-show="imgIndex > 0" @click="makePrimaryProductImage(product, image)"
-                                                                class="text-white" :aria-label="primaryLabel" title="{{ __('agents.catalog.product_images.make_primary') }}">★</button>
-                                                            <button type="button" @click="removeProductImage(product, image)"
-                                                                class="text-white" :aria-label="removeLabel" title="{{ __('agents.catalog.product_images.remove') }}">✕</button>
+                                                    {{-- Two boxes: the OUTER one is `relative`, un-clipped, and carries
+                                                         the tile's own border — ✕ and the ★ badge both live on it, so
+                                                         neither is ever cut off by the INNER box's overflow-hidden,
+                                                         which exists only to round/clip the photo itself. There is no
+                                                         full-tile overlay any more (the old ★ "make primary" dark
+                                                         overlay used to sit right on top of ✕ and win every hover/
+                                                         click there, confirmed by hit-testing this live) — ★ is now a
+                                                         small corner badge with nothing else sharing its stacking, so
+                                                         there is nothing left for ✕ to contend with. --}}
+                                                    <div x-data="{ failed: false, retried: false }"
+                                                        class="group relative h-12 w-12 shrink-0 rounded-lg border border-hairline dark:border-white/10"
+                                                        x-transition:leave="transition ease-in duration-150"
+                                                        x-transition:leave-start="opacity-100 scale-100"
+                                                        x-transition:leave-end="opacity-0 scale-90">
+                                                        <div class="h-full w-full overflow-hidden rounded-lg bg-sunk dark:bg-white/5">
+                                                            <img x-show="!failed" :src="image.url" alt="" loading="lazy" decoding="async"
+                                                                class="h-full w-full object-cover"
+                                                                x-on:error="retried ? (failed = true) : (retried = true, $el.src = image.url + (image.url.includes('?') ? '&' : '?') + 'retry=' + Date.now())" />
+                                                            {{-- A failed/still-broken photo keeps the tile's size and
+                                                                 border — no collapse, no alt-text overflow — and keeps
+                                                                 its ✕, since that lives outside this box entirely. --}}
+                                                            <div x-show="failed" x-cloak class="flex h-full w-full items-center justify-center text-muted dark:text-night-muted/60">
+                                                                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14M4 6h16v12H4V6z"/></svg>
+                                                            </div>
                                                         </div>
+
+                                                        {{-- Primary photo: a persistent, subtle gold marker — not a
+                                                             button, nothing to click, it already IS primary. Every
+                                                             other photo gets a plain promote button in the same spot,
+                                                             hover/focus-only. --}}
+                                                        <template x-if="imgIndex === 0">
+                                                            <span class="pointer-events-none absolute -bottom-1 -left-1 z-10 flex h-4 w-4 items-center justify-center rounded-full bg-amber-50 text-[9px] leading-none text-amber-500 shadow-sm ring-1 ring-amber-200 dark:bg-amber-400/10 dark:text-amber-300 dark:ring-amber-300/30"
+                                                                title="{{ __('agents.catalog.product_images.primary_badge') }}">★</span>
+                                                        </template>
+                                                        <template x-if="imgIndex > 0">
+                                                            <button type="button" @click="makePrimaryProductImage(product, image)"
+                                                                class="absolute -bottom-1 -left-1 z-10 flex h-4 w-4 items-center justify-center rounded-full bg-white/90 text-[9px] leading-none text-amber-500 opacity-0 shadow-sm ring-1 ring-amber-200 transition-opacity duration-150 hover:bg-amber-50 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 dark:bg-night-ink/90 dark:text-amber-300 dark:ring-amber-300/30"
+                                                                :aria-label="primaryLabel" title="{{ __('agents.catalog.product_images.make_primary') }}">★</button>
+                                                        </template>
+
+                                                        {{-- Neutral gray, not red/black: this is a reversible removal
+                                                             (there's a 5s undo bar), not a destructive-looking action.
+                                                             z-20 keeps it above everything else in the tile. Visible
+                                                             at reduced opacity with no hover-capable pointer (touch),
+                                                             since there's no hover there to reveal it with. --}}
+                                                        <button type="button" @click="removeProductImage(product, image)"
+                                                            class="absolute -right-1.5 -top-1.5 z-20 flex h-5 w-5 items-center justify-center rounded-full border border-gray-200 bg-white/90 text-xs leading-none text-gray-500 opacity-0 shadow-sm transition-opacity duration-150 hover:bg-gray-100 hover:text-gray-700 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-70 dark:border-white/10 dark:bg-night-ink/90 dark:text-night-muted dark:hover:bg-white/10 dark:hover:text-night-ink"
+                                                            :aria-label="removeLabel" title="{{ __('agents.catalog.product_images.remove') }}">✕</button>
                                                     </div>
                                                 </template>
                                                 <button type="button" x-show="(product.images ?? []).length < {{ (int) config('agent.product_images.max_per_product') }}"
-                                                    @click="$refs['productImageInput' + product.id].click()"
-                                                    class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-dashed border-black/15 text-muted hover:border-brand hover:text-brand dark:border-white/15 dark:text-night-muted"
+                                                    @click="pickProductPhoto(product)"
+                                                    class="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-dashed border-black/15 text-muted hover:border-brand hover:text-brand dark:border-white/15 dark:text-night-muted"
                                                     :aria-label="addPhotoLabel" title="{{ __('agents.catalog.product_images.add') }}">+</button>
-                                                <input type="file" :x-ref="'productImageInput' + product.id" accept="{{ implode(',', array_map(fn ($m) => ".$m", config('agent.product_images.allowed_extensions'))) }}" class="hidden"
-                                                    @change="uploadProductImage(product, $event.target.files[0]); $event.target.value = ''" />
                                             </div>
                                         </td>
                                         <template x-for="column in previewColumns()" :key="column.key">
@@ -306,6 +352,19 @@
             </div>
         </template>
     </div>
+
+    {{-- window.showToast is text-only and auto-dismisses — no room for an
+         "Отменить" action — so photo removal gets its own small inline bar
+         instead, one per still-pending removal (several quick removals each
+         get their own timer and their own bar; see removeProductImage()). --}}
+    <div class="pointer-events-none fixed inset-x-0 bottom-4 z-40 flex flex-col items-center gap-2 px-4" x-show="photoRemovals.length > 0" x-cloak>
+        <template x-for="removal in photoRemovals" :key="removal.id">
+            <div class="pointer-events-auto flex items-center gap-3 rounded-full bg-ink px-4 py-2 text-sm font-medium text-white shadow-xl dark:bg-night-ink dark:text-night">
+                <span>{{ __('agents.catalog.product_images.removed') }}</span>
+                <button type="button" @click="undoPhotoRemoval(removal.id)" class="font-semibold text-brand-light hover:underline">{{ __('agents.catalog.product_images.undo') }}</button>
+            </div>
+        </template>
+    </div>
 </div>
 
 @once
@@ -332,6 +391,21 @@
             missingPreview: null,
             missingPreviewSeq: 0,
             markMissing: true,
+            // Which product the ONE shared file input (see pickProductPhoto())
+            // is currently picking a photo for.
+            photoTarget: null,
+            // Removals waiting out their undo window — [{ id, product, image, index, timer }].
+            // See removeProductImage()/undoPhotoRemoval()/commitPhotoRemoval().
+            photoRemovals: [],
+            // Image ids with a DELETE currently in flight — kept separately
+            // from photoRemovals because an entry leaves THAT array the
+            // instant its commit starts, before the request it kicked off
+            // has actually resolved. Without a guard that covers that whole
+            // window, a second click landing in it looked like "not
+            // pending" and started an independent second removal for the
+            // same photo, which eventually sent a second DELETE for a row
+            // the first one had already removed.
+            inFlightRemovalIds: new Set(),
             dragging: false,
             uploading: false,
             importing: false,
@@ -351,6 +425,35 @@
             missingWarningLabel: @json(__('agents.catalog.mapping_missing_warning')),
             missingNeutralLabel: @json(__('agents.catalog.mapping_missing_neutral')),
             markMissingLabel: @json(__('agents.catalog.mapping_mark_missing')),
+            networkErrorLabel: @json(__('agents.catalog.toasts.network_error')),
+            actionFailedLabel: @json(__('agents.catalog.toasts.action_failed')),
+            unexpectedResponseLabel: @json(__('agents.catalog.toasts.unexpected_response')),
+
+            /** Flushes any removal still waiting out its undo window before the tab is actually gone — otherwise a photo that looked removed in the UI could silently survive server-side forever. */
+            init() {
+                window.addEventListener('beforeunload', () => this.flushPhotoRemovals());
+            },
+
+            // Last {message: type} shown and when, for showToast()'s dedup window below.
+            lastToast: null,
+
+            /**
+             * Every toast in this component goes through here instead of
+             * `window.showToast` directly, so the SAME message within 3s
+             * only ever shows once. Needed because a guarded-but-still-
+             * racy double action (two near-simultaneous DELETEs that both
+             * fail the same way, for instance) can otherwise fire the exact
+             * same error toast twice in a row, which just reads as the
+             * action having failed twice.
+             */
+            showToast(message, type = 'info') {
+                const now = Date.now();
+                if (this.lastToast && this.lastToast.message === message && this.lastToast.type === type && now - this.lastToast.at < 3000) {
+                    return;
+                }
+                this.lastToast = { message, type, at: now };
+                window.showToast?.(message, type);
+            },
 
             csrfHeaders(extra = {}) {
                 return {
@@ -358,6 +461,65 @@
                     'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '',
                     ...extra,
                 };
+            },
+
+            /**
+             * Reads a fetch response as JSON without assuming it IS JSON.
+             * A 200 with an HTML body — most commonly a tunnel/proxy's own
+             * click-through interstitial page standing in for the real
+             * response (ngrok's free tier does this to an unrecognized
+             * visitor) — must not be handed to code that expects
+             * `data.image`/`data.images`/etc. and will otherwise fail
+             * confusingly further down. Returns { data, html }: `html` true
+             * means "not JSON at all", `data` null when there was nothing
+             * (or nothing parseable) to read.
+             */
+            async readJson(res) {
+                const contentType = res.headers.get('content-type') || '';
+                if (!contentType.includes('application/json')) {
+                    return { data: null, html: true };
+                }
+
+                try {
+                    return { data: await res.json(), html: false };
+                } catch (e) {
+                    return { data: null, html: false };
+                }
+            },
+
+            /**
+             * One place for "the server answered, just not with success" —
+             * a real HTTP error (4xx/5xx) or a 200 that wasn't JSON. Shows
+             * the server's own JSON message when there is one; a non-JSON
+             * response or a JSON error with no message of its own gets a
+             * generic, status-aware fallback instead of the misleading
+             * "no connection" toast every one of these used to get
+             * regardless of status code. Always logged with the status and
+             * body so a real failure is still diagnosable from devtools.
+             */
+            reportHttpFailure(res, data, html) {
+                console.error('Catalog request failed', res.status, html ? '(non-JSON response)' : data);
+
+                const message = html
+                    ? this.unexpectedResponseLabel
+                    : (data?.message || this.actionFailedLabel.replace(':code', res.status));
+
+                this.showToast(message, 'error');
+            },
+
+            /** The fetch itself threw — offline, DNS, CORS, an aborted connection. This is the one case "no connection to the server" is actually true. */
+            reportNetworkFailure(error) {
+                console.error('Catalog request threw', error);
+                this.showToast(this.networkErrorLabel, 'error');
+            },
+
+            /** Drops any image still inside its undo window for this product from a server-sourced list, so re-applying a DELETE/move-up/upload response can never re-show a photo the owner just removed (see removeProductImage()). */
+            filterPendingImages(product, images) {
+                const pendingIds = new Set(
+                    this.photoRemovals.filter((removal) => removal.product.id === product.id).map((removal) => removal.id),
+                );
+
+                return (images ?? []).filter((image) => !pendingIds.has(image.id));
             },
 
             show(value) {
@@ -417,19 +579,24 @@
                 if (this.pageLoading) return;
                 if (page < 1 || page > this.pagination.last_page || page === this.pagination.page) return;
 
+                // This page's `preview` array is about to be replaced
+                // wholesale — any removal still waiting out its undo window
+                // on THIS page would otherwise close over a `product` object
+                // that is no longer shown anywhere.
+                this.flushPhotoRemovals();
                 this.pageLoading = true;
 
                 try {
                     const res = await fetch(`${productsUrl}?page=${page}`, { headers: { Accept: 'application/json' } });
-                    if (!res.ok) {
-                        window.showToast?.(@json(__('agents.catalog.toasts.network_error')), 'error');
+                    const { data, html } = await this.readJson(res);
+                    if (!res.ok || html) {
+                        this.reportHttpFailure(res, data, html);
                         return;
                     }
-                    const data = await res.json();
                     this.preview = data.preview ?? [];
                     this.pagination = data.pagination;
                 } catch (e) {
-                    window.showToast?.(@json(__('agents.catalog.toasts.network_error')), 'error');
+                    this.reportNetworkFailure(e);
                 } finally {
                     this.pageLoading = false;
                 }
@@ -493,11 +660,13 @@
                         headers: this.csrfHeaders({ 'Content-Type': 'application/json' }),
                         body: JSON.stringify({ token: this.pending.token, mapping: this.mapping }),
                     });
-                    if (!res.ok || seq !== this.missingPreviewSeq) return;
-                    const data = await res.json();
+                    const { data, html } = await this.readJson(res);
+                    if (!res.ok || html || seq !== this.missingPreviewSeq) return;
                     this.missingPreview = data.missing ?? 0;
                 } catch (e) {
-                    // Advisory only — a failed preview just leaves the hint hidden.
+                    // Advisory only — a failed preview just leaves the hint hidden,
+                    // with no toast of its own; still worth a console trace.
+                    console.error('Catalog preview request threw', e);
                 }
             },
 
@@ -590,10 +759,15 @@
 
                 try {
                     const res = await fetch(analyzeUrl, { method: 'POST', headers: this.csrfHeaders(), body });
-                    const data = await res.json().catch(() => ({}));
+                    const { data, html } = await this.readJson(res);
 
-                    if (!res.ok) {
-                        window.showToast?.(data.message || data.errors?.file?.[0] || @json(__('agents.catalog.errors.unreadable')), 'error');
+                    if (!res.ok || html) {
+                        console.error('Catalog analyze failed', res.status, html ? '(non-JSON response)' : data);
+                        this.showToast(
+                            html ? this.unexpectedResponseLabel
+                                : (data?.message || data?.errors?.file?.[0] || @json(__('agents.catalog.errors.unreadable'))),
+                            'error',
+                        );
                         return;
                     }
 
@@ -602,7 +776,7 @@
                     this.markMissing = true;
                     this.requestMissingPreview();
                 } catch (e) {
-                    window.showToast?.(@json(__('agents.catalog.toasts.network_error')), 'error');
+                    this.reportNetworkFailure(e);
                 } finally {
                     this.uploading = false;
                 }
@@ -616,6 +790,9 @@
             },
 
             async submitImport(mode) {
+                // The whole catalog is about to be replaced out from under
+                // whatever's currently on screen.
+                this.flushPhotoRemovals();
                 this.importing = true;
                 this.error = '';
 
@@ -628,12 +805,15 @@
                             mark_missing_out_of_stock: this.markMissing,
                         }),
                     });
-                    const data = await res.json().catch(() => ({}));
+                    const { data, html } = await this.readJson(res);
 
-                    if (!res.ok) {
+                    if (!res.ok || html) {
+                        console.error('Catalog import failed', res.status, html ? '(non-JSON response)' : data);
                         // Kept inline rather than as a toast: the fix is a
                         // different choice in the table right below it.
-                        this.error = data.message || data.errors?.mapping?.[0] || @json(__('agents.catalog.errors.import_failed'));
+                        this.error = html
+                            ? this.unexpectedResponseLabel
+                            : (data?.message || data?.errors?.mapping?.[0] || @json(__('agents.catalog.errors.import_failed')));
                         return;
                     }
 
@@ -647,9 +827,9 @@
                     this.mapping = {};
                     this.missingPreview = null;
 
-                    window.showToast?.(this.importSummary(data), 'success');
+                    this.showToast(this.importSummary(data), 'success');
                 } catch (e) {
-                    window.showToast?.(@json(__('agents.catalog.toasts.network_error')), 'error');
+                    this.reportNetworkFailure(e);
                 } finally {
                     this.importing = false;
                 }
@@ -697,6 +877,40 @@
                 this.$refs.fileInput.click();
             },
 
+            /**
+             * Opens the native file picker for one row's "+" button.
+             *
+             * Root cause of the bug this replaces: the per-row input used to
+             * be INSIDE the x-for, named dynamically via `:x-ref="'productImageInput' + product.id"`.
+             * Alpine's `$refs` is a single flat registry resolved once per
+             * directive walk; a ref name that is itself a reactive
+             * expression evaluated inside a loop is not reliably
+             * (re-)registered as the x-for list is diffed/rebuilt (every
+             * page fetch replaces `preview` wholesale, and every upload
+             * replaces `product.images`), so `$refs[...]` could resolve to
+             * `undefined` or to a stale, already-detached `<input>` —
+             * `.click()` on either does nothing visible, which is exactly
+             * the "button does nothing" symptom. One static input OUTSIDE
+             * the loop, targeted by this method instead of a computed ref
+             * name, has no such ambiguity.
+             */
+            pickProductPhoto(product) {
+                this.photoTarget = product;
+                this.$refs.productPhotoInput.click();
+            },
+
+            /** The shared input's own @change — uploads for whichever row pickProductPhoto() last set, then resets both the input and the target. */
+            onProductPhotoPicked(event) {
+                const file = event.target.files[0];
+                const product = this.photoTarget;
+                event.target.value = '';
+                this.photoTarget = null;
+
+                if (file && product) {
+                    this.uploadProductImage(product, file);
+                }
+            },
+
             /** Uploads one photo for a row and merges the response back into its own preview entry. */
             async uploadProductImage(product, file) {
                 if (!file) return;
@@ -708,14 +922,19 @@
                     const res = await fetch(productImagesUrlBase.replace('__ID__', product.id), {
                         method: 'POST', headers: this.csrfHeaders(), body,
                     });
-                    const data = await res.json().catch(() => ({}));
-                    if (!res.ok) {
-                        window.showToast?.(data.message || data.errors?.image?.[0] || @json(__('agents.catalog.product_images.errors.upload_failed')), 'error');
+                    const { data, html } = await this.readJson(res);
+                    if (!res.ok || html) {
+                        console.error('Product image upload failed', res.status, html ? '(non-JSON response)' : data);
+                        this.showToast(
+                            html ? this.unexpectedResponseLabel
+                                : (data?.message || data?.errors?.image?.[0] || @json(__('agents.catalog.product_images.errors.upload_failed'))),
+                            'error',
+                        );
                         return;
                     }
-                    product.images = [...(product.images ?? []), data.image];
+                    product.images = this.filterPendingImages(product, [...(product.images ?? []), data.image]);
                 } catch (e) {
-                    window.showToast?.(@json(__('agents.catalog.toasts.network_error')), 'error');
+                    this.reportNetworkFailure(e);
                 }
             },
 
@@ -725,50 +944,178 @@
                     const res = await fetch(productImageMoveUpUrlBase.replace('__PRODUCT__', product.id).replace('__IMAGE__', image.id), {
                         method: 'POST', headers: this.csrfHeaders(),
                     });
-                    if (!res.ok) {
-                        window.showToast?.(@json(__('agents.catalog.toasts.network_error')), 'error');
+                    const { data, html } = await this.readJson(res);
+                    if (!res.ok || html) {
+                        this.reportHttpFailure(res, data, html);
                         return;
                     }
-                    product.images = (await res.json()).images;
+                    // filterPendingImages(): the server's list is the whole
+                    // row's current photos, including any still waiting out
+                    // ANOTHER removal's undo window — which this response
+                    // would otherwise bring right back onto the screen.
+                    product.images = this.filterPendingImages(product, data.images);
                 } catch (e) {
-                    window.showToast?.(@json(__('agents.catalog.toasts.network_error')), 'error');
+                    this.reportNetworkFailure(e);
                 }
             },
 
-            async removeProductImage(product, image) {
-                if (!confirm(@json(__('agents.catalog.product_images.delete_confirm')))) return;
+            /**
+             * ✕ no longer asks via confirm() — it hides the photo right
+             * away and starts a 5s undo window (see the inline bar at the
+             * bottom of the template); the DELETE request itself only goes
+             * out once that window elapses, in commitPhotoRemoval(). Each
+             * removal gets its own entry/timer, so removing several photos
+             * in quick succession undoes independently rather than only the
+             * most recent one.
+             *
+             * The in-flight guard below is the fix for a real double-DELETE
+             * bug: a rapid double/triple click on the SAME ✕ can fire this
+             * handler more than once before Alpine removes the (now gone)
+             * photo's row from the DOM. The old code only checked
+             * `photoRemovals`, and committing a removal drops its entry
+             * from THAT array the instant the commit starts — before the
+             * DELETE it just kicked off has resolved. A click landing in
+             * that gap read as "nothing pending" and started a brand new,
+             * independently-timed removal for the same image id, which
+             * eventually sent a SECOND DELETE for a row the first one had
+             * already removed — the server's 404 for it then surfaced as a
+             * raw "No query results for model [ProductImage] N" toast.
+             * `inFlightRemovalIds` stays set for the request's whole
+             * lifetime, closing that gap.
+             */
+            removeProductImage(product, image) {
+                if (this.photoRemovals.some((removal) => removal.id === image.id) || this.inFlightRemovalIds.has(image.id)) {
+                    return;
+                }
+
+                const images = product.images ?? [];
+                const index = images.indexOf(image);
+                if (index === -1) {
+                    return;
+                }
+
+                product.images = images.filter((candidate) => candidate.id !== image.id);
+
+                const removal = { id: image.id, product, image, index };
+                removal.timer = setTimeout(() => this.commitPhotoRemoval(removal.id), 5000);
+                this.photoRemovals.push(removal);
+            },
+
+            /** Restores the thumbnail at its original position and cancels the pending DELETE entirely — nothing was ever sent. */
+            undoPhotoRemoval(id) {
+                const index = this.photoRemovals.findIndex((removal) => removal.id === id);
+                if (index === -1) return;
+
+                const [removal] = this.photoRemovals.splice(index, 1);
+                clearTimeout(removal.timer);
+                this.restoreRemovedPhoto(removal);
+            },
+
+            restoreRemovedPhoto(removal) {
+                const images = [...(removal.product.images ?? [])];
+                images.splice(Math.min(removal.index, images.length), 0, removal.image);
+                removal.product.images = images;
+            },
+
+            /**
+             * The undo window elapsed (or something flushed it early) — now
+             * actually delete it. Guaranteed to run at most once per id:
+             * the very first thing it does is leave `photoRemovals` (so a
+             * second call for the same id — the timer firing right as
+             * flushPhotoRemovals() also reaches it, say — finds nothing and
+             * returns immediately) and record the id as in-flight for the
+             * DELETE's whole lifetime (so removeProductImage() can't start
+             * a fresh, independent removal for it either; see there).
+             * `keepalive` gives this a real chance to finish even when it's
+             * the beforeunload handler firing this as the tab closes.
+             */
+            async commitPhotoRemoval(id) {
+                const index = this.photoRemovals.findIndex((removal) => removal.id === id);
+                if (index === -1) return;
+
+                const [removal] = this.photoRemovals.splice(index, 1);
+                clearTimeout(removal.timer);
+                this.inFlightRemovalIds.add(id);
 
                 try {
-                    const res = await fetch(productImageDeleteUrlBase.replace('__PRODUCT__', product.id).replace('__IMAGE__', image.id), {
-                        method: 'DELETE', headers: this.csrfHeaders(),
+                    const res = await fetch(productImageDeleteUrlBase.replace('__PRODUCT__', removal.product.id).replace('__IMAGE__', removal.id), {
+                        method: 'DELETE', headers: this.csrfHeaders(), keepalive: true,
                     });
-                    if (!res.ok) {
-                        window.showToast?.(@json(__('agents.catalog.toasts.network_error')), 'error');
+
+                    // A 404 here means the row is already gone — exactly
+                    // the outcome this removal wanted. The backend now
+                    // answers its OWN already-deleted case with a plain 200
+                    // (see ProductImageController::destroy()), so this is
+                    // just a defensive second line: a stale frontend, a
+                    // request that raced something else server-side, or
+                    // any other path that still produces a 404 must never
+                    // read as an error toast for a removal that, in effect,
+                    // already succeeded.
+                    if (res.status === 404) {
+                        removal.product.images = this.filterPendingImages(removal.product, removal.product.images ?? []);
                         return;
                     }
-                    product.images = (await res.json()).images;
+
+                    const { data, html } = await this.readJson(res);
+                    if (!res.ok || html) {
+                        // The delete never actually happened — give the photo back.
+                        this.reportHttpFailure(res, data, html);
+                        this.restoreRemovedPhoto(removal);
+                        return;
+                    }
+                    // filterPendingImages(): a second, still-pending removal
+                    // on the same product must not be resurrected by THIS
+                    // removal's own server response.
+                    removal.product.images = this.filterPendingImages(removal.product, data.images);
                 } catch (e) {
-                    window.showToast?.(@json(__('agents.catalog.toasts.network_error')), 'error');
+                    this.reportNetworkFailure(e);
+                    this.restoreRemovedPhoto(removal);
+                } finally {
+                    this.inFlightRemovalIds.delete(id);
                 }
+            },
+
+            /**
+             * Sends every still-pending removal's DELETE immediately instead
+             * of waiting out its timer. Called whenever the row list a
+             * pending removal points at is about to be replaced out from
+             * under it — a page change, a fresh import, or deleting the
+             * whole catalog — so a removal never silently outlives the
+             * `product` object its timer closed over.
+             */
+            flushPhotoRemovals() {
+                [...this.photoRemovals].forEach((removal) => this.commitPhotoRemoval(removal.id));
             },
 
             async destroy() {
                 if (!confirm(@json(__('agents.catalog.toasts.delete_confirm')))) return;
+
+                // destroy() is about to delete every product (and so every
+                // photo) for this agent in one bulk pass. Sending each
+                // pending removal's own DELETE first would just race it —
+                // and arrive after its product/image row is already gone,
+                // surfacing a confusing error for a removal that is about to
+                // succeed anyway. Cancel their timers and drop them locally
+                // instead; nothing further needs to be sent.
+                this.photoRemovals.forEach((removal) => clearTimeout(removal.timer));
+                this.photoRemovals = [];
+
                 this.deleting = true;
 
                 try {
                     const res = await fetch(destroyUrl, { method: 'DELETE', headers: this.csrfHeaders() });
-                    if (!res.ok) {
-                        window.showToast?.(@json(__('agents.catalog.toasts.delete_failed')), 'error');
+                    const { data, html } = await this.readJson(res);
+                    if (!res.ok || html) {
+                        console.error('Catalog delete failed', res.status, html ? '(non-JSON response)' : data);
+                        this.showToast(html ? this.unexpectedResponseLabel : @json(__('agents.catalog.toasts.delete_failed')), 'error');
                         return;
                     }
-                    const data = await res.json();
                     this.dataset = data.dataset;
                     this.preview = data.preview ?? [];
                     this.pagination = data.pagination;
-                    window.showToast?.(@json(__('agents.catalog.toasts.deleted')), 'success');
+                    this.showToast(@json(__('agents.catalog.toasts.deleted')), 'success');
                 } catch (e) {
-                    window.showToast?.(@json(__('agents.catalog.toasts.network_error')), 'error');
+                    this.reportNetworkFailure(e);
                 } finally {
                     this.deleting = false;
                 }

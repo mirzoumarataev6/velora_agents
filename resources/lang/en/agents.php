@@ -565,6 +565,13 @@ return [
             'replace_confirm' => 'This will completely replace the current catalog and delete ALL uploaded product photos. This cannot be undone. Continue?',
             'delete_failed' => 'The catalog could not be deleted',
             'network_error' => 'No connection to the server',
+            // The server DID respond — just not with success. Shown only
+            // when it had no JSON message of its own to show instead.
+            'action_failed' => 'Action failed (code :code)',
+            // A 200-looking response that is not JSON at all — most often
+            // a tunnel/proxy's own click-through page (e.g. ngrok's
+            // interstitial) standing in for the real one.
+            'unexpected_response' => 'The server returned an unexpected response. Try again.',
         ],
 
         // Per-product photos — the trusted source the agent now sends
@@ -574,11 +581,14 @@ return [
             'add' => 'Add photo',
             'remove' => 'Remove photo',
             'make_primary' => 'Make primary',
-            'delete_confirm' => 'Delete this photo?',
+            'primary_badge' => 'Primary photo',
+            'removed' => 'Photo removed',
+            'undo' => 'Undo',
             'errors' => [
                 'bad_format' => 'Allowed formats: :formats.',
                 'too_large' => 'The file is too large (maximum :size MB).',
                 'upload_failed' => 'Could not upload the photo. Please try again.',
+                'not_found' => 'This photo was already removed or could not be found.',
             ],
         ],
     ],
