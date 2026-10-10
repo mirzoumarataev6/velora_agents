@@ -24,7 +24,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * for exactly which signals are still allowed to move a deal automatically,
  * and why Оплата is not one of their destinations any more).
  */
-#[Fillable(['conversation_id', 'agent_id', 'lead_id', 'crm_workspace_id', 'title', 'amount', 'deal_date', 'sales_origin', 'payment_status', 'stage', 'position', 'note', 'closed_at', 'cancelled_reason', 'won_reason'])]
+#[Fillable(['conversation_id', 'agent_id', 'lead_id', 'crm_workspace_id', 'title', 'amount', 'deal_date', 'sales_origin', 'payment_status', 'stage', 'position', 'note', 'tags', 'closed_at', 'cancelled_reason', 'won_reason'])]
 #[UsePolicy(DealPolicy::class)]
 class Deal extends Model
 {
@@ -82,6 +82,7 @@ class Deal extends Model
             'stage_set_by_owner_at' => 'datetime',
             'closed_at' => 'datetime',
             'deal_date' => 'date',
+            'tags' => 'array',
         ];
     }
 

@@ -7,6 +7,7 @@ return [
         'board' => 'Deals',
         'customers' => 'Customers',
         'tasks' => 'Tasks',
+        'trend' => 'Trend',
     ],
 
     'board' => [
@@ -103,6 +104,9 @@ return [
         'amount' => 'Amount',
         'payment' => 'Payment',
         'note' => 'Note',
+        'tags' => 'Tags',
+        'tags_hint' => 'Comma separated',
+        'tag_filter_placeholder' => 'Filter by tag…',
         'save' => 'Save',
         'delete' => 'Delete',
         'open_deal' => 'Open',
@@ -346,5 +350,17 @@ return [
             'kind' => 'Choose a kind from the list.',
             'happened_at' => 'The date cannot be in the future.',
         ],
+    ],
+
+    'trend' => [
+        'title' => 'Trend — Velora Agents',
+        'heading' => 'Deal trend',
+        'subheading' => 'New deals, deals won, and revenue over time.',
+        'range_8w' => 'Last 8 weeks',
+        'range_6m' => 'Last 6 months',
+        'new_deals' => 'New deals',
+        'won' => 'Won',
+        'revenue' => 'Revenue',
+        'empty' => 'No data for this period.',
     ],
 ];

@@ -11,6 +11,7 @@ use App\Http\Controllers\Bi\WidgetController as BiWidgetController;
 use App\Http\Controllers\ChannelController;
 use App\Http\Controllers\ConversationController;
 use App\Http\Controllers\Crm\CrmNoteController;
+use App\Http\Controllers\Crm\CrmTrendController;
 use App\Http\Controllers\Crm\CrmWorkspaceController;
 use App\Http\Controllers\Crm\CustomerController;
 use App\Http\Controllers\Crm\DealController;
@@ -85,6 +86,11 @@ Route::middleware(['auth', 'auth.session'])->group(function () {
     Route::prefix('crm')->name('crm.')->group(function () {
         // The board is the CRM's front page: it is where the work is.
         Route::get('/', [DealController::class, 'index'])->name('board');
+        // Its own top-level page, not a tab of the board itself — a time
+        // series reads differently from a row list, and the board's own
+        // Alpine component is already large enough without folding a chart
+        // into it. Reachable from the subnav, same as Customers/Tasks.
+        Route::get('trend', [CrmTrendController::class, 'index'])->name('trend');
         // Declared before the {deal} wildcard so it isn't bound as a model id.
         Route::get('deals/poll', [DealController::class, 'poll'])->name('deals.poll');
         // CSV of exactly what the board is currently filtered to — see

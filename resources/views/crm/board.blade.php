@@ -235,6 +235,16 @@
                         placeholder="{{ __('crm.board.search_placeholder') }}" data-i18n-ph="crm.board.search_placeholder"
                         aria-label="{{ __('crm.board.search_placeholder') }}" class="field w-full py-1.5 pl-9 pr-3 text-sm" />
                 </div>
+
+                {{-- Filterable alongside search/stage/sort rather than folded
+                     into it: a tag is an exact label, not free text, so it
+                     gets its own box even though it reuses search()'s
+                     debounce-and-reload. --}}
+                <div class="relative min-w-0 flex-1 sm:max-w-[10rem]">
+                    <input type="search" x-model="filters.tag" @input.debounce.250ms="search()"
+                        placeholder="{{ __('crm.board.tag_filter_placeholder') }}" data-i18n-ph="crm.board.tag_filter_placeholder"
+                        aria-label="{{ __('crm.board.tag_filter_placeholder') }}" class="field w-full px-3 py-1.5 text-sm" />
+                </div>
                 <span x-show="loading" x-cloak role="status" class="shrink-0 text-xs text-muted dark:text-night-muted">{{ __('crm.board.loading') }}</span>
             </div>
         </div>
@@ -285,6 +295,11 @@
                                 <span class="mt-1 inline-flex rounded-full bg-sunk px-2 py-0.5 text-xs font-medium text-muted dark:bg-night-raised dark:text-night-muted"
                                     :title="labels.origins[deal.sales_origin || 'social']"
                                     x-text="labels.originsShort[deal.sales_origin || 'social']"></span>
+                                <span x-show="(deal.tags || []).length" x-cloak class="mt-1 flex flex-wrap gap-1">
+                                    <template x-for="tag in (deal.tags || [])" :key="tag">
+                                        <span class="badge badge-neutral" x-text="tag"></span>
+                                    </template>
+                                </span>
                             </td>
                             <td class="tnum px-4 py-3.5 font-semibold" x-text="deal.amount || '—'"></td>
                             <td class="px-4 py-3.5">
@@ -508,7 +523,7 @@
             activityOpen: false,
             activityLoading: false,
             loading: false,
-            editForm: { title: '', amount: '', payment_status: 'unpaid', stage: '', deal_date: '', cancelled_reason: '', closed: false, won_reason: '' },
+            editForm: { title: '', amount: '', payment_status: 'unpaid', stage: '', deal_date: '', cancelled_reason: '', closed: false, won_reason: '', tags: '' },
             editDateDisplay: '',
             dateEuropean: @js(app()->getLocale() !== 'en'),
             metricsOpen: false,
@@ -584,6 +599,7 @@
                 const params = new URLSearchParams();
                 if (this.filters.stage && this.filters.stage !== 'all') params.set('stage', this.filters.stage);
                 if (this.filters.q) params.set('q', this.filters.q);
+                if (this.filters.tag) params.set('tag', this.filters.tag);
                 if (this.filters.origin && this.filters.origin !== 'all') params.set('origin', this.filters.origin);
                 if (this.filters.workspace_id) params.set('workspace', this.filters.workspace_id);
                 if (this.filters.sort && this.filters.sort !== 'date') params.set('sort', this.filters.sort);
@@ -739,6 +755,7 @@
                     cancelled_reason: deal.cancelled_reason || '',
                     won_reason: deal.won_reason || '',
                     closed: !!deal.is_closed,
+                    tags: (deal.tags || []).join(', '),
                 };
                 this.editDateDisplay = crmFormatDate(this.editForm.deal_date, this.dateEuropean);
                 this.loadActivity(deal);

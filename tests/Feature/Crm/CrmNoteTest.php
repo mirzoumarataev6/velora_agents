@@ -214,10 +214,15 @@ class CrmNoteTest extends TestCase
         $deal = Deal::factory()->for($owner)->for($customer)->create(['note' => 'Старая заметка по сделке']);
 
         // RefreshDatabase already ran every migration, including the seed —
-        // this re-runs just that one against the rows created above, the
-        // same way a real deploy would run it once against existing data.
-        $this->artisan('migrate:rollback', ['--step' => 1])->run();
-        $this->artisan('migrate')->run();
+        // re-run just that one file's up() against the rows created above,
+        // the same way a real deploy would run it once against existing
+        // data. Targeted by path rather than `migrate:rollback --step=1`:
+        // that rolls back whichever migration happens to be LAST overall,
+        // which stopped being this one the moment a later migration (deals
+        // tags) was added.
+        $migration = require database_path('migrations/2026_10_12_000002_seed_crm_notes_from_legacy_note_columns.php');
+        $migration->down();
+        $migration->up();
 
         $this->assertDatabaseHas('crm_notes', [
             'notable_type' => Customer::class,
@@ -242,7 +247,11 @@ class CrmNoteTest extends TestCase
         $owner = User::factory()->create();
         Customer::factory()->for($owner)->create(['note' => 'Will be backfilled']);
 
-        $this->artisan('migrate:rollback', ['--step' => 1])->run();
+        $migration = require database_path('migrations/2026_10_12_000002_seed_crm_notes_from_legacy_note_columns.php');
+        $migration->up();
+        $this->assertGreaterThan(0, DB::table('crm_notes')->count());
+
+        $migration->down();
 
         $this->assertSame(0, DB::table('crm_notes')->count());
     }

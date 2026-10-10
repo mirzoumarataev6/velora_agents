@@ -218,6 +218,7 @@ class DealBoard
             'payment_status' => $deal->payment_status,
             'sales_origin' => $deal->sales_origin ?: 'social',
             'note' => $deal->note,
+            'tags' => $deal->tags ?? [],
             'cancelled_reason' => $deal->cancelled_reason,
             'won_reason' => $deal->won_reason,
             'conversation_id' => $deal->conversation_id,
@@ -351,6 +352,14 @@ class DealBoard
             $query->where(fn ($search) => $search
                 ->where('title', 'like', "%{$term}%")
                 ->orWhereHas('customer', fn ($customer) => $customer->search($term)));
+        }
+
+        // A plain LIKE over the serialized JSON column, same trick
+        // Customer::scopeSearch() uses for its own tags — a real
+        // whereJsonContains() match would need the exact stored casing, and
+        // nothing here claims tags are ever normalised to one case.
+        if (filled($filters['tag'] ?? null)) {
+            $query->where('tags', 'like', '%'.trim($filters['tag']).'%');
         }
 
         $direction = ($filters['dir'] ?? 'desc') === 'asc' ? 'asc' : 'desc';

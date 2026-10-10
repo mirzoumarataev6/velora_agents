@@ -15,6 +15,7 @@
         'board' => ['crm.board', 'crm.board'],
         'customers' => ['crm.customers.index', 'crm.customers.*'],
         'tasks' => ['crm.tasks.index', 'crm.tasks.*'],
+        'trend' => ['crm.trend', 'crm.trend'],
     ] as $key => [$routeName, $activePattern])
         @continue (! Route::has($routeName))
         <a href="{{ route($routeName) }}"

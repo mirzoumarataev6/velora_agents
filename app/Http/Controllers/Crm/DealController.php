@@ -19,6 +19,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 use League\Csv\Bom;
@@ -130,7 +131,7 @@ class DealController extends Controller
         $csv->insertOne([
             __('crm.customers.directory.col_customer'), __('crm.board.add_title'), __('crm.board.col_amount'),
             __('crm.board.payment'), __('crm.board.col_stage'), __('crm.board.sales_origin'),
-            __('crm.board.add_date'), __('crm.board.won_reason'), __('crm.board.timeline_field_cancelled_reason'), __('crm.board.note'),
+            __('crm.board.add_date'), __('crm.board.won_reason'), __('crm.board.timeline_field_cancelled_reason'), __('crm.board.note'), __('crm.board.tags'),
         ]);
 
         foreach ($deals as $deal) {
@@ -145,6 +146,7 @@ class DealController extends Controller
                 (string) $deal->won_reason,
                 (string) $deal->cancelled_reason,
                 (string) $deal->note,
+                implode(', ', $deal->tags ?? []),
             ]);
         }
 
@@ -476,6 +478,7 @@ class DealController extends Controller
             // field still validates to null, and the update() below would
             // silently wipe the legacy column on every save.
             'note' => ['sometimes', 'nullable', 'string', 'max:5000'],
+            'tags' => ['sometimes', 'nullable', 'string', 'max:500'],
             'stage' => ['nullable', 'string', 'in:'.implode(',', Deal::allStages())],
             'deal_date' => ['nullable', 'date'],
             'sales_origin' => ['sometimes', 'required', 'string', 'in:'.implode(',', Deal::SALES_ORIGINS)],
@@ -491,7 +494,11 @@ class DealController extends Controller
             'cancelled_reason.required' => __('crm.board.cancel_reason_required'),
         ]);
 
-        $deal->update(Arr::only($data, ['title', 'amount', 'payment_status', 'sales_origin', 'crm_workspace_id', 'note']));
+        $updates = Arr::only($data, ['title', 'amount', 'payment_status', 'sales_origin', 'crm_workspace_id', 'note']);
+        if (array_key_exists('tags', $data)) {
+            $updates['tags'] = $this->parseTags($data['tags']);
+        }
+        $deal->update($updates);
 
         // Through the same door a drag used to go through, and the row's own
         // quick-select still does — the guard that keeps the automation from
@@ -541,6 +548,20 @@ class DealController extends Controller
      *
      * @return array{stage: string, q: ?string, sort: string, dir: string, origin: string, workspace_id: ?int}
      */
+    /** Free-typed, comma separated — same shape CustomerController::parseTags() gives the customer directory. */
+    protected function parseTags(?string $raw): ?array
+    {
+        $tags = collect(explode(',', (string) $raw))
+            ->map(fn (string $tag) => Str::squish($tag))
+            ->filter()
+            ->unique()
+            ->take(20)
+            ->values()
+            ->all();
+
+        return $tags ?: null;
+    }
+
     private function filters(Request $request): array
     {
         $stage = $request->query('stage');
@@ -561,6 +582,7 @@ class DealController extends Controller
         return [
             'stage' => $stage,
             'q' => trim((string) $request->query('q')) ?: null,
+            'tag' => trim((string) $request->query('tag')) ?: null,
             'sort' => in_array($sort, DealBoard::SORTS, true) ? $sort : 'date',
             // Online is the focused landing view; offline has its own explicit
             // tab so a mixed pipeline never makes the two revenue streams look

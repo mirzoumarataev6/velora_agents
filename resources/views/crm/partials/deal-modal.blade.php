@@ -149,6 +149,14 @@
                     </select>
                 </div>
 
+                {{-- Mirrors the customer profile's own tags input: free-typed,
+                     comma separated — the fastest thing to enter and to skim. --}}
+                <div>
+                    <label class="mb-1 block text-sm font-medium" :for="'deal-tags-' + selected.id">{{ __('crm.board.tags') }}</label>
+                    <input :id="'deal-tags-' + selected.id" x-model="editForm.tags" maxlength="500"
+                        placeholder="{{ __('crm.board.tags_hint') }}" class="field w-full px-3 py-2 text-sm" />
+                </div>
+
                 <div class="grid grid-cols-2 gap-3">
                     <div>
                         <label class="mb-1 block text-sm font-medium" :for="'deal-stage-' + selected.id">{{ __('crm.board.col_stage') }}</label>
