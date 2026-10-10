@@ -324,6 +324,9 @@ Route::middleware(['auth', 'auth.session'])->group(function () {
         // what the agent shows customers, which search_products caps separately.
         Route::get('products', [DatasetController::class, 'products'])->name('products');
         Route::post('analyze', [DatasetController::class, 'analyze'])->name('analyze');
+        // Read-only: how many existing rows this mapping wouldn't match,
+        // shown at the mapping step before the owner commits to 'update'.
+        Route::post('preview-update', [DatasetController::class, 'previewUpdate'])->name('preview_update');
         Route::post('import', [DatasetController::class, 'import'])->name('import');
         Route::post('cancel', [DatasetController::class, 'cancel'])->name('cancel');
         Route::delete('/', [DatasetController::class, 'destroy'])->name('destroy');

@@ -486,8 +486,13 @@ return [
         'mapping_rows_found' => 'Найдено строк: :count',
         'mapping_truncated' => 'Файл длиннее лимита — будут импортированы первые :count строк.',
         'mapping_import' => 'Импортировать',
+        'mapping_update' => 'Обновить каталог',
+        'mapping_replace' => 'Заменить полностью…',
         'mapping_cancel' => 'Отмена',
         'mapping_importing' => 'Импортируем...',
+        'mapping_missing_warning' => ':count товаров из текущего каталога не найдены в этом файле и будут отмечены как отсутствующие.',
+        'mapping_missing_neutral' => ':count товаров из текущего каталога не найдены в этом файле — их наличие не будет изменено.',
+        'mapping_mark_missing' => 'Отмечать товары, которых нет в файле, как отсутствующие',
 
         'fields' => [
             'ignore' => 'Не использовать',
@@ -507,9 +512,12 @@ return [
         'status_updated' => 'Обновлён :time',
         'status_skipped' => 'Пропущено строк: :count',
         'status_mapping' => 'Сопоставление колонок',
-        'status_replace' => 'Заменить каталог',
+        'status_update' => 'Обновить каталог',
         'status_delete' => 'Удалить каталог',
         'status_preview' => 'Товары в каталоге',
+        // Advisory only — see Dataset::isStale(). The agent keeps answering
+        // from this data regardless; this is purely a nudge to re-upload.
+        'stale_hint' => 'Каталог не обновлялся уже давно — цены и наличие могут быть неактуальны. Рекомендуем загрузить свежий файл.',
 
         'skip_reasons' => [
             'missing_name' => 'без названия товара — :count',
@@ -548,9 +556,16 @@ return [
         'toasts' => [
             'imported' => 'Каталог обновлён · товаров: :count',
             'imported_skipped' => 'Каталог обновлён · товаров: :count, пропущено: :skipped',
+            // :updated/:added/:out_of_stock are always present; the
+            // ambiguous/skipped notes append separately only when non-zero.
+            'updated' => 'Готово: обновлено :updated, добавлено :added, снято с наличия :out_of_stock.',
+            'ambiguous' => 'Не удалось однозначно сопоставить :count — добавлены как новые.',
+            'skipped_suffix' => 'Пропущено строк: :count.',
             'deleted' => 'Каталог удалён',
             'delete_confirm' => 'Удалить каталог? Агент перестанет отвечать на вопросы о ценах и наличии по этим данным.',
-            'replace_confirm' => 'Новый файл полностью заменит текущий каталог. Продолжить?',
+            // Shown only for the explicit "Заменить полностью" action — update
+            // (the default) never deletes anything, so it needs no confirmation.
+            'replace_confirm' => 'Это полностью заменит текущий каталог и удалит ВСЕ загруженные фото товаров. Это действие нельзя отменить. Продолжить?',
             'delete_failed' => 'Не удалось удалить каталог',
             'network_error' => 'Нет соединения с сервером',
         ],

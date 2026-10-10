@@ -483,8 +483,13 @@ return [
         'mapping_rows_found' => 'Rows found: :count',
         'mapping_truncated' => 'The file is longer than the limit — the first :count rows will be imported.',
         'mapping_import' => 'Import',
+        'mapping_update' => 'Update catalog',
+        'mapping_replace' => 'Replace entirely…',
         'mapping_cancel' => 'Cancel',
         'mapping_importing' => 'Importing...',
+        'mapping_missing_warning' => ':count products from the current catalog were not found in this file and will be marked out of stock.',
+        'mapping_missing_neutral' => ':count products from the current catalog were not found in this file — their stock will be left as is.',
+        'mapping_mark_missing' => 'Mark products missing from the file as out of stock',
 
         'fields' => [
             'ignore' => 'Do not use',
@@ -504,9 +509,12 @@ return [
         'status_updated' => 'Updated :time',
         'status_skipped' => 'Rows skipped: :count',
         'status_mapping' => 'Column mapping',
-        'status_replace' => 'Replace catalog',
+        'status_update' => 'Update catalog',
         'status_delete' => 'Delete catalog',
         'status_preview' => 'Catalog products',
+        // Advisory only — see Dataset::isStale(). The agent keeps answering
+        // from this data regardless; this is purely a nudge to re-upload.
+        'stale_hint' => "This catalog hasn't been updated in a while — prices and stock may be out of date. We recommend uploading a fresh file.",
 
         'skip_reasons' => [
             'missing_name' => 'no product name — :count',
@@ -545,9 +553,16 @@ return [
         'toasts' => [
             'imported' => 'Catalog updated · :count products',
             'imported_skipped' => 'Catalog updated · :count products, :skipped skipped',
+            // :updated/:added/:out_of_stock are always present; the
+            // ambiguous/skipped notes append separately only when non-zero.
+            'updated' => 'Done: :updated updated, :added added, :out_of_stock marked out of stock.',
+            'ambiguous' => "Couldn't confidently match :count — added as new.",
+            'skipped_suffix' => ':count rows skipped.',
             'deleted' => 'Catalog deleted',
             'delete_confirm' => 'Delete the catalog? The agent will stop answering price and stock questions from this data.',
-            'replace_confirm' => 'The new file will completely replace the current catalog. Continue?',
+            // Shown only for the explicit "Replace entirely" action — update
+            // (the default) never deletes anything, so it needs no confirmation.
+            'replace_confirm' => 'This will completely replace the current catalog and delete ALL uploaded product photos. This cannot be undone. Continue?',
             'delete_failed' => 'The catalog could not be deleted',
             'network_error' => 'No connection to the server',
         ],

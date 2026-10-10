@@ -18,6 +18,7 @@
 <div x-data="catalogTab({
         productsUrl: '{{ route('agents.catalog.products', $agent) }}',
         analyzeUrl: '{{ route('agents.catalog.analyze', $agent) }}',
+        previewUpdateUrl: '{{ route('agents.catalog.preview_update', $agent) }}',
         importUrl: '{{ route('agents.catalog.import', $agent) }}',
         cancelUrl: '{{ route('agents.catalog.cancel', $agent) }}',
         destroyUrl: '{{ route('agents.catalog.destroy', $agent) }}',
@@ -106,14 +107,49 @@
             </table>
         </div>
 
-        <div class="flex justify-end gap-2 border-t border-hairline px-5 py-4 dark:border-white/10">
+        {{-- The owner's one chance to see, before anything is written, how
+             many of their existing rows this mapping does not match — and to
+             opt out of the out-of-stock side effect of that, not just the
+             match itself. x-show rather than x-if: missingPreview can still
+             be loading (null) right after a mapping change. --}}
+        <template x-if="dataset">
+            <div x-show="missingPreview > 0" x-cloak class="border-t border-hairline px-5 py-4 dark:border-white/10">
+                {{-- The warning styling only applies while the checkbox below
+                     is actually going to zero those rows' stock; unchecked,
+                     nothing bad is about to happen, so the same count gets a
+                     neutral note instead of a warning that no longer describes
+                     what submitting will do. --}}
+                <p :class="markMissing ? 'text-warning dark:text-warning-light' : 'text-muted dark:text-night-muted'" class="text-xs"
+                    x-text="(markMissing ? missingWarningLabel : missingNeutralLabel).replace(':count', missingPreview)"></p>
+                <label class="mt-2 flex items-center gap-2 text-xs text-muted dark:text-night-muted">
+                    <input type="checkbox" x-model="markMissing" class="rounded border-black/20 dark:border-white/20" />
+                    <span x-text="markMissingLabel"></span>
+                </label>
+            </div>
+        </template>
+
+        {{-- Two paths once a catalog already exists: 'update' (default,
+             matches existing rows by sku/name, keeps every uploaded photo,
+             marks whatever the file no longer lists as out of stock rather
+             than deleting it) or 'replace' — the original, fully
+             destructive behavior, demoted to a secondary action with its
+             own confirmation precisely because it deletes every photo. A
+             first-ever upload has nothing to update against, so it only
+             ever offers the one plain import button. --}}
+        <div class="flex flex-wrap items-center justify-end gap-2 border-t border-hairline px-5 py-4 dark:border-white/10">
             <button type="button" @click="cancel()" :disabled="importing"
                 class="rounded-full px-4 py-2 text-sm font-semibold disabled:opacity-60">
                 {{ __('agents.catalog.mapping_cancel') }}
             </button>
-            <button type="button" @click="submitImport()" :disabled="importing"
+            <template x-if="dataset">
+                <button type="button" @click="confirmReplace()" :disabled="importing"
+                    class="rounded-full px-4 py-2 text-sm font-medium text-danger disabled:opacity-60">
+                    {{ __('agents.catalog.mapping_replace') }}
+                </button>
+            </template>
+            <button type="button" @click="submitImport(dataset ? 'update' : 'replace')" :disabled="importing"
                 class="btn btn-primary disabled:opacity-60">
-                <span x-show="!importing">{{ __('agents.catalog.mapping_import') }}</span>
+                <span x-show="!importing" x-text="dataset ? @js(__('agents.catalog.mapping_update')) : @js(__('agents.catalog.mapping_import'))"></span>
                 <span x-show="importing" x-cloak class="spinner"></span>
             </button>
         </div>
@@ -140,10 +176,11 @@
                                 </span>
                                 <span class="text-sm font-semibold" x-text="rowsLabel.replace(':count', dataset.row_count)"></span>
                             </div>
-                            <p class="mt-1.5 text-xs text-muted dark:text-night-muted">
+                            <p class="mt-1.5 text-xs" :class="dataset.stale ? 'text-warning dark:text-warning-light' : 'text-muted dark:text-night-muted'">
                                 <span x-text="dataset.filename"></span>
                                 <span x-show="dataset.imported_at"> · <span x-text="updatedLabel.replace(':time', dataset.imported_at)"></span></span>
                             </p>
+                            <p x-show="dataset.stale" x-cloak class="mt-1 text-xs text-warning dark:text-warning-light">{{ __('agents.catalog.stale_hint') }}</p>
                             <p x-show="dataset.skipped_count > 0" x-cloak class="mt-1 text-xs text-warning dark:text-warning-light"
                                 x-text="skippedSummary()"></p>
                         </div>
@@ -151,7 +188,7 @@
                             <button type="button" @click="replace()"
                                 class="flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium transition-all">
                                 <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-                                {{ __('agents.catalog.status_replace') }}
+                                {{ __('agents.catalog.status_update') }}
                             </button>
                             <button type="button" @click="destroy()" :disabled="deleting"
                                 class="flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium text-danger transition-all disabled:opacity-60">
@@ -275,7 +312,7 @@
 @push('scripts')
 <script>
     function catalogTab({
-        productsUrl, analyzeUrl, importUrl, cancelUrl, destroyUrl,
+        productsUrl, analyzeUrl, previewUpdateUrl, importUrl, cancelUrl, destroyUrl,
         productImagesUrlBase, productImageMoveUpUrlBase, productImageDeleteUrlBase, initial,
     }) {
         return {
@@ -290,6 +327,11 @@
             // "which screen am I on" flag for the whole tab.
             pending: null,
             mapping: {},
+            // How many existing rows the current mapping doesn't match, or
+            // null while that count hasn't loaded yet — see requestMissingPreview().
+            missingPreview: null,
+            missingPreviewSeq: 0,
+            markMissing: true,
             dragging: false,
             uploading: false,
             importing: false,
@@ -306,6 +348,9 @@
             previewLabels: @json(__('agents.catalog.preview')),
             summaryLabel: @json(__('agents.catalog.pagination.summary')),
             pageAriaLabel: @json(__('agents.catalog.pagination.page_aria')),
+            missingWarningLabel: @json(__('agents.catalog.mapping_missing_warning')),
+            missingNeutralLabel: @json(__('agents.catalog.mapping_missing_neutral')),
+            markMissingLabel: @json(__('agents.catalog.mapping_mark_missing')),
 
             csrfHeaders(extra = {}) {
                 return {
@@ -422,6 +467,38 @@
                 } else if (field !== '') {
                     this.mapping[field] = index;
                 }
+
+                this.requestMissingPreview();
+            },
+
+            /**
+             * Asks the backend how many existing rows the CURRENT mapping
+             * wouldn't match, so the mapping step can show a real count
+             * before the owner commits to 'update' rather than a guess.
+             * Only meaningful once a catalog already exists to match
+             * against; `seq` discards a response that lost the race to a
+             * newer mapping change.
+             */
+            async requestMissingPreview() {
+                if (!this.dataset || !this.pending) {
+                    this.missingPreview = null;
+                    return;
+                }
+
+                const seq = ++this.missingPreviewSeq;
+
+                try {
+                    const res = await fetch(previewUpdateUrl, {
+                        method: 'POST',
+                        headers: this.csrfHeaders({ 'Content-Type': 'application/json' }),
+                        body: JSON.stringify({ token: this.pending.token, mapping: this.mapping }),
+                    });
+                    if (!res.ok || seq !== this.missingPreviewSeq) return;
+                    const data = await res.json();
+                    this.missingPreview = data.missing ?? 0;
+                } catch (e) {
+                    // Advisory only — a failed preview just leaves the hint hidden.
+                }
             },
 
             sampleFor(index) {
@@ -501,8 +578,10 @@
 
             async handleFile(file) {
                 if (!file) return;
-                if (this.dataset && !confirm(@json(__('agents.catalog.toasts.replace_confirm')))) return;
 
+                // No confirmation here any more: the mapping step below is
+                // where the owner actually chooses update vs. replace, and
+                // only the latter needs a warning — see confirmReplace().
                 this.uploading = true;
                 this.error = '';
 
@@ -520,6 +599,8 @@
 
                     this.pending = data;
                     this.mapping = { ...data.mapping };
+                    this.markMissing = true;
+                    this.requestMissingPreview();
                 } catch (e) {
                     window.showToast?.(@json(__('agents.catalog.toasts.network_error')), 'error');
                 } finally {
@@ -527,7 +608,14 @@
                 }
             },
 
-            async submitImport() {
+            /** 'replace' needs the owner's explicit confirmation first — it deletes every uploaded photo; 'update' needs none, since nothing is deleted. */
+            confirmReplace() {
+                if (confirm(@json(__('agents.catalog.toasts.replace_confirm')))) {
+                    this.submitImport('replace');
+                }
+            },
+
+            async submitImport(mode) {
                 this.importing = true;
                 this.error = '';
 
@@ -535,7 +623,10 @@
                     const res = await fetch(importUrl, {
                         method: 'POST',
                         headers: this.csrfHeaders({ 'Content-Type': 'application/json' }),
-                        body: JSON.stringify({ token: this.pending.token, mapping: this.mapping }),
+                        body: JSON.stringify({
+                            token: this.pending.token, mapping: this.mapping, mode,
+                            mark_missing_out_of_stock: this.markMissing,
+                        }),
                     });
                     const data = await res.json().catch(() => ({}));
 
@@ -554,11 +645,9 @@
                     this.pagination = data.pagination;
                     this.pending = null;
                     this.mapping = {};
+                    this.missingPreview = null;
 
-                    const message = data.skipped > 0
-                        ? @json(__('agents.catalog.toasts.imported_skipped')).replace(':count', data.imported).replace(':skipped', data.skipped)
-                        : @json(__('agents.catalog.toasts.imported')).replace(':count', data.imported);
-                    window.showToast?.(message, 'success');
+                    window.showToast?.(this.importSummary(data), 'success');
                 } catch (e) {
                     window.showToast?.(@json(__('agents.catalog.toasts.network_error')), 'error');
                 } finally {
@@ -566,10 +655,31 @@
                 }
             },
 
+            /** 'update' reports what it matched/added/zeroed out; 'replace' keeps the plain "imported N" wording it always had. */
+            importSummary(data) {
+                if (data.mode === 'update') {
+                    let message = @json(__('agents.catalog.toasts.updated'))
+                        .replace(':updated', data.updated).replace(':added', data.added).replace(':out_of_stock', data.out_of_stock);
+                    if (data.ambiguous > 0) {
+                        message += ' ' + @json(__('agents.catalog.toasts.ambiguous')).replace(':count', data.ambiguous);
+                    }
+                    if (data.skipped > 0) {
+                        message += ' ' + @json(__('agents.catalog.toasts.skipped_suffix')).replace(':count', data.skipped);
+                    }
+
+                    return message;
+                }
+
+                return data.skipped > 0
+                    ? @json(__('agents.catalog.toasts.imported_skipped')).replace(':count', data.imported).replace(':skipped', data.skipped)
+                    : @json(__('agents.catalog.toasts.imported')).replace(':count', data.imported);
+            },
+
             async cancel() {
                 const token = this.pending?.token;
                 this.pending = null;
                 this.mapping = {};
+                this.missingPreview = null;
                 this.error = '';
 
                 if (!token) return;

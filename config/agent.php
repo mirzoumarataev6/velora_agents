@@ -336,6 +336,12 @@ return [
         // How long an analyzed-but-not-yet-imported upload waits on disk for the
         // owner to confirm its mapping before it is swept.
         'pending_ttl_minutes' => env('AGENT_DATASET_PENDING_TTL_MINUTES', 120),
+
+        // Past this many days since the last import, the Каталог tab flags
+        // the catalog as stale — advisory only, for the owner's own
+        // dashboard. Never read by the agent or surfaced to a customer; see
+        // Dataset::isStale().
+        'stale_after_days' => env('AGENT_DATASET_STALE_AFTER_DAYS', 14),
     ],
 
     /*

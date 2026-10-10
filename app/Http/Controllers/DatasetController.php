@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\Dataset\AnalyzeDatasetRequest;
 use App\Http\Requests\Dataset\ImportDatasetRequest;
+use App\Http\Requests\Dataset\PreviewDatasetUpdateRequest;
 use App\Models\Agent;
 use App\Models\Dataset;
 use App\Models\DatasetProduct;
@@ -116,10 +117,14 @@ class DatasetController extends Controller
     }
 
     /**
-     * Step 2: import the pending upload under the confirmed mapping, replacing
-     * whatever catalog the agent had.
+     * Read-only: how many existing rows the current mapping would leave
+     * unmatched (and so, under 'update', mark out of stock) if the owner
+     * confirmed right now. Called from the mapping step whenever the
+     * mapping changes, so the count the owner sees before they commit is
+     * never stale. Nothing is written — DatasetImporter::previewUpdate()
+     * runs the same matchRows() pass update() would, outside a transaction.
      */
-    public function import(ImportDatasetRequest $request, Agent $agent): JsonResponse
+    public function previewUpdate(PreviewDatasetUpdateRequest $request, Agent $agent): JsonResponse
     {
         $pending = $this->resolvePending($agent, $request->string('token')->toString());
 
@@ -133,13 +138,43 @@ class DatasetController extends Controller
                 (int) config('agent.dataset.max_rows'),
             );
 
-            $result = $this->importer->import(
-                $agent,
-                $pending['filename'],
-                $parsed['headers'],
-                $parsed['rows'],
-                $request->mapping(),
+            $summary = $this->importer->previewUpdate($agent, $parsed['headers'], $parsed['rows'], $request->mapping());
+        } catch (InvalidArgumentException $e) {
+            // Mapping isn't ready yet (e.g. no name column chosen) — no
+            // count to show rather than an error, since this is advisory.
+            return response()->json(['missing' => 0]);
+        }
+
+        return response()->json($summary);
+    }
+
+    /**
+     * Step 2: import the pending upload under the confirmed mapping — either
+     * 'update' (match existing rows by sku/name, keep photos, mark anything
+     * missing as out of stock instead of deleting it) or 'replace' (today's
+     * original behavior: the whole catalog, including every uploaded
+     * photo, is retired and rebuilt from this file). See
+     * DatasetImporter::update() / ::import() for the actual difference.
+     */
+    public function import(ImportDatasetRequest $request, Agent $agent): JsonResponse
+    {
+        $pending = $this->resolvePending($agent, $request->string('token')->toString());
+
+        if ($pending === null) {
+            return response()->json(['message' => __('agents.catalog.errors.upload_expired')], 422);
+        }
+
+        $mode = $request->mode();
+
+        try {
+            $parsed = $this->reader->read(
+                Storage::disk('local')->path($pending['path']),
+                (int) config('agent.dataset.max_rows'),
             );
+
+            $result = $mode === 'update'
+                ? $this->importer->update($agent, $pending['filename'], $parsed['headers'], $parsed['rows'], $request->mapping(), $request->markMissingOutOfStock())
+                : $this->importer->import($agent, $pending['filename'], $parsed['headers'], $parsed['rows'], $request->mapping());
         } catch (InvalidArgumentException $e) {
             // Mapping problems the owner can fix by choosing a different column
             // — the pending file stays put so they can retry without re-uploading.
@@ -153,6 +188,7 @@ class DatasetController extends Controller
         } catch (\Throwable $e) {
             Log::error('Catalog import failed', [
                 'agent_id' => $agent->id,
+                'mode' => $mode,
                 'error' => $e->getMessage(),
             ]);
 
@@ -162,11 +198,13 @@ class DatasetController extends Controller
         $this->forgetPending($agent, $request->string('token')->toString());
 
         return response()->json(self::state($agent->refresh()) + [
-            'imported' => $result['imported'],
+            'mode' => $mode,
             'skipped' => $result['skipped'],
             'skipped_reasons' => $result['reasons'],
             'truncated' => $parsed['truncated'],
-        ]);
+        ] + ($mode === 'update'
+            ? ['updated' => $result['updated'], 'added' => $result['added'], 'out_of_stock' => $result['out_of_stock'], 'ambiguous' => $result['ambiguous']]
+            : ['imported' => $result['imported']]));
     }
 
     /**
@@ -248,6 +286,9 @@ class DatasetController extends Controller
                 'skipped_count' => $dataset->skipped_count,
                 'skipped_reasons' => $dataset->skipped_reasons ?? [],
                 'imported_at' => $dataset->imported_at?->diffForHumans(),
+                // Advisory only — see Dataset::isStale(); never read by the
+                // agent, only shown on this tab.
+                'stale' => $dataset->isStale(),
                 'columns' => $dataset->columns ?? [],
                 'mapping' => $dataset->mapping ?? [],
             ],

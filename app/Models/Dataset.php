@@ -39,6 +39,13 @@ class Dataset extends Model
         ];
     }
 
+    /** Advisory only — see config('agent.dataset.stale_after_days'); never read by the agent or shown to a customer. */
+    public function isStale(): bool
+    {
+        return $this->imported_at !== null
+            && $this->imported_at->lt(now()->subDays((int) config('agent.dataset.stale_after_days')));
+    }
+
     public function agent(): BelongsTo
     {
         return $this->belongsTo(Agent::class);
