@@ -171,10 +171,10 @@
                                 <option :value="option" x-text="labels.stages[option]"></option>
                             </template>
                         </select>
-                        <div x-show="editForm.stage === 'cancelled'" x-cloak class="mt-2">
+                        <div x-show="editForm.stage === cancelledStage" x-cloak class="mt-2">
                             <label class="mb-1 block text-xs font-medium" :for="'deal-cancel-reason-' + selected.id">{{ __('crm.board.cancel_reason') }}</label>
                             <textarea :id="'deal-cancel-reason-' + selected.id" x-model="editForm.cancelled_reason" rows="2"
-                                :required="editForm.stage === 'cancelled'" maxlength="2000" class="field w-full px-3 py-2 text-sm"></textarea>
+                                :required="editForm.stage === cancelledStage" maxlength="2000" class="field w-full px-3 py-2 text-sm"></textarea>
                             <p x-show="editErrors.cancelled_reason" x-cloak class="mt-1 text-xs text-danger" x-text="editErrors.cancelled_reason?.[0]"></p>
                         </div>
                     </div>
@@ -197,19 +197,19 @@
                      done, so it makes no sense anywhere else, and leaving the
                      stage here (even before saving) hides the checkbox again
                      rather than let it linger unchecked-but-visible. --}}
-                <label x-show="editForm.stage === 'payment'" x-cloak
+                <label x-show="editForm.stage === wonStage" x-cloak
                     class="flex items-center gap-2 text-sm">
                     <input type="checkbox" x-model="editForm.closed" class="field-check h-4 w-4" />
                     {{ __('crm.board.closed_label') }}
                 </label>
-                <p x-show="editForm.stage === 'payment'" x-cloak class="-mt-2 text-xs text-muted dark:text-night-muted">
+                <p x-show="editForm.stage === wonStage" x-cloak class="-mt-2 text-xs text-muted dark:text-night-muted">
                     {{ __('crm.board.closed_hint') }}
                 </p>
 
                 {{-- The won counterpart to the cancel-reason field above —
                      same shape, optional rather than required, and only
                      shown once "Закрыто" is actually ticked. --}}
-                <div x-show="editForm.stage === 'payment' && editForm.closed" x-cloak>
+                <div x-show="editForm.stage === wonStage && editForm.closed" x-cloak>
                     <label class="mb-1 block text-xs font-medium" :for="'deal-won-reason-' + selected.id">{{ __('crm.board.won_reason') }}</label>
                     <textarea :id="'deal-won-reason-' + selected.id" x-model="editForm.won_reason" rows="2"
                         maxlength="2000" class="field w-full px-3 py-2 text-sm"></textarea>

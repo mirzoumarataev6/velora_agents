@@ -24,7 +24,12 @@
     </div>
 
     @php
-        $paidDeals = $customer->deals->filter(fn ($deal) => $deal->payment_status === 'paid' && $deal->stage !== \App\Models\Deal::STAGE_CANCELLED);
+        // The same "paid" definition as everywhere else in the CRM now —
+        // see DealBoard::paidInWonStage() — not payment_status alone, and
+        // not merely "didn't end up lost" (that was looser than every other
+        // paid count in the product and let a deal paid mid-haggling count
+        // as a purchase here while the board/directory disagreed).
+        $paidDeals = $customer->deals->filter(fn ($deal) => $deal->payment_status === 'paid' && $deal->stage_role === 'won');
         $socialPurchases = $paidDeals->where('sales_origin', 'social');
         $inPersonPurchases = $paidDeals->where('sales_origin', 'in_person');
         $paidTotal = (float) $paidDeals->sum(fn ($deal) => (float) $deal->amount);
@@ -218,13 +223,14 @@
                 @forelse ($customer->deals as $deal)
                             <a data-crm-nav href="{{ route('crm.board', ['origin' => $deal->sales_origin ?: 'social', 'workspace' => $deal->crm_workspace_id, 'deal' => $deal->id]) }}"
                         class="-mx-2 flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-sm transition-colors hover:bg-black/5 dark:hover:bg-white/5">
-                        <span class="min-w-0 truncate">{{ $deal->title ?: __('crm.stages.'.$deal->stage) }}</span>
+                        <span class="min-w-0 truncate">{{ $deal->title ?: $deal->crmStage?->displayName() }}</span>
                         <span class="flex shrink-0 items-center gap-1.5">
                             @if ($deal->amount)
                                 <span class="tnum text-xs">{{ \App\Models\Lead::formatPrice($deal->amount) ?: '—' }}</span>
                             @endif
-                            <span class="badge {{ \App\Models\Deal::badgeClass($deal->stage) }}">
-                                {{ __('crm.stages.'.$deal->stage) }}
+                            <span class="badge badge-neutral inline-flex items-center gap-1.5">
+                                <span class="h-1.5 w-1.5 shrink-0 rounded-full {{ \App\Models\CrmStage::dotClass($deal->crmStage?->color ?? 'slate') }}"></span>
+                                {{ $deal->crmStage?->displayName() }}
                             </span>
                             @if ($deal->closed_at)
                                 <span class="badge badge-success">{{ __('crm.board.closed_badge') }}</span>

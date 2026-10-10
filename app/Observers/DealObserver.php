@@ -2,6 +2,7 @@
 
 namespace App\Observers;
 
+use App\Models\CrmStage;
 use App\Models\Deal;
 use App\Models\DealActivity;
 
@@ -15,9 +16,24 @@ class DealObserver
     public function updated(Deal $deal): void
     {
         if ($deal->wasChanged('stage')) {
+            // Frozen labels, not a live lookup: a stage can be renamed or
+            // deleted later, and this moment in the timeline has to keep
+            // reading the way it did when it happened — "moved from Торг to
+            // Оплата" must not quietly become "moved from [deleted] to
+            // Payment received" the day the owner tidies up their pipeline.
+            // `to`/`from` (the raw stage NAME string) are kept alongside the
+            // frozen labels/roles for activity rows written before this
+            // existed, which still render off the literal string alone.
+            $previousStageId = $deal->getPrevious()['crm_stage_id'] ?? null;
+            $previousStage = $previousStageId !== null ? CrmStage::find($previousStageId) : null;
+
             $this->record($deal, 'stage_changed', [
                 'from' => $deal->getPrevious()['stage'] ?? null,
                 'to' => $deal->stage,
+                'from_role' => $previousStage?->role,
+                'to_role' => $deal->stage_role,
+                'from_label' => $previousStage?->displayName(),
+                'to_label' => $deal->crmStage?->displayName(),
                 'reason' => $deal->getPrevious()['cancelled_reason'] ?? $deal->cancelled_reason,
             ]);
         }

@@ -3,6 +3,7 @@
 namespace App\Services\Crm;
 
 use App\Models\Conversation;
+use App\Models\CrmStage;
 use App\Models\CrmWorkspace;
 use App\Models\Customer;
 use App\Models\Deal;
@@ -61,6 +62,8 @@ class DealStageAutomation
             return null;
         }
 
+        $initial = CrmStage::initialFor($customer->user);
+
         $deal = new Deal;
 
         $deal->forceFill([
@@ -69,7 +72,9 @@ class DealStageAutomation
             'customer_id' => $customer->id,
             'conversation_id' => $conversation->id,
             'agent_id' => $conversation->agent_id,
-            'stage' => Deal::STAGES[0],
+            'crm_stage_id' => $initial->id,
+            'stage' => $initial->name,
+            'stage_role' => $initial->role,
             'position' => 0,
             'stage_changed_at' => now(),
         ])->save();
@@ -79,7 +84,17 @@ class DealStageAutomation
 
     /**
      * The agent has asked the owner to approve a price — which is precisely
-     * what "the customer is haggling" looks like in this system.
+     * what "the customer is haggling" looks like in this system, PROVIDED
+     * the owner's pipeline still has exactly one intermediate stage to mean
+     * it. The default, un-customized pipeline always does, so this signal
+     * keeps moving a card exactly as before for every account that hasn't
+     * touched its stages. The moment an owner adds a second intermediate,
+     * there is no longer one unambiguous "this is what haggling looks like"
+     * stage to advance into — guessing which of several would be exactly
+     * the kind of confident fiction this class's own docblock already
+     * refuses for Доставка/Завершено/Отменено, so the signal simply stops
+     * moving the card (it still reaches orderPlaced()/priceAgreed() for the
+     * details that never depended on the stage either way).
      */
     public function negotiationOpened(Lead $lead): ?Deal
     {
@@ -87,7 +102,14 @@ class DealStageAutomation
             return null;
         }
 
-        return $this->fromLead($lead, 'haggling');
+        $user = $lead->customer?->user;
+        $intermediates = $user !== null ? CrmStage::intermediatesFor($user) : collect();
+
+        if ($intermediates->count() !== 1) {
+            return null;
+        }
+
+        return $this->fromLead($lead, $intermediates->first());
     }
 
     /**
@@ -138,7 +160,7 @@ class DealStageAutomation
      * failing that through its customer — a lead whose thread was pruned is
      * still that person's business.
      */
-    private function fromLead(Lead $lead, string $stage): ?Deal
+    private function fromLead(Lead $lead, CrmStage $stage): ?Deal
     {
         $deal = $this->openDealFor($lead);
 
@@ -167,15 +189,22 @@ class DealStageAutomation
      * Move a card forward, or leave it exactly where it is.
      *
      * The one place the forward-only rule lives, so no signal can accidentally
-     * be written as an unconditional assignment.
+     * be written as an unconditional assignment. "Forward" is now the
+     * owner's own `crm_stages.position`, not a hardcoded array index — a
+     * deal with no stage position on record (shouldn't happen once every
+     * write path sets one, but the column is nullable — see the deals
+     * migration) is treated as sitting behind everything, same as the old
+     * stageIndex()'s -1 did for an unrecognised value.
      */
-    private function advance(Deal $deal, string $stage): ?Deal
+    private function advance(Deal $deal, CrmStage $stage): ?Deal
     {
         if ($deal->isClosed()) {
             return null;
         }
 
-        if (Deal::stageIndex($stage) <= Deal::stageIndex($deal->stage)) {
+        $currentPosition = $deal->crmStage?->position ?? -1;
+
+        if (($stage->position ?? -1) <= $currentPosition) {
             return null;
         }
 

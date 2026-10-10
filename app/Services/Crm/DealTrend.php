@@ -50,7 +50,7 @@ class DealTrend
             $query->where('crm_workspace_id', $workspaceId);
         }
 
-        $rows = $query->get(['created_at', 'closed_at', 'deal_date', 'stage', 'payment_status', 'amount']);
+        $rows = $query->get(['created_at', 'closed_at', 'deal_date', 'stage_role', 'payment_status', 'amount']);
 
         foreach ($rows as $deal) {
             $createdKey = $this->bucketKey($window, $timezone, $deal->created_at);
@@ -65,11 +65,10 @@ class DealTrend
                 }
             }
 
-            // Both conditions, not payment_status alone — the same "paid"
-            // definition DealBoard::list() uses for its own purchase counts,
-            // because payment_status can be 'paid' without the deal ever
-            // having reached the Оплата stage.
-            if ($deal->payment_status === 'paid' && $deal->stage === 'payment') {
+            // Both conditions, not payment_status alone — see
+            // DealBoard::paidInWonStage(), the same "paid" definition every
+            // other purchase/revenue count in the CRM uses now.
+            if ($deal->payment_status === 'paid' && $deal->stage_role === 'won') {
                 // closed_at when the owner explicitly confirmed it, deal_date
                 // (already local — see the class docblock) otherwise,
                 // created_at as the last resort for a deal with neither.

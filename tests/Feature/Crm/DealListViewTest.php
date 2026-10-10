@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Crm;
 
+use App\Models\CrmStage;
 use App\Models\Customer;
 use App\Models\Deal;
 use App\Models\Task;
@@ -66,13 +67,15 @@ class DealListViewTest extends TestCase
 
     public function test_stage_filter_tabs_are_all_present_including_cancelled(): void
     {
-        $response = $this->actingAs(User::factory()->create())->get(route('crm.board'));
+        $owner = User::factory()->create();
+
+        $response = $this->actingAs($owner)->get(route('crm.board'));
 
         $response->assertOk();
         $response->assertSee(__('crm.board.filter_all'));
 
-        foreach (Deal::allStages() as $stage) {
-            $response->assertSee(__('crm.stages.'.$stage));
+        foreach (CrmStage::defaultsFor($owner) as $stage) {
+            $response->assertSee($stage->displayName());
         }
     }
 
@@ -92,12 +95,12 @@ class DealListViewTest extends TestCase
         $response->assertSee(__('crm.board.empty_filtered_title'));
     }
 
-    /** Each stage gets its own badge colour, and the mapping covers every stage. */
-    public function test_every_stage_has_a_badge_class(): void
+    /** Each stage colour maps to a real dot class, and the mapping covers every colour a stage can have. */
+    public function test_every_stage_colour_has_a_dot_class(): void
     {
-        foreach (Deal::allStages() as $stage) {
-            $this->assertNotSame('', Deal::badgeClass($stage));
-            $this->assertStringStartsWith('badge-', Deal::badgeClass($stage));
+        foreach (CrmStage::COLORS as $color) {
+            $this->assertNotSame('', CrmStage::dotClass($color));
+            $this->assertStringStartsWith('bg-', CrmStage::dotClass($color));
         }
     }
 

@@ -12,6 +12,7 @@
         leadsCount: @js($leadsCount),
         overview: {{ Js::from($summary) }},
         cancelledStage: @js($cancelledStage),
+        wonStage: @js($wonStage),
         filters: {{ Js::from($filters) }},
         pollUrlBase: '{{ route('crm.deals.poll') }}',
         listUrlBase: '{{ route('crm.board') }}',
@@ -40,8 +41,8 @@
             'deleted' => __('crm.board.deleted'),
             'deleteConfirm' => __('crm.board.delete_confirm'),
             'inStage' => __('crm.board.in_stage'),
-            'stages' => __('crm.stages'),
-            'stageBadge' => collect(\App\Models\Deal::allStages())->mapWithKeys(fn ($s) => [$s => \App\Models\Deal::badgeClass($s)]),
+            'stages' => $stageLabels,
+            'stageDot' => $stageDotClasses,
             'payment' => __('crm.payment_statuses'),
             'origins' => __('crm.sales_origins'),
             'originsShort' => __('crm.sales_origins_short'),
@@ -64,6 +65,7 @@
                  never a second query that could disagree with the rows below it. --}}
         </div>
         <div class="page-actions">
+            <a href="{{ route('crm.stages.index') }}" class="btn btn-secondary btn-sm">{{ __('crm.stages.manage') }}</a>
             {{-- A real link, not a fetch: the browser's own download handling
                  is simpler and more robust than anything a click handler
                  would have to reimplement for a file response. --}}
@@ -304,7 +306,14 @@
                             <td class="tnum px-4 py-3.5 font-semibold" x-text="deal.amount || '—'"></td>
                             <td class="px-4 py-3.5">
                                 <div class="flex flex-wrap items-center gap-1.5">
-                                    <span class="badge px-2.5 py-1 font-semibold" :class="labels.stageBadge[deal.stage]" x-text="labels.stages[deal.stage]"></span>
+                                    {{-- A colour dot rather than a recoloured pill: the
+                                         stage's own colour (owner-chosen, see the stage
+                                         manager) is what distinguishes it now, not a fixed
+                                         success/warning/danger mapping tied to its name. --}}
+                                    <span class="badge badge-neutral inline-flex items-center gap-1.5 px-2.5 py-1 font-semibold">
+                                        <span class="h-1.5 w-1.5 shrink-0 rounded-full" :class="labels.stageDot[deal.stage]"></span>
+                                        <span x-text="labels.stages[deal.stage]"></span>
+                                    </span>
                                     {{-- Suppressed only in the one case it says
                                          nothing new: a deal already sitting in
                                          Оплата (which means paid now) whose
@@ -313,7 +322,7 @@
                                          mid-negotiation, say — is exactly the
                                          nuance this badge exists to surface,
                                          so it stays. --}}
-                                    <span x-show="!(deal.stage === 'payment' && deal.payment_status === 'paid')" x-cloak
+                                    <span x-show="!(deal.stage_role === 'won' && deal.payment_status === 'paid')" x-cloak
                                         class="badge" :class="{
                                         'badge-danger': deal.payment_status === 'unpaid',
                                         'badge-warning': deal.payment_status === 'partial',
@@ -478,7 +487,7 @@
      * only how the owner triggers a move does.
      */
     function dealList({
-        deals, leads, leadsBucket, stages, cancelledStage, filters, pagination, leadsCount, overview, pollUrlBase, listUrlBase,
+        deals, leads, leadsBucket, stages, cancelledStage, wonStage, filters, pagination, leadsCount, overview, pollUrlBase, listUrlBase,
         updateUrlBase, activityUrlBase, deleteUrlBase, customerUrlBase, customerUpdateUrlBase, chatUrlBase, openCreate, labels,
         workspaces, defaultWorkspaceId, workspaceUpdateUrlBase, workspaceDeleteUrlBase, initialDeal, exportUrlBase,
         noteStoreUrlBase, noteDeleteUrlBase,
@@ -489,6 +498,7 @@
             leadsBucket,
             stages,
             cancelledStage,
+            wonStage,
             filters,
             pagination,
             leadsCount,

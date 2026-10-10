@@ -11,6 +11,7 @@ use App\Http\Controllers\Bi\WidgetController as BiWidgetController;
 use App\Http\Controllers\ChannelController;
 use App\Http\Controllers\ConversationController;
 use App\Http\Controllers\Crm\CrmNoteController;
+use App\Http\Controllers\Crm\CrmStageController;
 use App\Http\Controllers\Crm\CrmTrendController;
 use App\Http\Controllers\Crm\CrmWorkspaceController;
 use App\Http\Controllers\Crm\CustomerController;
@@ -110,6 +111,17 @@ Route::middleware(['auth', 'auth.session'])->group(function () {
         Route::post('workspaces', [CrmWorkspaceController::class, 'store'])->name('workspaces.store');
         Route::patch('workspaces/{workspace}', [CrmWorkspaceController::class, 'update'])->name('workspaces.update');
         Route::delete('workspaces/{workspace}', [CrmWorkspaceController::class, 'destroy'])->name('workspaces.destroy');
+
+        // The owner's own pipeline. Its own page, reached from the board
+        // rather than the subnav — unlike Board/Customers/Tasks/Trend this
+        // is a one-off settings action, not a recurring work area.
+        Route::prefix('stages')->name('stages.')->group(function () {
+            Route::get('/', [CrmStageController::class, 'index'])->name('index');
+            Route::post('/', [CrmStageController::class, 'store'])->name('store');
+            Route::post('reorder', [CrmStageController::class, 'reorder'])->name('reorder');
+            Route::patch('{stage}', [CrmStageController::class, 'update'])->name('update');
+            Route::delete('{stage}', [CrmStageController::class, 'destroy'])->name('destroy');
+        });
 
         // Reminders, attached to a customer, a deal, both or neither.
         Route::get('tasks', [TaskController::class, 'index'])->name('tasks.index');

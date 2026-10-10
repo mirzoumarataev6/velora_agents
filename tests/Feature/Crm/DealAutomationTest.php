@@ -165,7 +165,7 @@ class DealAutomationTest extends TestCase
     {
         $conversation = $this->conversation();
         $deal = Deal::where('conversation_id', $conversation->id)->sole();
-        $deal->forceFill(['stage' => 'cancelled'])->save();
+        $deal->forceFill(['stage' => 'cancelled', 'stage_role' => 'lost'])->save();
 
         Lead::factory()->for($conversation->agent)->create([
             'conversation_id' => $conversation->id,
@@ -177,7 +177,7 @@ class DealAutomationTest extends TestCase
 
         $closedConversation = $this->conversation();
         $closedDeal = Deal::where('conversation_id', $closedConversation->id)->sole();
-        $closedDeal->forceFill(['stage' => 'payment', 'closed_at' => now()])->save();
+        $closedDeal->forceFill(['stage' => 'payment', 'stage_role' => 'won', 'closed_at' => now()])->save();
 
         Lead::factory()->for($closedConversation->agent)->create([
             'conversation_id' => $closedConversation->id,

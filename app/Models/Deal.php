@@ -17,12 +17,21 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 /**
  * One thing the business is trying to sell to one customer.
  *
- * Оплата means the money actually arrived — not "an order was placed" and
- * not "a price was agreed", both of which used to be enough to land a deal
- * here. Nothing this system tracks can observe a real payment, so a deal
- * only ever reaches Оплата by the owner's own hand (see DealStageAutomation
- * for exactly which signals are still allowed to move a deal automatically,
- * and why Оплата is not one of their destinations any more).
+ * Оплата (the WON-role stage) means the money actually arrived — not "an
+ * order was placed" and not "a price was agreed", both of which used to be
+ * enough to land a deal here. Nothing this system tracks can observe a real
+ * payment, so a deal only ever reaches the WON stage by the owner's own hand
+ * (see DealStageAutomation for exactly which signals are still allowed to
+ * move a deal automatically, and why WON is not one of their destinations
+ * any more).
+ *
+ * The pipeline itself — which stages exist, their order, their names — is
+ * now the owner's own `crm_stages` (see that model's docblock). Everything
+ * on THIS model that used to key off a literal stage string now keys off
+ * `stage_role` instead, a value denormalized from the deal's `crmStage`
+ * every time it changes — see DealBoard::move() and DealStageAutomation for
+ * the write side of that invariant, and CrmStageSyncTest for the test
+ * pinning it.
  */
 #[Fillable(['conversation_id', 'agent_id', 'lead_id', 'crm_workspace_id', 'title', 'amount', 'deal_date', 'sales_origin', 'payment_status', 'stage', 'position', 'note', 'tags', 'closed_at', 'cancelled_reason', 'won_reason'])]
 #[UsePolicy(DealPolicy::class)]
@@ -33,46 +42,16 @@ class Deal extends Model
 
     use SoftDeletes;
 
-    /**
-     * The pipeline, left to right. Three stages on purpose: Новый лид (a
-     * thread exists), Торг (the customer and the price are actually being
-     * discussed), Оплата (the money has arrived — see the class docblock
-     * below on why that last one is manual-only). Order matters here: it is
-     * both the list's stage-filter order and what "forward only" means to
-     * the automation.
-     */
+    /** The names CrmStage::defaultsFor() seeds a fresh pipeline with — not a universal list any more, see that method. */
     public const STAGES = ['new_lead', 'haggling', 'payment'];
 
-    /**
-     * Set apart from the flow rather than appended to it. A loss is not the
-     * last step of a sale, and a column of dead deals sitting at the end of the
-     * board is the fastest way to stop reading the board — but hiding losses
-     * entirely is how a business never finds out why it loses.
-     */
+    /** The lost-role default's name — kept as a constant for the same reason STAGES is: DemoSeeder and tests still build fixtures against the default pipeline. */
     public const STAGE_CANCELLED = 'cancelled';
 
     public const PAYMENT_STATUSES = ['unpaid', 'partial', 'paid'];
 
     /** How the purchase happened; deliberately independent from chat channel. */
     public const SALES_ORIGINS = ['social', 'in_person'];
-
-    /** Every stage the list can be filtered by, including the set-apart one. */
-    public static function allStages(): array
-    {
-        return array_merge(self::STAGES, [self::STAGE_CANCELLED]);
-    }
-
-    /** The badge colour for a stage's pill in the list. */
-    public static function badgeClass(string $stage): string
-    {
-        return match ($stage) {
-            'new_lead' => 'badge-neutral',
-            'haggling' => 'badge-warning',
-            'payment' => 'badge-success',
-            self::STAGE_CANCELLED => 'badge-danger',
-            default => 'badge-neutral',
-        };
-    }
 
     protected function casts(): array
     {
@@ -99,41 +78,37 @@ class Deal extends Model
      * Still in play. What the automation is allowed to touch and what "this
      * customer already has a deal open" means.
      *
-     * Not just "not cancelled": a deal marked Закрыто is also finished, even
-     * though Оплата itself is still a normal, filterable stage — closed_at is
-     * the thing that actually ends a deal's life now, cancellation being the
-     * other way one can end.
+     * Not just "not lost": a deal marked Закрыто is also finished, even
+     * though the WON stage itself is still a normal, filterable stage —
+     * closed_at is the thing that actually ends a deal's life now, landing
+     * in the LOST stage being the other way one can end. `stage_role` can
+     * legitimately be null here (a deal whose stage was deleted and not yet
+     * reassigned, mid-transaction) — null is treated as "not lost", the
+     * same as any non-lost role, rather than silently excluded.
      *
      * @param  Builder<Deal>  $query
      * @return Builder<Deal>
      */
     public function scopeOpen(Builder $query): Builder
     {
-        return $query->where('deals.stage', '!=', self::STAGE_CANCELLED)->whereNull('deals.closed_at');
-    }
-
-    /** How far along the pipeline a stage is; -1 for the cancelled bucket. */
-    public static function stageIndex(string $stage): int
-    {
-        $index = array_search($stage, self::STAGES, true);
-
-        return $index === false ? -1 : $index;
+        return $query->where(fn ($q) => $q->whereNull('deals.stage_role')->orWhere('deals.stage_role', '!=', 'lost'))
+            ->whereNull('deals.closed_at');
     }
 
     public function isClosed(): bool
     {
-        return $this->stage === self::STAGE_CANCELLED || $this->closed_at !== null;
+        return $this->stage_role === 'lost' || $this->closed_at !== null;
     }
 
     /**
-     * Whether "Закрыто" even makes sense here. Restricted to Оплата: closing
-     * a deal is the owner attesting the sale is fully done, which requires
-     * having said it was paid first — a deal cannot be finished on a
-     * question that has not been answered yet.
+     * Whether "Закрыто" even makes sense here. Restricted to the WON stage:
+     * closing a deal is the owner attesting the sale is fully done, which
+     * requires having said it was paid first — a deal cannot be finished on
+     * a question that has not been answered yet.
      */
     public function canBeClosed(): bool
     {
-        return $this->stage === 'payment';
+        return $this->stage_role === 'won';
     }
 
     /** How long this card has sat where it is — the stalled-deal signal. */
@@ -150,6 +125,11 @@ class Deal extends Model
     public function workspace(): BelongsTo
     {
         return $this->belongsTo(CrmWorkspace::class, 'crm_workspace_id');
+    }
+
+    public function crmStage(): BelongsTo
+    {
+        return $this->belongsTo(CrmStage::class, 'crm_stage_id');
     }
 
     public function customer(): BelongsTo

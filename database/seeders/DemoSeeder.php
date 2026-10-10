@@ -6,6 +6,7 @@ use App\Jobs\ExtractTextJob;
 use App\Models\Agent;
 use App\Models\Channel;
 use App\Models\Conversation;
+use App\Models\CrmStage;
 use App\Models\Customer;
 use App\Models\Dataset;
 use App\Models\DatasetProduct;
@@ -705,13 +706,22 @@ class DemoSeeder extends Seeder
                 ])->saveQuietly();
             }
 
+            // Demo deals never go through DealBoard::move() — this is the
+            // one other place crm_stage_id/stage_role have to be written
+            // alongside the literal stage name, or every role-keyed feature
+            // (the trend report, the paid badge, revenue) would read this
+            // account as having no pipeline at all.
+            $stageRow = CrmStage::defaultsFor($owner)->firstWhere('name', $profile['stage']);
+
             $deal->forceFill([
                 'title' => $profile['title'],
                 'amount' => $profile['amount'],
                 'deal_date' => $openedAt->toDateString(),
                 'payment_status' => ! empty($profile['paid']) ? 'paid' : 'unpaid',
                 'sales_origin' => $profile['sales_origin'] ?? 'social',
+                'crm_stage_id' => $stageRow?->id,
                 'stage' => $profile['stage'],
+                'stage_role' => $stageRow?->role,
                 'stage_changed_at' => $stageAt,
                 'closed_at' => ! empty($profile['closed']) ? $stageAt : null,
                 'cancelled_reason' => $profile['reason'] ?? null,

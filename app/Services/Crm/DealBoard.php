@@ -2,6 +2,7 @@
 
 namespace App\Services\Crm;
 
+use App\Models\CrmStage;
 use App\Models\Customer;
 use App\Models\Deal;
 use App\Models\Lead;
@@ -87,14 +88,7 @@ class DealBoard
             // aggregate queries must drop it for MySQL ONLY_FULL_GROUP_BY.
             ->reorder()
             ->whereIn('customer_id', $customerIds)
-            // Both conditions, not just the flag: a deal can have
-            // payment_status='paid' without ever having reached the Оплата
-            // stage (the edit form's payment_status field and the stage are
-            // independently settable — see DealController::update()), and
-            // counting those would inflate how many times this customer has
-            // actually paid. Requiring the stage too makes this count match
-            // what the board itself calls "paid" everywhere else.
-            ->where('payment_status', 'paid')->where('stage', 'payment')
+            ->tap(fn ($query) => self::paidInWonStage()($query))
             ->selectRaw('customer_id, COUNT(*) as total')
             ->groupBy('customer_id')->pluck('total', 'customer_id');
         $customers = $customerIds === [] ? collect() : Customer::ownedBy($user)
@@ -195,6 +189,7 @@ class DealBoard
             'id' => $deal->id,
             'crm_workspace_id' => $deal->crm_workspace_id,
             'stage' => $deal->stage,
+            'stage_role' => $deal->stage_role,
             'title' => $deal->title,
             'customer_id' => $deal->customer_id,
             'customer_name' => $deal->customer?->name ?: __('crm.customers.no_name'),
@@ -289,6 +284,23 @@ class DealBoard
             ->count();
     }
 
+    /**
+     * The "paid" definition used everywhere revenue or a purchase gets
+     * counted: payment_status alone is not enough — it is independently
+     * settable from the stage (see DealController::update()'s guard against
+     * exactly that) — so a deal can read payment_status='paid' without ever
+     * having reached the WON-role stage, and counting those would inflate
+     * every purchase/revenue figure the CRM reports. One definition, used by
+     * DealBoard::list()/overview(), CustomerController's buyer/repeat
+     * filters, the deep-linked deal's own count in DealController, and the
+     * customer profile's purchase summary — all five used to carry their
+     * own copy of this same query.
+     */
+    public static function paidInWonStage(): \Closure
+    {
+        return fn ($query) => $query->where('payment_status', 'paid')->where('stage_role', 'won');
+    }
+
     /** Business-level pipeline figures for the CRM landing page. */
     public function overview(User $user, array $filters = []): array
     {
@@ -296,17 +308,24 @@ class DealBoard
             ->when(! empty($filters['workspace_id']), fn ($query) => $query->where('crm_workspace_id', $filters['workspace_id']))
             ->when(in_array($filters['origin'] ?? 'all', Deal::SALES_ORIGINS, true), fn ($query) => $query->where('sales_origin', $filters['origin']));
 
-        $counts = (clone $scopedDeals)
-            ->selectRaw('stage, COUNT(*) as total, COALESCE(SUM(amount), 0) as value')
-            ->groupBy('stage')->get()->keyBy('stage');
+        $stages = CrmStage::defaultsFor($user);
+
+        $countsByStage = (clone $scopedDeals)
+            ->selectRaw('crm_stage_id, COUNT(*) as total, COALESCE(SUM(amount), 0) as value')
+            ->groupBy('crm_stage_id')->get()->keyBy('crm_stage_id');
+
+        $countsByRole = (clone $scopedDeals)
+            ->selectRaw("COALESCE(stage_role, '') as stage_role, COUNT(*) as total")
+            ->groupBy('stage_role')->get()->keyBy('stage_role');
 
         $cancelReasons = (clone $scopedDeals)
-            ->where('stage', Deal::STAGE_CANCELLED)
+            ->where('stage_role', 'lost')
             ->selectRaw("COALESCE(NULLIF(cancelled_reason, ''), 'unspecified') as reason, COUNT(*) as total")
             ->groupBy('reason')->orderByDesc('total')->limit(5)->get();
 
-        $paid = (int) ($counts['payment']->total ?? 0);
-        $lost = (int) ($counts[Deal::STAGE_CANCELLED]->total ?? 0);
+        $wonStage = $stages->firstWhere('role', 'won');
+        $paid = (int) ($countsByRole['won']->total ?? 0);
+        $lost = (int) ($countsByRole['lost']->total ?? 0);
 
         $originCounts = Deal::ownedBy($user)
             ->when(! empty($filters['workspace_id']), fn ($query) => $query->where('crm_workspace_id', $filters['workspace_id']))
@@ -314,8 +333,8 @@ class DealBoard
             ->groupBy('sales_origin')->pluck('total', 'sales_origin');
 
         return [
-            'counts' => collect(Deal::allStages())->mapWithKeys(fn ($stage) => [$stage => (int) ($counts[$stage]->total ?? 0)])->all(),
-            'paid_value' => (float) ($counts['payment']->value ?? 0),
+            'counts' => $stages->mapWithKeys(fn (CrmStage $stage) => [$stage->name => (int) ($countsByStage[$stage->id]->total ?? 0)])->all(),
+            'paid_value' => (float) ($wonStage ? ($countsByStage[$wonStage->id]->value ?? 0) : 0),
             'conversion' => $paid + $lost > 0 ? round(($paid / ($paid + $lost)) * 100) : null,
             'cancel_reasons' => $cancelReasons->map(fn ($row) => ['reason' => $row->reason, 'total' => (int) $row->total])->all(),
             'origin_counts' => collect(Deal::SALES_ORIGINS)->mapWithKeys(fn ($origin) => [$origin => (int) ($originCounts[$origin] ?? 0)])->all(),
@@ -332,9 +351,13 @@ class DealBoard
         $query = Deal::ownedBy($user);
 
         if (($filters['stage'] ?? 'all') === 'in_progress') {
-            $query->whereIn('stage', ['new_lead', 'haggling']);
+            // Initial + every intermediate — intermediates carry a NULL
+            // role, which `whereNotIn` would silently exclude (SQL's NOT IN
+            // is unknown, not true, against a NULL), so it is named here
+            // explicitly rather than negated.
+            $query->where(fn ($q) => $q->whereNull('stage_role')->orWhere('stage_role', 'initial'));
         } elseif (($filters['stage'] ?? 'all') === 'resolved') {
-            $query->whereIn('stage', ['payment', Deal::STAGE_CANCELLED]);
+            $query->whereIn('stage_role', ['won', 'lost']);
         } elseif (($filters['stage'] ?? 'all') !== 'all') {
             $query->where('stage', $filters['stage']);
         }
@@ -376,49 +399,62 @@ class DealBoard
      * automation safe: a hand move stamps the deal, and DealStageAutomation
      * refuses to overrule a stamp newer than its own signal.
      *
+     * The one place `deals.stage` / `deals.stage_role` / `deals.crm_stage_id`
+     * are written together, in the same transaction — see CrmStageSyncTest
+     * for the invariant this keeps: the three can never disagree, because
+     * nothing outside this method (and DealStageAutomation, which always
+     * routes through it) ever assigns any of them.
+     *
      * `position` no longer orders anything visible now that the board is a
      * list rather than columns a card sits within, but every caller still
      * writes it and nothing reads staleness into it, so it is left alone
      * rather than spending a migration on a column that costs nothing as is.
      */
-    public function move(Deal $deal, string $stage, ?int $position = null, bool $byOwner = false, ?string $cancelledReason = null): Deal
+    public function move(Deal $deal, CrmStage $stage, ?int $position = null, bool $byOwner = false, ?string $cancelledReason = null): Deal
     {
-        $changedStage = $deal->stage !== $stage;
-        // A deal can only be Закрыто while it sits in Оплата — leaving that
-        // stage for any reason (including back into it later) means the
-        // owner has to say so again, rather than a stale flag from a
-        // previous visit to Оплата quietly surviving the trip.
-        $leavingPayment = $changedStage && $stage !== 'payment';
+        $changedStage = $deal->crm_stage_id !== $stage->id;
+        // A deal can only be Закрыто while it sits in the WON stage —
+        // leaving that stage for any reason (including back into it later)
+        // means the owner has to say so again, rather than a stale flag
+        // from a previous visit quietly surviving the trip.
+        $leavingWon = $changedStage && $deal->stage_role === 'won' && $stage->role !== 'won';
 
-        DB::transaction(function () use ($deal, $stage, $position, $byOwner, $changedStage, $leavingPayment, $cancelledReason) {
+        DB::transaction(function () use ($deal, $stage, $position, $byOwner, $changedStage, $leavingWon, $cancelledReason) {
             $target = $position ?? 0;
 
             Deal::where('user_id', $deal->user_id)
-                ->where('stage', $stage)
+                ->where('crm_stage_id', $stage->id)
                 ->whereKeyNot($deal->id)
                 ->where('position', '>=', $target)
                 ->increment('position');
 
             $fill = array_filter([
-                'stage' => $stage,
+                'crm_stage_id' => $stage->id,
+                'stage' => $stage->name,
                 'position' => $target,
                 'stage_changed_at' => $changedStage ? now() : $deal->stage_changed_at,
                 'stage_set_by_owner_at' => $byOwner ? now() : $deal->stage_set_by_owner_at,
-                'cancelled_reason' => $stage === Deal::STAGE_CANCELLED ? $cancelledReason : null,
+                'cancelled_reason' => $stage->role === 'lost' ? $cancelledReason : null,
             ], fn ($value) => $value !== null);
 
-            if ($changedStage && $stage !== Deal::STAGE_CANCELLED) {
+            // Not filtered above with the rest: null is exactly the value an
+            // intermediate (role-less) stage needs written, and array_filter
+            // would silently keep whatever role the deal had before instead
+            // — precisely the drift CrmStageSyncTest exists to catch.
+            $fill['stage_role'] = $stage->role;
+
+            if ($changedStage && $stage->role !== 'lost') {
                 $fill['cancelled_reason'] = null;
             }
 
-            if ($stage === 'payment' && $changedStage) {
+            if ($stage->role === 'won' && $changedStage) {
                 // This stage is the owner's confirmation that money arrived.
                 $fill['payment_status'] = 'paid';
             }
 
             // Not part of the filtered array above: null is exactly the
             // value being assigned here, and array_filter would drop it.
-            if ($leavingPayment) {
+            if ($leavingWon) {
                 $fill['closed_at'] = null;
             }
 

@@ -5,6 +5,7 @@ namespace Tests\Feature\Crm;
 use App\Models\Agent;
 use App\Models\Channel;
 use App\Models\Conversation;
+use App\Models\CrmStage;
 use App\Models\Customer;
 use App\Models\Deal;
 use App\Models\Task;
@@ -24,8 +25,8 @@ class DealBoardTest extends TestCase
 
         $response->assertOk();
 
-        foreach (Deal::allStages() as $stage) {
-            $response->assertSee(__('crm.stages.'.$stage));
+        foreach (CrmStage::defaultsFor($owner) as $stage) {
+            $response->assertSee($stage->displayName());
         }
     }
 

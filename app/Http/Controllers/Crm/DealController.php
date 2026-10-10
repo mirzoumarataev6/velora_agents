@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Crm;
 
 use App\Http\Controllers\Controller;
 use App\Models\CrmNote;
+use App\Models\CrmStage;
 use App\Models\CrmWorkspace;
 use App\Models\Customer;
 use App\Models\Deal;
@@ -34,10 +35,10 @@ class DealController extends Controller
     protected const NEW_CUSTOMER = '__new__';
 
     /**
-     * The stage-filter sentinel for "no deal at all" — not a real stage
-     * (Deal::allStages() knows nothing about it), so DealBoard::list()
-     * matches zero deals under it and the client renders leadsWithoutDeals()
-     * in its place. See that method for why this bucket exists.
+     * The stage-filter sentinel for "no deal at all" — not a real stage (no
+     * owner's crm_stages ever contains it), so DealBoard::list() matches
+     * zero deals under it and the client renders leadsWithoutDeals() in its
+     * place. See that method for why this bucket exists.
      */
     public const LEADS_BUCKET = 'leads';
 
@@ -49,6 +50,9 @@ class DealController extends Controller
         $filters = $this->filters($request);
         $workspaces = CrmWorkspace::ownedBy($request->user())->orderByDesc('is_default')->orderBy('name')->get();
         $selectedWorkspace = $filters['workspace_id'] ? $workspaces->firstWhere('id', $filters['workspace_id']) : null;
+        // Already in pipeline order — initial, intermediates, won, then the
+        // lost stage last (its NULL position sorts after every other one).
+        $stages = CrmStage::defaultsFor($request->user());
         $showLeads = $filters['stage'] === self::LEADS_BUCKET;
         $hasLeadsBucket = $filters['origin'] === 'social' && $filters['workspace_id'] === null;
         $dealPage = $showLeads ? null : $this->board->list($request->user(), $filters);
@@ -59,9 +63,7 @@ class DealController extends Controller
             : null;
         $initialDeal = $deepLinkedDeal ? $this->board->card(
             $deepLinkedDeal,
-            // Both conditions — see DealBoard::list()'s identical purchase
-            // count for why payment_status alone is not enough.
-            $deepLinkedDeal->customer?->deals()->where('payment_status', 'paid')->where('stage', 'payment')->count() ?? 0,
+            $deepLinkedDeal->customer?->deals()->tap(fn ($q) => DealBoard::paidInWonStage()($q))->count() ?? 0,
             $deepLinkedDeal->customer?->conversations()->count() ?? 0,
         ) : null;
 
@@ -76,8 +78,16 @@ class DealController extends Controller
             'workspaces' => $workspaces,
             'selectedWorkspace' => $selectedWorkspace,
             'defaultWorkspaceId' => $defaultWorkspace->id,
-            'stages' => Deal::allStages(),
-            'cancelledStage' => Deal::STAGE_CANCELLED,
+            'stages' => $stages->pluck('name')->values()->all(),
+            // Keyed by name rather than relying on crm.stages' own 4-key
+            // translation table — a custom or renamed stage has no
+            // translation, and a system one's displayName() already reads
+            // from that table itself, so this is the one map that's
+            // correct either way.
+            'stageLabels' => $stages->mapWithKeys(fn (CrmStage $stage) => [$stage->name => $stage->displayName()])->all(),
+            'stageDotClasses' => $stages->mapWithKeys(fn (CrmStage $stage) => [$stage->name => CrmStage::dotClass($stage->color)])->all(),
+            'cancelledStage' => $stages->firstWhere('role', 'lost')?->name,
+            'wonStage' => $stages->firstWhere('role', 'won')?->name,
             'leadsBucket' => self::LEADS_BUCKET,
             'initialCustomer' => ctype_digit((string) old('customer_id'))
                 ? Customer::ownedBy($request->user())->find(old('customer_id'))
@@ -123,7 +133,7 @@ class DealController extends Controller
         $filters = $this->filters($request);
 
         $deals = $this->board->filteredDeals($request->user(), $filters)
-            ->with(['customer:id,name,phone'])
+            ->with(['customer:id,name,phone', 'crmStage'])
             ->get();
 
         $csv = Writer::from(fopen('php://temp', 'w+'));
@@ -140,7 +150,7 @@ class DealController extends Controller
                 (string) $deal->title,
                 (string) $deal->amount,
                 __('crm.payment_statuses.'.$deal->payment_status),
-                __('crm.stages.'.$deal->stage),
+                $deal->crmStage?->displayName() ?? $deal->stage,
                 __('crm.sales_origins.'.($deal->sales_origin ?: 'social')),
                 (string) $deal->deal_date?->toDateString(),
                 (string) $deal->won_reason,
@@ -213,11 +223,11 @@ class DealController extends Controller
     {
         return match ($activity->type) {
             'created' => __('crm.board.timeline_created'),
-            'stage_changed' => ($activity->data['to'] ?? null) === Deal::STAGE_CANCELLED
+            'stage_changed' => $this->activityIsToLostStage($activity)
                 ? __('crm.board.timeline_cancelled', ['reason' => $activity->data['reason'] ?: __('crm.board.reason_unspecified')])
                 : __('crm.board.timeline_stage', [
-                    'from' => __('crm.stages.'.($activity->data['from'] ?? 'new_lead')),
-                    'to' => __('crm.stages.'.($activity->data['to'] ?? 'new_lead')),
+                    'from' => $this->activityStageLabel($activity, 'from'),
+                    'to' => $this->activityStageLabel($activity, 'to'),
                 ]),
             // The won counterpart to 'stage_changed''s cancelled branch above
             // — see DealObserver for why closing gets its own activity type.
@@ -227,6 +237,32 @@ class DealController extends Controller
             'updated' => $this->activityChangesText($activity->data['changes'] ?? []),
             default => __('crm.board.timeline_updated'),
         };
+    }
+
+    /**
+     * Whether a stage_changed row's destination was the LOST stage — read
+     * from the frozen `to_role` a current write stores; a row written
+     * before that existed falls back to the literal default stage name,
+     * the only thing it ever had.
+     */
+    private function activityIsToLostStage(DealActivity $activity): bool
+    {
+        return array_key_exists('to_role', $activity->data ?? [])
+            ? $activity->data['to_role'] === 'lost'
+            : ($activity->data['to'] ?? null) === Deal::STAGE_CANCELLED;
+    }
+
+    /**
+     * A stage_changed row's from/to label, as it read at the moment it
+     * happened — the frozen `{key}_label` DealObserver now writes, or (for
+     * a row written before that existed) a live translation of the literal
+     * stage name, which is all such a row ever recorded.
+     */
+    private function activityStageLabel(DealActivity $activity, string $key): string
+    {
+        $data = $activity->data ?? [];
+
+        return $data[$key.'_label'] ?? __('crm.stages.'.($data[$key] ?? 'new_lead'));
     }
 
     /**
@@ -349,6 +385,8 @@ class DealController extends Controller
             $matchedExisting = false;
         }
 
+        $initial = CrmStage::initialFor($request->user());
+
         $deal = new Deal;
         $deal->forceFill([
             'user_id' => $request->user()->id,
@@ -363,7 +401,9 @@ class DealController extends Controller
             'amount' => $data['amount'],
             'deal_date' => $data['deal_date'] ?? now()->toDateString(),
             'sales_origin' => $data['sales_origin'] ?? 'social',
-            'stage' => Deal::STAGES[0],
+            'crm_stage_id' => $initial->id,
+            'stage' => $initial->name,
+            'stage_role' => $initial->role,
             'stage_changed_at' => now(),
             // Opened by hand, so it counts as the owner's own placement.
             'stage_set_by_owner_at' => now(),
@@ -429,15 +469,18 @@ class DealController extends Controller
     {
         $this->authorize('update', $deal);
 
+        $stages = CrmStage::ownedBy($request->user())->get();
+        $targetStage = $stages->firstWhere('name', $request->input('stage'));
+
         $data = $request->validate([
-            'stage' => ['required', 'string', 'in:'.implode(',', Deal::allStages())],
+            'stage' => ['required', 'string', Rule::in($stages->pluck('name'))],
             'position' => ['nullable', 'integer', 'min:0', 'max:10000'],
-            'cancelled_reason' => [$request->input('stage') === Deal::STAGE_CANCELLED ? 'required' : 'nullable', 'string', 'max:2000'],
+            'cancelled_reason' => [$targetStage?->role === 'lost' ? 'required' : 'nullable', 'string', 'max:2000'],
         ], [
             'cancelled_reason.required' => __('crm.board.cancel_reason_required'),
         ]);
 
-        $this->board->move($deal, $data['stage'], $data['position'] ?? null, byOwner: true, cancelledReason: $data['cancelled_reason'] ?? null);
+        $this->board->move($deal, $targetStage, $data['position'] ?? null, byOwner: true, cancelledReason: $data['cancelled_reason'] ?? null);
 
         return response()->json(['deal' => $this->board->card($deal->fresh()->load('customer', 'conversation.channel'))]);
     }
@@ -453,23 +496,25 @@ class DealController extends Controller
     {
         $this->authorize('update', $deal);
 
+        $stages = CrmStage::ownedBy($request->user())->get();
+        $stageByName = fn (?string $name) => $stages->firstWhere('name', $name);
+        $effectiveStage = $stageByName($request->input('stage', $deal->stage));
+
         $data = $request->validate([
             'title' => ['required', 'string', 'max:255'],
             'amount' => ['required', 'numeric', 'gt:0', 'max:99999999.99'],
             // 'paid' is not just another value here: it is the deal's
             // revenue and purchase-count queries' only signal that money
             // actually arrived (see CustomerController::index() and
-            // DealBoard::list()). Оплата is what attests that — normally by
-            // DealBoard::move() setting this automatically when a deal
-            // enters the stage — so this field accepting 'paid' on its own,
+            // DealBoard::list()). The WON-role stage is what attests that —
+            // normally by DealBoard::move() setting this automatically when
+            // a deal enters it — so this field accepting 'paid' on its own,
             // independent of stage, let a deal be counted as a sale it
             // never reached. Allowed freely for 'unpaid'/'partial' (a
             // deposit while still haggling is real); 'paid' only once the
             // deal is actually there, whether already or in this same save.
-            'payment_status' => ['required', 'string', 'in:'.implode(',', Deal::PAYMENT_STATUSES), function ($attribute, $value, $fail) use ($request, $deal) {
-                $effectiveStage = $request->input('stage', $deal->stage);
-
-                if ($value === 'paid' && $effectiveStage !== 'payment') {
+            'payment_status' => ['required', 'string', 'in:'.implode(',', Deal::PAYMENT_STATUSES), function ($attribute, $value, $fail) use ($effectiveStage) {
+                if ($value === 'paid' && $effectiveStage?->role !== 'won') {
                     $fail(__('crm.board.payment_status_requires_payment_stage'));
                 }
             }],
@@ -479,12 +524,12 @@ class DealController extends Controller
             // silently wipe the legacy column on every save.
             'note' => ['sometimes', 'nullable', 'string', 'max:5000'],
             'tags' => ['sometimes', 'nullable', 'string', 'max:500'],
-            'stage' => ['nullable', 'string', 'in:'.implode(',', Deal::allStages())],
+            'stage' => ['nullable', 'string', Rule::in($stages->pluck('name'))],
             'deal_date' => ['nullable', 'date'],
             'sales_origin' => ['sometimes', 'required', 'string', 'in:'.implode(',', Deal::SALES_ORIGINS)],
             'crm_workspace_id' => ['sometimes', 'required', 'integer', Rule::exists('crm_workspaces', 'id')->where('user_id', $request->user()->id)],
             'closed' => ['nullable', 'boolean'],
-            'cancelled_reason' => [($request->input('stage', $deal->stage) === Deal::STAGE_CANCELLED ? 'required' : 'nullable'), 'string', 'max:2000'],
+            'cancelled_reason' => [$effectiveStage?->role === 'lost' ? 'required' : 'nullable', 'string', 'max:2000'],
             // Optional, unlike cancelled_reason: a win needs no excuse.
             'won_reason' => ['nullable', 'string', 'max:2000'],
         ], [
@@ -504,8 +549,8 @@ class DealController extends Controller
         // quick-select still does — the guard that keeps the automation from
         // overruling this only works if every hand move stamps the deal here.
         if (! empty($data['stage']) && $data['stage'] !== $deal->stage) {
-            $this->board->move($deal, $data['stage'], byOwner: true, cancelledReason: $data['cancelled_reason'] ?? null);
-        } elseif ($deal->stage === Deal::STAGE_CANCELLED && array_key_exists('cancelled_reason', $data)) {
+            $this->board->move($deal, $stageByName($data['stage']), byOwner: true, cancelledReason: $data['cancelled_reason'] ?? null);
+        } elseif ($deal->stage_role === 'lost' && array_key_exists('cancelled_reason', $data)) {
             $deal->update(['cancelled_reason' => $data['cancelled_reason']]);
         }
 
@@ -570,7 +615,11 @@ class DealController extends Controller
         $workspaceId = ctype_digit((string) $request->query('workspace')) && CrmWorkspace::ownedBy($request->user())->whereKey($request->query('workspace'))->exists()
             ? (int) $request->query('workspace')
             : null;
-        $stage = in_array($stage, array_merge(['all', self::LEADS_BUCKET, 'in_progress', 'resolved'], Deal::allStages()), true) ? $stage : 'all';
+        $validStages = array_merge(
+            ['all', self::LEADS_BUCKET, 'in_progress', 'resolved'],
+            CrmStage::ownedBy($request->user())->pluck('name')->all(),
+        );
+        $stage = in_array($stage, $validStages, true) ? $stage : 'all';
 
         // People without deals have no origin or folder yet. Keep that bucket
         // available only in the online, account-wide view where its records

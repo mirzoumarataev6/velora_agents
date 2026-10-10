@@ -9,6 +9,7 @@ use App\Models\CustomerMerge;
 use App\Models\Deal;
 use App\Models\Message;
 use App\Services\Crm\CustomerResolver;
+use App\Services\Crm\DealBoard;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -98,21 +99,16 @@ class CustomerController extends Controller
             ->when(filled($data['origin'] ?? null), fn ($query) => $query->whereHas('deals', fn ($deals) => $paidDeal($deals)->where('sales_origin', $data['origin'])));
     }
 
-    /**
-     * Both conditions, not just the flag: payment_status and stage are
-     * independently settable (see DealController::update()'s guard against
-     * exactly this), so a deal marked paid without ever reaching Оплата must
-     * not count this customer as a buyer.
-     */
+    /** The shared "paid" definition — see DealBoard::paidInWonStage() for why payment_status alone is not enough. */
     private function paidDealFilter(): \Closure
     {
-        return fn ($query) => $query->where('payment_status', 'paid')->where('stage', 'payment');
+        return DealBoard::paidInWonStage();
     }
 
     /** Two or more paid deals — the repeat-buyer segment. */
     private function repeatBuyerFilter(): \Closure
     {
-        return fn ($query) => $query->where('payment_status', 'paid')->where('stage', 'payment')
+        return fn ($query) => DealBoard::paidInWonStage()($query)
             // whereHas starts with SELECT *, which MySQL rejects with ONLY_FULL_GROUP_BY.
             // Replace it with the sole grouped column; selectRaw would append to *.
             ->select('customer_id')->groupBy('customer_id')->havingRaw('COUNT(*) >= 2');
@@ -277,6 +273,7 @@ class CustomerController extends Controller
             'leads.agent:id,name,slug',
             'deals' => fn ($q) => $q->orderByDesc('id'),
             'deals.workspace:id,name,is_default',
+            'deals.crmStage',
             // Open tasks first, soonest due first: a profile should answer
             // "what do I owe this person" before "what did I already do".
             'tasks' => fn ($q) => $q->orderByRaw('done_at is not null')
