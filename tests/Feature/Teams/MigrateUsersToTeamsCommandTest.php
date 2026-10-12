@@ -141,4 +141,85 @@ class MigrateUsersToTeamsCommandTest extends TestCase
         $this->assertNotNull($this->agent->refresh()->team_id);
         $this->assertNotEquals($second->current_team_id, $this->agent->team_id);
     }
+
+    /**
+     * Until a later stage wires every write path to stamp team_id itself, a
+     * row created after a user's first migration (a new conversation, a new
+     * deal, ...) is born with team_id = NULL. The backfill command has to
+     * be able to come back and fill those in, or team:verify-migration can
+     * never pass again.
+     */
+    public function test_rows_created_after_the_first_migration_are_filled_in_on_a_later_run(): void
+    {
+        $this->artisan('team:migrate-users')->assertExitCode(0);
+        $team = Team::find($this->user->refresh()->current_team_id);
+
+        $newConversation = Conversation::factory()->for($this->agent)->create(['channel_id' => $this->channel->id]);
+        $newCustomer = Customer::factory()->for($this->user)->create();
+        $newDeal = Deal::factory()->for($this->user)->create(['customer_id' => $newCustomer->id]);
+
+        $this->assertNull($newConversation->team_id);
+        $this->assertNull($newDeal->team_id);
+
+        $this->artisan('team:migrate-users')
+            ->expectsOutputToContain('Topped up 1 user(s)')
+            ->assertExitCode(0);
+
+        $this->assertSame($team->id, $newConversation->refresh()->team_id);
+        $this->assertSame($team->id, $newCustomer->refresh()->team_id);
+        $this->assertSame($team->id, $newDeal->refresh()->team_id);
+
+        // And the already-filled rows from the first run are untouched.
+        $this->assertSame($team->id, $this->deal->refresh()->team_id);
+
+        $this->artisan('team:verify-migration')
+            ->expectsOutputToContain('Verification passed')
+            ->assertExitCode(0);
+    }
+
+    /** The top-up pass must never clobber a row that already carries a (different) team's id. */
+    public function test_top_up_never_overwrites_a_row_that_already_belongs_to_a_different_team(): void
+    {
+        $this->artisan('team:migrate-users')->assertExitCode(0);
+
+        $otherTeam = Team::factory()->create();
+        $this->deal->forceFill(['team_id' => $otherTeam->id])->save();
+
+        $newDeal = Deal::factory()->for($this->user)->create(['customer_id' => $this->customer->id]);
+        $this->assertNull($newDeal->team_id);
+
+        $this->artisan('team:migrate-users')->assertExitCode(0);
+
+        // Left exactly as it was — never reset back to the user's own team.
+        $this->assertSame($otherTeam->id, $this->deal->refresh()->team_id);
+
+        // The genuinely-missing row was still filled, with the user's own team.
+        $this->assertSame($this->user->refresh()->current_team_id, $newDeal->refresh()->team_id);
+    }
+
+    public function test_dry_run_reports_top_up_counts_and_writes_nothing(): void
+    {
+        $this->artisan('team:migrate-users')->assertExitCode(0);
+        $team = Team::find($this->user->refresh()->current_team_id);
+
+        // Creating one Deal also creates one DealActivity (DealObserver's audit
+        // row), so the genuinely missing count for this one new row is 2, not 1.
+        $newDeal = Deal::factory()->for($this->user)->create(['customer_id' => $this->customer->id]);
+
+        // A plain Artisan::call rather than $this->artisan()->expectsOutputToContain()
+        // here on purpose: chaining a second expectsOutputToContain() assertion
+        // onto a command already run once earlier in the same test does not
+        // reliably capture output in this Laravel testing helper — asserting on
+        // Artisan::output() directly does.
+        $exitCode = \Illuminate\Support\Facades\Artisan::call('team:migrate-users', ['--dry-run' => true]);
+        $output = \Illuminate\Support\Facades\Artisan::output();
+
+        $this->assertSame(0, $exitCode);
+        $this->assertStringContainsString('0 user(s) have no team yet; 1 user(s) already have a team', $output);
+        $this->assertStringContainsString('would top up user #'.$this->user->id, $output);
+        $this->assertStringContainsString('fill 2 row(s)', $output);
+
+        $this->assertNull($newDeal->refresh()->team_id);
+        $this->assertSame($team->id, $this->deal->refresh()->team_id);
+    }
 }

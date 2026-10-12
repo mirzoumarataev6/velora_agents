@@ -8,9 +8,11 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * Read-only check that the team backfill is complete: no row left with a
- * NULL team_id, and no user left with a NULL current_team_id. The later
- * migration that flips team_id to NOT NULL is gated on this passing clean,
- * per the Phase-1 plan.
+ * NULL team_id, no row pointing at a team_id that doesn't exist (team_id
+ * carries no foreign key constraint yet — see the migration that adds it —
+ * so the database itself won't catch this), and no user left with a NULL
+ * current_team_id. The later migration that flips team_id to NOT NULL is
+ * gated on this passing clean, per the Phase-1 plan.
  */
 class VerifyTeamMigrationCommand extends Command
 {
@@ -34,11 +36,22 @@ class VerifyTeamMigrationCommand extends Command
 
         foreach (self::TABLES as $table) {
             $missing = DB::table($table)->whereNull('team_id')->count();
+            $orphaned = DB::table($table)
+                ->whereNotNull('team_id')
+                ->whereNotIn('team_id', DB::table('teams')->select('id'))
+                ->count();
 
             if ($missing > 0) {
                 $clean = false;
                 $this->error("{$table}: {$missing} row(s) with no team_id");
-            } else {
+            }
+
+            if ($orphaned > 0) {
+                $clean = false;
+                $this->error("{$table}: {$orphaned} row(s) with a team_id that does not exist in teams");
+            }
+
+            if ($missing === 0 && $orphaned === 0) {
                 $this->line("{$table}: ok");
             }
         }
