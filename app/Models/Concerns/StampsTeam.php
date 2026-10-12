@@ -24,7 +24,13 @@ use Illuminate\Support\Facades\DB;
  *   path that sets it explicitly always wins.
  * - Never throws. An unresolvable row (an agent or user without a team yet)
  *   is left with `team_id = NULL`; `team:verify-migration` is the
- *   permanent safety net that notices, not this hook.
+ *   permanent safety net that notices, not this hook. Since Stage 2d-2's
+ *   NOT NULL flip on all 26 of these tables, "left with NULL" no longer
+ *   means a quietly incomplete row — the database itself refuses the
+ *   INSERT. This hook's own behaviour is unchanged (it still never throws
+ *   on this model's side); what changed is that an unresolvable row now
+ *   surfaces as a hard failure one layer down instead of a silent gap
+ *   `team:verify-migration` would have had to go looking for.
  */
 trait StampsTeam
 {

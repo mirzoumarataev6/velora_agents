@@ -8,6 +8,7 @@ use App\Models\Deal;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 /**
@@ -220,6 +221,15 @@ class CrmNoteTest extends TestCase
         // that rolls back whichever migration happens to be LAST overall,
         // which stopped being this one the moment a later migration (deals
         // tags) was added.
+        //
+        // Stage 2d-2 made crm_notes.team_id NOT NULL, but this migration
+        // predates team_id entirely — its raw insert() never set one. That
+        // is exactly what it is being tested against (a real historical
+        // migration's actual behavior), so the column is relaxed back to
+        // nullable for the duration of this one re-run rather than editing
+        // the already-shipped migration itself.
+        Schema::table('crm_notes', fn ($table) => $table->unsignedBigInteger('team_id')->nullable()->change());
+
         $migration = require database_path('migrations/2026_10_12_000002_seed_crm_notes_from_legacy_note_columns.php');
         $migration->down();
         $migration->up();
@@ -246,6 +256,11 @@ class CrmNoteTest extends TestCase
     {
         $owner = User::factory()->create();
         Customer::factory()->for($owner)->create(['note' => 'Will be backfilled']);
+
+        // See the sibling test above for why: this migration predates
+        // team_id, so its raw insert() needs the column relaxed back to
+        // nullable for this one re-run.
+        Schema::table('crm_notes', fn ($table) => $table->unsignedBigInteger('team_id')->nullable()->change());
 
         $migration = require database_path('migrations/2026_10_12_000002_seed_crm_notes_from_legacy_note_columns.php');
         $migration->up();

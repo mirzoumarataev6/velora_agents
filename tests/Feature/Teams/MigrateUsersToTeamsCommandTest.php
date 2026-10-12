@@ -43,6 +43,20 @@ class MigrateUsersToTeamsCommandTest extends TestCase
     {
         parent::setUp();
 
+        // Stage 2d-2 made team_id NOT NULL on all 26 tables — but this
+        // entire test class exists to exercise the backfill command
+        // AGAINST the state that preceded it (a row with no team_id at
+        // all). That state can no longer be created in the schema Stage
+        // 2d-2 leaves behind, so that stage's migrations are un-applied
+        // here, for this test class only: each one's down() is nothing but
+        // the column going back to nullable, no data loss, the same way
+        // CrmNoteTest relaxes crm_notes for its own migration re-run.
+        foreach ([
+            '2026_10_18_000001_make_team_id_not_null_on_independent_tables.php',
+        ] as $file) {
+            (require database_path('migrations/'.$file))->down();
+        }
+
         // A "legacy" account: every row below is created the way it is
         // today, with no team_id at all — exactly the shape the backfill
         // command has to repair. createQuietly() skips UserObserver's

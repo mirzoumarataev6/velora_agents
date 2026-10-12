@@ -12,6 +12,18 @@ class VerifyTeamMigrationCommandTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        // This test class builds legacy (team_id NULL) agents on purpose —
+        // the exact state Stage 2d-2's NOT NULL flip on `agents` (among
+        // others) now refuses at the database level. Only group (a)'s
+        // migration needs relaxing here: every fixture below is an Agent,
+        // never a crm_workspaces/crm_stages/customers/deals row.
+        (require database_path('migrations/2026_10_18_000001_make_team_id_not_null_on_independent_tables.php'))->down();
+    }
+
     /**
      * createQuietly() rather than create(): this test wants the pre-Stage-2a
      * "no team yet" state, which a normal create() no longer produces now
