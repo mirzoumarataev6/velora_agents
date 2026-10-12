@@ -7,6 +7,7 @@ use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -190,5 +191,20 @@ class User extends Authenticatable
     public function biDatasets(): HasMany
     {
         return $this->hasMany(BiDataset::class);
+    }
+
+    /**
+     * Navigation state only — see `users.current_team_id`'s migration
+     * comment. Not yet read by anything: Stage 1 of the team migration is
+     * schema-only.
+     */
+    public function currentTeam(): BelongsTo
+    {
+        return $this->belongsTo(Team::class, 'current_team_id');
+    }
+
+    public function teamMemberships(): HasMany
+    {
+        return $this->hasMany(TeamMembership::class);
     }
 }
