@@ -204,4 +204,40 @@ class ExplicitTeamStampingTest extends TestCase
         $this->assertSame($teamA->id, $customer->team_id);
         $this->assertNotSame($teamB->id, $customer->team_id);
     }
+
+    public function test_a_merge_triggered_via_claim_phone_stamps_the_customer_merge_with_the_surviving_customers_team_not_current_team_id(): void
+    {
+        [$owner, $teamA, $teamB] = $this->makeOwnerWithASecondTeam();
+
+        $agent = Agent::factory()->for($owner)->create();
+        $this->assertSame($teamA->id, $agent->team_id);
+
+        // The holder: an existing customer who already owns this phone
+        // number, built while current_team_id still correctly points at
+        // team A.
+        $phone = '+992900112233';
+        $holder = Customer::factory()->for($owner)->withPhone($phone)->create();
+        $this->assertSame($teamA->id, $holder->team_id);
+
+        // A thread with no number yet opens a second, phone-less profile.
+        $channel = Channel::factory()->for($agent)->create();
+        $conversation = Conversation::factory()->for($agent)->create(['channel_id' => $channel->id]);
+        $openedCustomer = Customer::find($conversation->fresh()->customer_id);
+        $this->assertNotSame($holder->id, $openedCustomer->id);
+
+        $this->switchTo($owner, $teamB);
+
+        // A lead capturing the holder's own number against that same
+        // thread: resolveForLead() -> resolveForConversation() ->
+        // claimPhone() finds the holder already owns this key and merges
+        // the phone-less profile into it — the real background chain
+        // (LeadObserver, off a webhook), not a shortcut.
+        Lead::factory()->for($agent)->create(['conversation_id' => $conversation->id, 'phone' => $phone]);
+
+        $merge = DB::table('customer_merges')->where('into_customer_id', $holder->id)->first();
+        $this->assertNotNull($merge, 'claimPhone() did not merge the phone-less profile into the holder.');
+
+        $this->assertSame($teamA->id, $merge->team_id);
+        $this->assertNotSame($teamB->id, $merge->team_id);
+    }
 }

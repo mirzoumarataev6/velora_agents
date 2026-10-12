@@ -13,7 +13,12 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * exactly which rows to move back — see the migration for why no snapshot of
  * either profile's own fields is stored alongside it.
  */
-#[Fillable(['user_id', 'from_customer_id', 'into_customer_id', 'moved_conversation_ids', 'moved_lead_ids', 'moved_deal_ids', 'moved_task_ids', 'undone_at'])]
+// team_id is fillable alongside user_id: both are only ever set by
+// CustomerResolver::merge() from trusted values already in scope (the
+// surviving customer), never from request input — see that method for why
+// team_id is passed explicitly rather than left to StampsTeam's own
+// user_id fallback.
+#[Fillable(['user_id', 'team_id', 'from_customer_id', 'into_customer_id', 'moved_conversation_ids', 'moved_lead_ids', 'moved_deal_ids', 'moved_task_ids', 'undone_at'])]
 class CustomerMerge extends Model
 {
     use StampsTeam;

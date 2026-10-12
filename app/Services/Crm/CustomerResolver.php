@@ -272,6 +272,14 @@ class CustomerResolver
 
             CustomerMerge::create([
                 'user_id' => $into->user_id,
+                // Explicit, not left to StampsTeam's own user_id fallback:
+                // this can run in the background (claimPhone(), off a
+                // webhook resolving a thread's number), where
+                // current_team_id is whichever team the owner happens to
+                // be looking at right now, not necessarily the team that
+                // owns $into. $into->team_id is already resolved and
+                // already in scope.
+                'team_id' => $into->team_id,
                 'from_customer_id' => $from->id,
                 'into_customer_id' => $into->id,
                 'moved_conversation_ids' => $conversationIds,
