@@ -3,10 +3,17 @@
 namespace Tests\Feature\Teams;
 
 use App\Models\Agent;
+use App\Models\Channel;
+use App\Models\Conversation;
 use App\Models\CrmStage;
 use App\Models\CrmWorkspace;
+use App\Models\Customer;
+use App\Models\Deal;
+use App\Models\Lead;
 use App\Models\Team;
 use App\Models\User;
+use App\Services\Crm\CustomerResolver;
+use App\Services\Haggling\HagglingService;
 use App\Services\Teams\CreatesPersonalTeam;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -151,5 +158,94 @@ class TeamAwareCrmDefaultsTest extends TestCase
         $this->assertNotSame($initialA->id, $initialB->id);
 
         $this->assertSame(8, CrmStage::where('user_id', $owner->id)->count());
+    }
+
+    // --- Background call sites --------------------------------------------
+
+    public function test_conversation_started_files_the_deal_under_team_as_own_workspace_and_initial_stage(): void
+    {
+        [$owner, $teamA, $teamB] = $this->makeOwnerWithASecondTeam();
+
+        $agent = Agent::factory()->for($owner)->create();
+        $this->assertSame($teamA->id, $agent->team_id);
+        $channel = Channel::factory()->for($agent)->create();
+
+        $this->switchTo($owner, $teamB);
+
+        // A customer's first message on this thread: the real background
+        // chain (ConversationObserver -> CustomerResolver -> DealStageAutomation::conversationStarted()).
+        $conversation = Conversation::factory()->for($agent)->create(['channel_id' => $channel->id]);
+
+        $deal = Deal::where('conversation_id', $conversation->id)->first();
+        $this->assertNotNull($deal, 'DealStageAutomation did not open a deal for this conversation.');
+
+        $workspace = CrmWorkspace::find($deal->crm_workspace_id);
+        $stage = CrmStage::find($deal->crm_stage_id);
+
+        $this->assertSame($teamA->id, $workspace->team_id);
+        $this->assertSame($teamA->id, $stage->team_id);
+        $this->assertNotSame($teamB->id, $workspace->team_id);
+        $this->assertNotSame($teamB->id, $stage->team_id);
+    }
+
+    public function test_negotiation_opened_advances_the_deal_into_team_as_own_intermediate_stage(): void
+    {
+        [$owner, $teamA, $teamB] = $this->makeOwnerWithASecondTeam();
+
+        $agent = Agent::factory()->for($owner)->create();
+        $channel = Channel::factory()->for($agent)->create();
+        $conversation = Conversation::factory()->for($agent)->create(['channel_id' => $channel->id]);
+
+        $deal = Deal::where('conversation_id', $conversation->id)->first();
+        $this->assertNotNull($deal);
+        $initialStageId = $deal->crm_stage_id;
+
+        // Team B also has its own default pipeline (e.g. seeded for some
+        // other agent of this same owner). Without the fix,
+        // CrmStage::intermediatesFor($user) is user_id-scoped only, so it
+        // would see BOTH teams' intermediate stages (2, not 1) and the
+        // ">1 means ambiguous" guard would abort the signal entirely —
+        // this is what makes the divergence observable, not just a
+        // different (but still singular) answer.
+        CrmStage::defaultsFor($owner, $teamB);
+
+        $this->switchTo($owner, $teamB);
+
+        // A haggle-type lead on the same thread: LeadObserver ->
+        // DealStageAutomation::negotiationOpened() -> CrmStage::intermediatesFor().
+        Lead::factory()->for($agent)->create([
+            'conversation_id' => $conversation->id,
+            'type' => HagglingService::TYPE,
+            'phone' => null,
+        ]);
+
+        $stage = CrmStage::find($deal->fresh()->crm_stage_id);
+
+        $this->assertNotSame($initialStageId, $stage->id, 'The deal was never advanced out of its initial stage.');
+        $this->assertNull($stage->role, 'Expected the intermediate (role-less) stage.');
+        $this->assertSame($teamA->id, $stage->team_id);
+        $this->assertNotSame($teamB->id, $stage->team_id);
+    }
+
+    public function test_resolve_for_lead_files_the_customer_under_team_as_own_workspace(): void
+    {
+        [$owner, $teamA, $teamB] = $this->makeOwnerWithASecondTeam();
+
+        $agent = Agent::factory()->for($owner)->create();
+        $this->assertSame($teamA->id, $agent->team_id);
+
+        $this->switchTo($owner, $teamB);
+
+        // A lead with no conversation and a phone number: LeadObserver's
+        // resolve() reaches resolveForLead()'s forceCreate branch, the
+        // real background chain, not a shortcut.
+        $lead = Lead::factory()->for($agent)->create(['conversation_id' => null, 'phone' => '+992900112233']);
+
+        $customer = Customer::where('phone_key', app(CustomerResolver::class)->phoneKey($lead->phone))->first();
+        $this->assertNotNull($customer, 'resolveForLead() did not file a customer for this lead.');
+
+        $workspace = CrmWorkspace::find($customer->crm_workspace_id);
+        $this->assertSame($teamA->id, $workspace->team_id);
+        $this->assertNotSame($teamB->id, $workspace->team_id);
     }
 }

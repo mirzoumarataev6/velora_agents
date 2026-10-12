@@ -140,7 +140,11 @@ class CustomerResolver
                     // is somehow missing — StampsTeam falls back exactly as
                     // today in that case.
                     'team_id' => $lead->agent?->team_id,
-                    'crm_workspace_id' => CrmWorkspace::defaultFor(User::findOrFail($userId))->id,
+                    // Same team, passed through to the workspace lookup
+                    // too, so a background-filed customer and the folder
+                    // it lands in never disagree about which team they
+                    // belong to.
+                    'crm_workspace_id' => CrmWorkspace::defaultFor(User::findOrFail($userId), $lead->agent?->team_id)->id,
                     'name' => $lead->customer_name,
                     'phone' => $phone,
                     'phone_key' => $this->phoneKey($phone),
@@ -407,7 +411,10 @@ class CustomerResolver
                 // missing — StampsTeam falls back exactly as today in that
                 // case.
                 'team_id' => $conversation->agent?->team_id,
-                'crm_workspace_id' => CrmWorkspace::defaultFor(User::findOrFail($userId))->id,
+                // Same team, passed through to the workspace lookup too,
+                // so a background-filed customer and the folder it lands
+                // in never disagree about which team they belong to.
+                'crm_workspace_id' => CrmWorkspace::defaultFor(User::findOrFail($userId), $conversation->agent?->team_id)->id,
                 'name' => $conversation->external_user_name,
                 'phone' => $key !== null ? $phone : null,
                 'phone_key' => $key,

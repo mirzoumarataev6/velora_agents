@@ -62,13 +62,20 @@ class DealStageAutomation
             return null;
         }
 
-        $initial = CrmStage::initialFor($customer->user);
+        // The team this thread's agent belongs to, not current_team_id:
+        // this runs off a webhook (ConversationObserver), where
+        // current_team_id is whichever team the owner happens to be
+        // looking at right now, not necessarily the team this agent
+        // belongs to. Null (no agent, or an agent not yet stamped with a
+        // team) falls back to exactly today's user_id-scoped behaviour.
+        $team = $conversation->agent?->team_id;
+        $initial = CrmStage::initialFor($customer->user, $team);
 
         $deal = new Deal;
 
         $deal->forceFill([
             'user_id' => $customer->user_id,
-            'crm_workspace_id' => CrmWorkspace::defaultFor($customer->user)->id,
+            'crm_workspace_id' => CrmWorkspace::defaultFor($customer->user, $team)->id,
             'customer_id' => $customer->id,
             'conversation_id' => $conversation->id,
             'agent_id' => $conversation->agent_id,
@@ -103,7 +110,14 @@ class DealStageAutomation
         }
 
         $user = $lead->customer?->user;
-        $intermediates = $user !== null ? CrmStage::intermediatesFor($user) : collect();
+        // Same reasoning as conversationStarted() above: the lead's own
+        // agent is the team this actually belongs to, off a webhook
+        // (LeadObserver) rather than the owner's current_team_id. Falls
+        // back to the customer's own (already-resolved) team_id if the
+        // agent relation is somehow missing, and to today's behaviour if
+        // neither is available.
+        $team = $lead->agent?->team_id ?? $lead->customer?->team_id;
+        $intermediates = $user !== null ? CrmStage::intermediatesFor($user, $team) : collect();
 
         if ($intermediates->count() !== 1) {
             return null;
