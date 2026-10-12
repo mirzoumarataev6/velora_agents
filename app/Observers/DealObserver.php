@@ -70,6 +70,13 @@ class DealObserver
     {
         DealActivity::create([
             'user_id' => $deal->user_id,
+            // Explicit, not left to StampsTeam's own user_id fallback: a deal
+            // opened in the background (DealStageAutomation, off a webhook)
+            // already carries the right team via its own agent_id, resolved
+            // the moment it was created — reusing that here is correct
+            // regardless of which team the owner happens to be looking at
+            // right now, which is all current_team_id could tell us instead.
+            'team_id' => $deal->team_id,
             'deal_id' => $deal->id,
             'type' => $type,
             'data' => $data ?: null,
