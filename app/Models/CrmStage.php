@@ -44,11 +44,22 @@ class CrmStage extends Model
                 throw ValidationException::withMessages(['role' => __('crm.stages.role_immutable')]);
             }
 
-            if ($stage->role !== null && static::where('user_id', $stage->user_id)
-                ->where('role', $stage->role)
-                ->whereKeyNot($stage->id)
-                ->exists()) {
-                throw ValidationException::withMessages(['role' => __('crm.stages.role_taken')]);
+            if ($stage->role !== null) {
+                // Scoped by team_id rather than user_id whenever the stage
+                // has one: two of this user's teams must each get their own
+                // 'initial'/'won'/'lost' stage without tripping each
+                // other's uniqueness, the way a single-team account's
+                // stages (team_id already resolved by StampsTeam) would
+                // otherwise collide with a second team's defaultsFor()
+                // call. A stage still legacy (team_id NULL) keeps the old,
+                // user_id-scoped check exactly as before.
+                $duplicate = $stage->team_id !== null
+                    ? static::where('team_id', $stage->team_id)->where('role', $stage->role)->whereKeyNot($stage->id)->exists()
+                    : static::where('user_id', $stage->user_id)->where('role', $stage->role)->whereKeyNot($stage->id)->exists();
+
+                if ($duplicate) {
+                    throw ValidationException::withMessages(['role' => __('crm.stages.role_taken')]);
+                }
             }
         });
 
@@ -87,6 +98,17 @@ class CrmStage extends Model
         return $query->orderByRaw('position is null')->orderBy('position');
     }
 
+    /** @return list<array<string, mixed>> */
+    private static function seedDefinitions(): array
+    {
+        return [
+            ['name' => Deal::STAGES[0], 'role' => 'initial', 'position' => 0, 'color' => 'slate'],
+            ['name' => Deal::STAGES[1], 'role' => null, 'position' => 1, 'color' => 'amber'],
+            ['name' => Deal::STAGES[2], 'role' => 'won', 'position' => 2, 'color' => 'green'],
+            ['name' => Deal::STAGE_CANCELLED, 'role' => 'lost', 'position' => null, 'color' => 'rose'],
+        ];
+    }
+
     /**
      * Idempotently ensures this owner has their four role-bearing stages,
      * creating them (as a fresh, un-customized pipeline) the first time
@@ -95,45 +117,69 @@ class CrmStage extends Model
      * accounts created after this table existed rather than backfilled
      * into it.
      *
+     * `$team` is optional and additive, same reasoning as
+     * `CrmWorkspace::defaultFor()`: `null` is byte-for-byte today's
+     * behaviour (scoped by `user_id` alone). Passed a team, this seeds (or
+     * finds) that team's OWN four stages, scoped by `team_id` — unlike
+     * `crm_workspaces`, there is no hard uniqueness constraint stopping a
+     * second set from existing side by side with a legacy, still-NULL-team
+     * one, so no adoption step is needed here the way `defaultFor()` needs
+     * one; a brand new team-scoped set is simply created.
+     *
      * @return Collection<int, CrmStage>
      */
-    public static function defaultsFor(User $user): Collection
+    public static function defaultsFor(User $user, Team|int|null $team = null): Collection
     {
-        $existing = static::ownedBy($user)->ordered()->get();
+        if ($team === null) {
+            $existing = static::ownedBy($user)->ordered()->get();
+
+            if ($existing->isNotEmpty()) {
+                return $existing;
+            }
+
+            foreach (static::seedDefinitions() as $stage) {
+                // forceCreate: role/position/is_system are deliberately
+                // outside #[Fillable] — only name/color are ever
+                // mass-assignable from a request — so seeding them needs
+                // the same bypass Customer::forceCreate() uses for user_id.
+                static::forceCreate($stage + ['user_id' => $user->id, 'is_system' => true]);
+            }
+
+            return static::ownedBy($user)->ordered()->get();
+        }
+
+        $teamId = $team instanceof Team ? $team->id : $team;
+
+        $existing = static::ownedBy($user)->where('team_id', $teamId)->ordered()->get();
 
         if ($existing->isNotEmpty()) {
             return $existing;
         }
 
-        foreach ([
-            ['name' => Deal::STAGES[0], 'role' => 'initial', 'position' => 0, 'color' => 'slate'],
-            ['name' => Deal::STAGES[1], 'role' => null, 'position' => 1, 'color' => 'amber'],
-            ['name' => Deal::STAGES[2], 'role' => 'won', 'position' => 2, 'color' => 'green'],
-            ['name' => Deal::STAGE_CANCELLED, 'role' => 'lost', 'position' => null, 'color' => 'rose'],
-        ] as $stage) {
-            // forceCreate: role/position/is_system are deliberately outside
-            // #[Fillable] — only name/color are ever mass-assignable from a
-            // request — so seeding them needs the same bypass
-            // Customer::forceCreate() uses for user_id.
-            static::forceCreate($stage + ['user_id' => $user->id, 'is_system' => true]);
+        foreach (static::seedDefinitions() as $stage) {
+            // team_id set explicitly, same reason as CrmWorkspace::defaultFor():
+            // never left to StampsTeam's own user_id fallback, which would
+            // resolve through current_team_id instead of the team actually
+            // being seeded for.
+            static::forceCreate($stage + ['user_id' => $user->id, 'is_system' => true, 'team_id' => $teamId]);
         }
 
-        return static::ownedBy($user)->ordered()->get();
+        return static::ownedBy($user)->where('team_id', $teamId)->ordered()->get();
     }
 
-    public static function initialFor(User $user): CrmStage
+    public static function initialFor(User $user, Team|int|null $team = null): CrmStage
     {
-        return static::defaultsFor($user)->firstWhere('role', 'initial');
+        return static::defaultsFor($user, $team)->firstWhere('role', 'initial');
     }
 
-    public static function wonFor(User $user): CrmStage
+    public static function wonFor(User $user, Team|int|null $team = null): CrmStage
     {
-        return static::defaultsFor($user)->firstWhere('role', 'won');
+        return static::defaultsFor($user, $team)->firstWhere('role', 'won');
     }
 
-    public static function lostFor(User $user): CrmStage
+    public static function lostFor(User $user, Team|int|null $team = null): CrmStage
     {
-        return static::defaultsFor($user)->firstWhere('role', 'lost');
+        return static::defaultsFor($user, $team)->firstWhere('role', 'lost');
     }
 
     /** The owner-facing label — translated for an un-renamed default, the owner's own text otherwise. */
@@ -149,9 +195,9 @@ class CrmStage extends Model
      *
      * @return Collection<int, CrmStage>
      */
-    public static function intermediatesFor(User $user): Collection
+    public static function intermediatesFor(User $user, Team|int|null $team = null): Collection
     {
-        return static::defaultsFor($user)->filter(fn (CrmStage $stage) => $stage->role === null)->values();
+        return static::defaultsFor($user, $team)->filter(fn (CrmStage $stage) => $stage->role === null)->values();
     }
 
     /**

@@ -3,6 +3,7 @@
 namespace Tests\Feature\Teams;
 
 use App\Models\Agent;
+use App\Models\CrmStage;
 use App\Models\CrmWorkspace;
 use App\Models\Team;
 use App\Models\User;
@@ -106,5 +107,49 @@ class TeamAwareCrmDefaultsTest extends TestCase
         $this->expectException(UniqueConstraintViolationException::class);
 
         CrmWorkspace::defaultFor($owner, $teamB);
+    }
+
+    // --- CrmStage::defaultsFor() et al. -----------------------------------
+
+    public function test_defaults_for_with_a_null_team_behaves_exactly_like_today(): void
+    {
+        [$owner, $teamA] = $this->makeOwnerWithASecondTeam();
+
+        $stages = CrmStage::defaultsFor($owner);
+
+        $this->assertCount(4, $stages);
+        $this->assertTrue($stages->every(fn (CrmStage $stage) => $stage->team_id === $teamA->id));
+        $this->assertSame($teamA->id, CrmStage::initialFor($owner)->team_id);
+
+        // Idempotent, exactly as the plain ownedBy()->ordered()->get() always was.
+        $this->assertCount(4, CrmStage::defaultsFor($owner));
+        $this->assertSame(4, CrmStage::where('user_id', $owner->id)->count());
+    }
+
+    public function test_default_stages_for_a_second_team_of_the_same_user_do_not_trip_the_role_uniqueness_check(): void
+    {
+        [$owner, $teamA, $teamB] = $this->makeOwnerWithASecondTeam();
+
+        // Team A's stages: seeded through the null-team path, exactly like
+        // every single-team account today — team_id still ends up team A
+        // via StampsTeam's own current_team_id resolution.
+        $stagesA = CrmStage::defaultsFor($owner);
+        $this->assertSame($teamA->id, $stagesA->firstWhere('role', 'initial')->team_id);
+
+        // Team B's stages: seeded explicitly for team B. Before this
+        // change, CrmStage::booted()'s role-uniqueness check was scoped by
+        // user_id alone, so creating a second 'initial' role for the same
+        // user_id — even under a different team — would throw
+        // crm.stages.role_taken. It must not, here.
+        $stagesB = CrmStage::defaultsFor($owner, $teamB);
+
+        $this->assertCount(4, $stagesB);
+        $this->assertTrue($stagesB->every(fn (CrmStage $stage) => $stage->team_id === $teamB->id));
+
+        $initialA = $stagesA->firstWhere('role', 'initial');
+        $initialB = $stagesB->firstWhere('role', 'initial');
+        $this->assertNotSame($initialA->id, $initialB->id);
+
+        $this->assertSame(8, CrmStage::where('user_id', $owner->id)->count());
     }
 }
