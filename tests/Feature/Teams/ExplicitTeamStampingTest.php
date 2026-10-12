@@ -8,9 +8,12 @@ use App\Models\BiDataset;
 use App\Models\BiSource;
 use App\Models\Channel;
 use App\Models\Conversation;
+use App\Models\Customer;
+use App\Models\Lead;
 use App\Models\Team;
 use App\Models\User;
 use App\Services\Bi\Ingestion\ExternalDatasetImporter;
+use App\Services\Crm\CustomerResolver;
 use App\Services\Teams\CreatesPersonalTeam;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -154,5 +157,51 @@ class ExplicitTeamStampingTest extends TestCase
         $column = DB::table('bi_columns')->where('bi_dataset_id', $dataset->id)->first();
         $this->assertNotNull($column);
         $this->assertSame($teamA->id, $column->team_id);
+    }
+
+    public function test_a_lead_resolved_against_a_customer_stamps_the_customer_with_the_leads_agents_team_not_current_team_id(): void
+    {
+        [$owner, $teamA, $teamB] = $this->makeOwnerWithASecondTeam();
+
+        // Built while current_team_id still correctly points at team A.
+        $agent = Agent::factory()->for($owner)->create();
+        $this->assertSame($teamA->id, $agent->team_id);
+
+        // The switch: current_team_id now points at team B, while the
+        // agent above still belongs to team A.
+        $this->switchTo($owner, $teamB);
+
+        // A lead with no conversation and a phone number: LeadObserver's
+        // resolve() reaches resolveForLead()'s forceCreate branch, the
+        // real background chain (no existing conversation/customer to
+        // short-circuit it), not a shortcut.
+        $lead = Lead::factory()->for($agent)->create(['conversation_id' => null, 'phone' => '+992900112233']);
+
+        $customer = Customer::where('user_id', $owner->id)->where('phone_key', app(CustomerResolver::class)->phoneKey($lead->phone))->first();
+        $this->assertNotNull($customer, 'resolveForLead() did not file a customer for this lead.');
+
+        $this->assertSame($teamA->id, $customer->team_id);
+        $this->assertNotSame($teamB->id, $customer->team_id);
+    }
+
+    public function test_a_conversations_first_message_stamps_the_customer_with_the_conversations_agent_team_not_current_team_id(): void
+    {
+        [$owner, $teamA, $teamB] = $this->makeOwnerWithASecondTeam();
+
+        $agent = Agent::factory()->for($owner)->create();
+        $this->assertSame($teamA->id, $agent->team_id);
+        $channel = Channel::factory()->for($agent)->create();
+
+        $this->switchTo($owner, $teamB);
+
+        // A customer's first message on this thread: ConversationObserver
+        // resolves (and here, opens) a customer via CustomerResolver::open().
+        $conversation = Conversation::factory()->for($agent)->create(['channel_id' => $channel->id]);
+
+        $customer = Customer::where('id', $conversation->fresh()->customer_id)->first();
+        $this->assertNotNull($customer, 'resolveForConversation() did not file a customer for this conversation.');
+
+        $this->assertSame($teamA->id, $customer->team_id);
+        $this->assertNotSame($teamB->id, $customer->team_id);
     }
 }

@@ -130,6 +130,16 @@ class CustomerResolver
                 // under another account.
                 ?? Customer::forceCreate([
                     'user_id' => $userId,
+                    // Explicit, not left to StampsTeam's own user_id
+                    // fallback: this runs in the background (LeadObserver,
+                    // off a webhook), so current_team_id is whichever team
+                    // the owner happens to be looking at right now, not
+                    // necessarily the team that owns the agent this lead
+                    // came through. $lead->agent->team_id is already
+                    // resolved and already in scope. Null if the relation
+                    // is somehow missing — StampsTeam falls back exactly as
+                    // today in that case.
+                    'team_id' => $lead->agent?->team_id,
                     'crm_workspace_id' => CrmWorkspace::defaultFor(User::findOrFail($userId))->id,
                     'name' => $lead->customer_name,
                     'phone' => $phone,
@@ -379,6 +389,16 @@ class CustomerResolver
         try {
             return Customer::forceCreate([
                 'user_id' => $userId,
+                // Explicit, not left to StampsTeam's own user_id fallback:
+                // this runs in the background (ConversationObserver, off a
+                // webhook), so current_team_id is whichever team the owner
+                // happens to be looking at right now, not necessarily the
+                // team that owns the agent this thread came through.
+                // $conversation->agent->team_id is already resolved and
+                // already in scope. Null if the relation is somehow
+                // missing — StampsTeam falls back exactly as today in that
+                // case.
+                'team_id' => $conversation->agent?->team_id,
                 'crm_workspace_id' => CrmWorkspace::defaultFor(User::findOrFail($userId))->id,
                 'name' => $conversation->external_user_name,
                 'phone' => $key !== null ? $phone : null,
