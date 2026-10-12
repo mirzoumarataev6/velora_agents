@@ -191,6 +191,15 @@ class ExternalDatasetImporter
         ]);
 
         $dataset->user_id = $source->user_id;
+        // Explicit, not left to StampsTeam's own user_id fallback: this
+        // path runs synchronously today, but SourceNormalizer's equivalent
+        // (NormalizeSourceJob) does not — it runs minutes later in a queue,
+        // so current_team_id at execution time is not reliably the team
+        // this source belonged to when it was registered. Matching that
+        // site's explicit stamp here, rather than depending on "still in
+        // the same request" staying true, is what keeps the two import
+        // paths' datasets resolved the same way.
+        $dataset->team_id = $source->team_id;
         $dataset->bi_source_id = $source->getKey();
         $dataset->save();
 

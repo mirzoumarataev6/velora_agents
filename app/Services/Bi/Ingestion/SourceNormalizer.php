@@ -360,6 +360,14 @@ class SourceNormalizer
         ]);
 
         $dataset->user_id = $source->user_id;
+        // Explicit, not left to StampsTeam's own user_id fallback:
+        // NormalizeSourceJob runs minutes later in a queue (a 100MB upload
+        // takes a while to read), so current_team_id at the moment this
+        // executes is whichever team the owner happens to be looking at
+        // right then — not necessarily the team this upload belonged to
+        // when it was received. $source->team_id, already resolved at
+        // upload time, is the one that cannot have drifted since.
+        $dataset->team_id = $source->team_id;
         $dataset->bi_source_id = $source->getKey();
         $dataset->save();
 

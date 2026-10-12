@@ -2,14 +2,21 @@
 
 namespace Tests\Feature\Teams;
 
+use App\Jobs\Bi\NormalizeSourceJob;
 use App\Models\Agent;
+use App\Models\BiDataset;
+use App\Models\BiSource;
 use App\Models\Channel;
 use App\Models\Conversation;
 use App\Models\Team;
 use App\Models\User;
+use App\Services\Bi\Ingestion\ExternalDatasetImporter;
 use App\Services\Teams\CreatesPersonalTeam;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+use ReflectionMethod;
+use Tests\Support\BuildsBiFixtures;
 use Tests\TestCase;
 
 /**
@@ -29,7 +36,7 @@ use Tests\TestCase;
  */
 class ExplicitTeamStampingTest extends TestCase
 {
-    use RefreshDatabase;
+    use BuildsBiFixtures, RefreshDatabase;
 
     /**
      * An owner whose real team (A) owns everything created in the test, and
@@ -86,5 +93,66 @@ class ExplicitTeamStampingTest extends TestCase
 
         $this->assertSame($teamA->id, $activity->team_id);
         $this->assertNotSame($teamB->id, $activity->team_id);
+    }
+
+    public function test_a_normalized_bi_source_stamps_its_dataset_with_the_sources_team_not_current_team_id_at_job_time(): void
+    {
+        Storage::fake('local');
+
+        [$owner, $teamA, $teamB] = $this->makeOwnerWithASecondTeam();
+
+        // Uploaded while current_team_id still correctly points at team A.
+        $source = $this->csvSource($owner, [
+            ['name', 'price'],
+            ['Widget', '10'],
+        ]);
+        $this->assertSame($teamA->id, $source->team_id);
+
+        // The switch: NormalizeSourceJob is deliberately queued rather than
+        // run inline (a large upload takes minutes to read) — this
+        // simulates the owner switching teams in that window, before the
+        // job that actually creates the BiDataset ever runs.
+        $this->switchTo($owner, $teamB);
+
+        NormalizeSourceJob::dispatch($source);
+
+        $dataset = BiDataset::where('bi_source_id', $source->id)->first();
+        $this->assertNotNull($dataset, 'NormalizeSourceJob did not produce a dataset.');
+
+        $this->assertSame($teamA->id, $dataset->team_id);
+        $this->assertNotSame($teamB->id, $dataset->team_id);
+    }
+
+    public function test_an_external_dataset_import_stamps_the_dataset_with_the_sources_team_not_current_team_id(): void
+    {
+        [$owner, $teamA, $teamB] = $this->makeOwnerWithASecondTeam();
+
+        // The source already belongs to team A — built directly rather than
+        // through a live customer connection, since createDataset() is the
+        // unit under test here, not the describeTable() round trip.
+        $source = BiSource::factory()->create(['user_id' => $owner->id, 'team_id' => $teamA->id]);
+
+        // This path runs synchronously within one request in production, so
+        // current_team_id cannot really drift mid-call the way it can for
+        // the queued NormalizeSourceJob above — but the fix must still read
+        // the team from $source, not re-derive it, so this proves the unit
+        // itself is correct regardless of what current_team_id says.
+        $this->switchTo($owner, $teamB);
+
+        $importer = app(ExternalDatasetImporter::class);
+        $method = new ReflectionMethod($importer, 'createDataset');
+        $method->setAccessible(true);
+
+        $dataset = $method->invoke($importer, $source, 'orders', [
+            'columns' => [['name' => 'id', 'type' => 'int', 'numeric' => true]],
+            'sample' => [],
+        ]);
+
+        $this->assertSame($teamA->id, $dataset->team_id);
+        $this->assertNotSame($teamB->id, $dataset->team_id);
+
+        $column = DB::table('bi_columns')->where('bi_dataset_id', $dataset->id)->first();
+        $this->assertNotNull($column);
+        $this->assertSame($teamA->id, $column->team_id);
     }
 }
