@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\StampsTeam;
 use App\Observers\ConversationObserver;
 use App\Policies\ConversationPolicy;
 use Database\Factories\ConversationFactory;
@@ -21,6 +22,8 @@ class Conversation extends Model
 {
     /** @use HasFactory<ConversationFactory> */
     use HasFactory;
+
+    use StampsTeam;
 
     protected function casts(): array
     {

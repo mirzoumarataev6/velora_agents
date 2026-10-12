@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\StampsTeam;
 use App\Policies\TaskPolicy;
 use Database\Factories\TaskFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -24,6 +25,7 @@ class Task extends Model
     use HasFactory;
 
     use SoftDeletes;
+    use StampsTeam;
 
     protected function casts(): array
     {

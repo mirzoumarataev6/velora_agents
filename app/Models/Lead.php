@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\StampsTeam;
 use App\Observers\LeadObserver;
 use App\Policies\LeadPolicy;
 use App\Services\Haggling\HagglingService;
@@ -23,6 +24,8 @@ class Lead extends Model
 {
     /** @use HasFactory<LeadFactory> */
     use HasFactory;
+
+    use StampsTeam;
 
     protected function casts(): array
     {

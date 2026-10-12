@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\StampsTeam;
 use App\Policies\ChannelPolicy;
 use Database\Factories\ChannelFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -18,6 +19,8 @@ class Channel extends Model
 {
     /** @use HasFactory<ChannelFactory> */
     use HasFactory;
+
+    use StampsTeam;
 
     protected function casts(): array
     {

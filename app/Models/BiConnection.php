@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\StampsTeam;
 use App\Policies\BiConnectionPolicy;
 use App\Services\Database\ConnectionConfig;
 use Database\Factories\BiConnectionFactory;
@@ -44,6 +45,8 @@ class BiConnection extends Model
 {
     /** @use HasFactory<BiConnectionFactory> */
     use HasFactory;
+
+    use StampsTeam;
 
     public const STATUS_READY = 'ready';
 

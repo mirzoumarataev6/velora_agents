@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\StampsTeam;
 use App\Policies\CrmWorkspacePolicy;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\UsePolicy;
@@ -17,6 +18,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 class CrmWorkspace extends Model
 {
     use SoftDeletes;
+    use StampsTeam;
 
     public const COLORS = ['blue', 'violet', 'green', 'amber', 'rose', 'slate'];
 

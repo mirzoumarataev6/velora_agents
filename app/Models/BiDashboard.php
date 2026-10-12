@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\StampsTeam;
 use App\Policies\BiDashboardPolicy;
 use Database\Factories\BiDashboardFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -27,6 +28,8 @@ class BiDashboard extends Model
 {
     /** @use HasFactory<BiDashboardFactory> */
     use HasFactory;
+
+    use StampsTeam;
 
     /** Widgets one board may hold, before it stops being a board. */
     public const MAX_WIDGETS = 40;

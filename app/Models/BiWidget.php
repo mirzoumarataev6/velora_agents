@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\StampsTeam;
 use App\Policies\BiWidgetPolicy;
 use App\Services\Bi\Dashboard\WidgetType;
 use Database\Factories\BiWidgetFactory;
@@ -38,6 +39,8 @@ class BiWidget extends Model
 {
     /** @use HasFactory<BiWidgetFactory> */
     use HasFactory;
+
+    use StampsTeam;
 
     /** The grid is twelve columns wide, as every gridstack board is. */
     public const GRID_COLUMNS = 12;

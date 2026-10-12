@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\StampsTeam;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -11,6 +12,8 @@ use Illuminate\Support\Facades\Storage;
 #[Fillable(['path', 'thumbnail_path', 'mime_type', 'size', 'position'])]
 class ProductImage extends Model
 {
+    use StampsTeam;
+
     /** A single, deliberate delete (the owner removing one photo) also removes its file(s) — the bulk catalog paths use purgeFilesForAgent() instead. */
     protected static function booted(): void
     {

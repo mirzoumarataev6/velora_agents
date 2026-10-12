@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\StampsTeam;
 use Database\Factories\UsageLogFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -13,6 +14,8 @@ class UsageLog extends Model
 {
     /** @use HasFactory<UsageLogFactory> */
     use HasFactory;
+
+    use StampsTeam;
 
     public function user(): BelongsTo
     {

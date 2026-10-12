@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\StampsTeam;
 use App\Policies\BiSourcePolicy;
 use Database\Factories\BiSourceFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -35,6 +36,8 @@ class BiSource extends Model
 {
     /** @use HasFactory<BiSourceFactory> */
     use HasFactory;
+
+    use StampsTeam;
 
     public const KIND_FILE = 'file';
 

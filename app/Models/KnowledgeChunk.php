@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\StampsTeam;
 use App\Policies\KnowledgeChunkPolicy;
 use Database\Factories\KnowledgeChunkFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -16,6 +17,8 @@ class KnowledgeChunk extends Model
 {
     /** @use HasFactory<KnowledgeChunkFactory> */
     use HasFactory;
+
+    use StampsTeam;
 
     protected function casts(): array
     {

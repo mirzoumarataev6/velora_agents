@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\StampsTeam;
 use App\Policies\DealPolicy;
 use Database\Factories\DealFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -41,6 +42,7 @@ class Deal extends Model
     use HasFactory;
 
     use SoftDeletes;
+    use StampsTeam;
 
     /** The names CrmStage::defaultsFor() seeds a fresh pipeline with — not a universal list any more, see that method. */
     public const STAGES = ['new_lead', 'haggling', 'payment'];

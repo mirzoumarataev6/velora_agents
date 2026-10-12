@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\StampsTeam;
 use App\Policies\CrmNotePolicy;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\UsePolicy;
@@ -21,6 +22,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 class CrmNote extends Model
 {
     use SoftDeletes;
+    use StampsTeam;
 
     public const KINDS = ['note', 'call', 'visit', 'meeting', 'other'];
 

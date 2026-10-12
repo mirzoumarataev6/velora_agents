@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\StampsTeam;
 use App\Policies\BiChatMessagePolicy;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\UsePolicy;
@@ -13,6 +14,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 #[UsePolicy(BiChatMessagePolicy::class)]
 class BiChatMessage extends Model
 {
+    use StampsTeam;
+
     protected function casts(): array
     {
         return ['payload' => 'array', 'undone_at' => 'datetime'];

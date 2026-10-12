@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\StampsTeam;
 use App\Policies\DatabaseConnectionPolicy;
 use App\Services\Database\Discovery\DiscoveredSchema;
 use App\Services\Database\Discovery\JoinPlan;
@@ -38,6 +39,8 @@ class DatabaseConnection extends Model
 {
     /** @use HasFactory<DatabaseConnectionFactory> */
     use HasFactory;
+
+    use StampsTeam;
 
     public const STATUS_READY = 'ready';
 

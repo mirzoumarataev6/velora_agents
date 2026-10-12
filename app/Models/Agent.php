@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\StampsTeam;
 use App\Policies\AgentPolicy;
 use App\Services\Haggling\HagglingService;
 use Database\Factories\AgentFactory;
@@ -33,6 +34,8 @@ class Agent extends Model
 {
     /** @use HasFactory<AgentFactory> */
     use HasFactory;
+
+    use StampsTeam;
 
     protected function casts(): array
     {

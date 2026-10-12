@@ -232,6 +232,10 @@ class ExternalDatasetImporter
 
             $rows[] = [
                 'user_id' => $dataset->user_id,
+                // Bulk insert bypasses BiColumn's StampsTeam creating hook, so the
+                // dataset's own team_id (resolved once, not per row) is stamped
+                // here explicitly — see StampsTeam's docblock for why this matters.
+                'team_id' => $dataset->team_id,
                 'bi_dataset_id' => $dataset->getKey(),
                 'ordinal' => $ordinal,
                 // The customer's column name is DATA here, exactly as a file's header

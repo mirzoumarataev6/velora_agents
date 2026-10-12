@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\StampsTeam;
 use App\Policies\BiColumnPolicy;
 use App\Services\Bi\BiIngestionException;
 use App\Services\Bi\Schema\ColumnRole;
@@ -39,6 +40,8 @@ class BiColumn extends Model
 {
     /** @use HasFactory<BiColumnFactory> */
     use HasFactory;
+
+    use StampsTeam;
 
     /**
      * The one shape a physical column name may have.

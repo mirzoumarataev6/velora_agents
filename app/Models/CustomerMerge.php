@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\StampsTeam;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -15,6 +16,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 #[Fillable(['user_id', 'from_customer_id', 'into_customer_id', 'moved_conversation_ids', 'moved_lead_ids', 'moved_deal_ids', 'moved_task_ids', 'undone_at'])]
 class CustomerMerge extends Model
 {
+    use StampsTeam;
+
     public $timestamps = false;
 
     /** How long after a merge the owner can still undo it. */

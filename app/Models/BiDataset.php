@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\StampsTeam;
 use App\Policies\BiDatasetPolicy;
 use App\Services\Bi\BiIngestionException;
 use Database\Factories\BiDatasetFactory;
@@ -36,6 +37,8 @@ class BiDataset extends Model
 {
     /** @use HasFactory<BiDatasetFactory> */
     use HasFactory;
+
+    use StampsTeam;
 
     public const STATUS_INFERRING = 'inferring';
 

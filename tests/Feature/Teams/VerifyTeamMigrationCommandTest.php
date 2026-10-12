@@ -12,9 +12,14 @@ class VerifyTeamMigrationCommandTest extends TestCase
 {
     use RefreshDatabase;
 
+    /**
+     * createQuietly() rather than create(): this test wants the pre-Stage-2a
+     * "no team yet" state, which a normal create() no longer produces now
+     * that UserObserver gives every new account a personal team on the spot.
+     */
     public function test_it_fails_while_rows_are_missing_a_team_id(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->createQuietly();
         Agent::factory()->for($user)->create();
 
         $this->artisan('team:verify-migration')
@@ -24,7 +29,7 @@ class VerifyTeamMigrationCommandTest extends TestCase
 
     public function test_it_passes_once_the_backfill_has_run(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->createQuietly();
         Agent::factory()->for($user)->create();
 
         $this->artisan('team:migrate-users')->assertExitCode(0);
@@ -49,7 +54,7 @@ class VerifyTeamMigrationCommandTest extends TestCase
      */
     public function test_it_fails_on_a_team_id_that_does_not_exist_in_teams(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->createQuietly();
         $agent = Agent::factory()->for($user)->create();
 
         $this->artisan('team:migrate-users')->assertExitCode(0);
@@ -63,7 +68,7 @@ class VerifyTeamMigrationCommandTest extends TestCase
 
     public function test_it_passes_again_once_the_orphaned_team_id_is_fixed(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->createQuietly();
         $agent = Agent::factory()->for($user)->create();
 
         $this->artisan('team:migrate-users')->assertExitCode(0);

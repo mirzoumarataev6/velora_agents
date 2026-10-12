@@ -3,6 +3,7 @@
 namespace App\Observers;
 
 use App\Models\User;
+use App\Services\Teams\CreatesPersonalTeam;
 
 /**
  * Account deletion, for the things a SQL cascade cannot reach.
@@ -20,6 +21,25 @@ use App\Models\User;
  */
 class UserObserver
 {
+    /**
+     * Every new account gets a personal team the instant it exists, the same
+     * shape `team:migrate-users` gave old accounts — see CreatesPersonalTeam's
+     * docblock for why the two share this one action. Nothing reads
+     * `current_team_id` for authorization yet; this just stops new accounts
+     * from being born into the "legacy, no team" state the backfill command
+     * exists to repair.
+     *
+     * A test that needs a genuinely team-less user (to exercise the backfill
+     * itself) creates it with `User::factory()->createQuietly(...)`, which
+     * skips Eloquent events entirely, this one included.
+     */
+    public function created(User $user): void
+    {
+        $team = app(CreatesPersonalTeam::class)->create($user);
+
+        $user->forceFill(['current_team_id' => $team->id])->save();
+    }
+
     public function deleting(User $user): void
     {
         // `get()` rather than `cursor()`, for the reason BiSourceObserver spells

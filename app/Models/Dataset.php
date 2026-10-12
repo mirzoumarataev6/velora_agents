@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\StampsTeam;
 use App\Policies\DatasetPolicy;
 use Database\Factories\DatasetFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -28,6 +29,8 @@ class Dataset extends Model
 {
     /** @use HasFactory<DatasetFactory> */
     use HasFactory;
+
+    use StampsTeam;
 
     protected function casts(): array
     {

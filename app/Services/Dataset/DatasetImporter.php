@@ -39,7 +39,7 @@ class DatasetImporter
             ProductImage::purgeFilesForAgent($agent->id);
             DatasetProduct::query()->where('agent_id', $agent->id)->delete();
 
-            $this->insertRows($products, $dataset->id);
+            $this->insertRows($products, $dataset->id, $agent);
             $this->syncRowCount($dataset, $agent);
         });
 
@@ -91,7 +91,7 @@ class DatasetImporter
                 $toInsert[] = $product;
                 $summary[isset($ambiguousNewIndexes[$index]) ? 'ambiguous' : 'added']++;
             }
-            $this->insertRows($toInsert, $dataset->id);
+            $this->insertRows($toInsert, $dataset->id, $agent);
 
             if ($markMissingOutOfStock) {
                 $orphanIds = $existing->reject(fn (DatasetProduct $e) => isset($matchedExistingIds[$e->id]))->pluck('id');
@@ -265,11 +265,14 @@ class DatasetImporter
     }
 
     /** The shared bulk-insert step import() and update() both end with, for whichever rows turned out to be genuinely new. */
-    private function insertRows(array $products, int $datasetId): void
+    private function insertRows(array $products, int $datasetId, Agent $agent): void
     {
         foreach (array_chunk($products, self::INSERT_CHUNK) as $chunk) {
             DatasetProduct::query()->insert(array_map(
-                fn (array $product) => array_diff_key($product, ['extra_array' => null]) + ['dataset_id' => $datasetId],
+                // Bulk insert bypasses DatasetProduct's StampsTeam creating hook,
+                // so the agent's own team_id (resolved once, not per row) is
+                // stamped here explicitly — see StampsTeam's docblock for why.
+                fn (array $product) => array_diff_key($product, ['extra_array' => null]) + ['dataset_id' => $datasetId, 'team_id' => $agent->team_id],
                 $chunk,
             ));
         }

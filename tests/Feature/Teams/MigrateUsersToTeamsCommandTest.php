@@ -11,9 +11,11 @@ use App\Models\Customer;
 use App\Models\Dataset;
 use App\Models\DatasetProduct;
 use App\Models\Deal;
+use App\Models\DealActivity;
 use App\Models\Team;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
@@ -43,8 +45,10 @@ class MigrateUsersToTeamsCommandTest extends TestCase
 
         // A "legacy" account: every row below is created the way it is
         // today, with no team_id at all — exactly the shape the backfill
-        // command has to repair.
-        $this->user = User::factory()->create(['name' => 'Legacy Owner']);
+        // command has to repair. createQuietly() skips UserObserver's
+        // created hook (Stage 2a's auto personal-team creation), which is
+        // exactly what makes this user legacy rather than a normal one.
+        $this->user = User::factory()->createQuietly(['name' => 'Legacy Owner']);
         $this->agent = Agent::factory()->for($this->user)->create();
         $this->channel = Channel::factory()->for($this->agent)->create();
         $this->conversation = Conversation::factory()->for($this->agent)->create(['channel_id' => $this->channel->id]);
@@ -129,7 +133,7 @@ class MigrateUsersToTeamsCommandTest extends TestCase
     {
         $this->artisan('team:migrate-users')->assertExitCode(0);
 
-        $second = User::factory()->create();
+        $second = User::factory()->createQuietly();
         $secondAgent = Agent::factory()->for($second)->create();
 
         $this->artisan('team:migrate-users')->assertExitCode(0);
@@ -154,9 +158,19 @@ class MigrateUsersToTeamsCommandTest extends TestCase
         $this->artisan('team:migrate-users')->assertExitCode(0);
         $team = Team::find($this->user->refresh()->current_team_id);
 
-        $newConversation = Conversation::factory()->for($this->agent)->create(['channel_id' => $this->channel->id]);
-        $newCustomer = Customer::factory()->for($this->user)->create();
-        $newDeal = Deal::factory()->for($this->user)->create(['customer_id' => $newCustomer->id]);
+        // Simulates the gap this pass exists for: by this point the owner
+        // already has a team, so a normal create() would now be stamped by
+        // StampsTeam on the spot — withoutTeamStamping() is what keeps these
+        // rows born with no team_id, same as a pre-Stage-2a write path.
+        $newConversation = Conversation::withoutTeamStamping(
+            fn () => Conversation::factory()->for($this->agent)->create(['channel_id' => $this->channel->id])
+        );
+        $newCustomer = Customer::withoutTeamStamping(
+            fn () => Customer::factory()->for($this->user)->create()
+        );
+        $newDeal = Deal::withoutTeamStamping(
+            fn () => Deal::factory()->for($this->user)->create(['customer_id' => $newCustomer->id])
+        );
 
         $this->assertNull($newConversation->team_id);
         $this->assertNull($newDeal->team_id);
@@ -185,7 +199,15 @@ class MigrateUsersToTeamsCommandTest extends TestCase
         $otherTeam = Team::factory()->create();
         $this->deal->forceFill(['team_id' => $otherTeam->id])->save();
 
-        $newDeal = Deal::factory()->for($this->user)->create(['customer_id' => $this->customer->id]);
+        // Simulated gap, same reasoning as the test above — the owner
+        // already has a team by this point, so this needs
+        // withoutTeamStamping() to still arrive with no team_id. Also
+        // suspended on DealActivity: DealObserver's audit row for this deal
+        // is created synchronously inside this same call and would
+        // otherwise be stamped via the user's team on its own.
+        $newDeal = Deal::withoutTeamStamping(fn () => DealActivity::withoutTeamStamping(
+            fn () => Deal::factory()->for($this->user)->create(['customer_id' => $this->customer->id])
+        ));
         $this->assertNull($newDeal->team_id);
 
         $this->artisan('team:migrate-users')->assertExitCode(0);
@@ -204,15 +226,18 @@ class MigrateUsersToTeamsCommandTest extends TestCase
 
         // Creating one Deal also creates one DealActivity (DealObserver's audit
         // row), so the genuinely missing count for this one new row is 2, not 1.
-        $newDeal = Deal::factory()->for($this->user)->create(['customer_id' => $this->customer->id]);
+        // Both need withoutTeamStamping() — see the test above for why.
+        $newDeal = Deal::withoutTeamStamping(fn () => DealActivity::withoutTeamStamping(
+            fn () => Deal::factory()->for($this->user)->create(['customer_id' => $this->customer->id])
+        ));
 
         // A plain Artisan::call rather than $this->artisan()->expectsOutputToContain()
         // here on purpose: chaining a second expectsOutputToContain() assertion
         // onto a command already run once earlier in the same test does not
         // reliably capture output in this Laravel testing helper — asserting on
         // Artisan::output() directly does.
-        $exitCode = \Illuminate\Support\Facades\Artisan::call('team:migrate-users', ['--dry-run' => true]);
-        $output = \Illuminate\Support\Facades\Artisan::output();
+        $exitCode = Artisan::call('team:migrate-users', ['--dry-run' => true]);
+        $output = Artisan::output();
 
         $this->assertSame(0, $exitCode);
         $this->assertStringContainsString('0 user(s) have no team yet; 1 user(s) already have a team', $output);

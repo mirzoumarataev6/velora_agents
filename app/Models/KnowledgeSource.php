@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\StampsTeam;
 use App\Policies\KnowledgeSourcePolicy;
 use Database\Factories\KnowledgeSourceFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -20,6 +21,8 @@ class KnowledgeSource extends Model
 {
     /** @use HasFactory<KnowledgeSourceFactory> */
     use HasFactory;
+
+    use StampsTeam;
 
     protected function casts(): array
     {

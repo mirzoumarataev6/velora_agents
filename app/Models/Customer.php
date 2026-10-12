@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\StampsTeam;
 use App\Policies\CustomerPolicy;
 use Database\Factories\CustomerFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -27,6 +28,7 @@ class Customer extends Model
     use HasFactory;
 
     use SoftDeletes;
+    use StampsTeam;
 
     /**
      * Frees the phone number the instant a profile is soft-deleted, not only

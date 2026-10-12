@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\StampsTeam;
 use App\Services\Dataset\SearchSkeleton;
 use Database\Factories\DatasetProductFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -18,6 +19,8 @@ class DatasetProduct extends Model
 {
     /** @use HasFactory<DatasetProductFactory> */
     use HasFactory;
+
+    use StampsTeam;
 
     /**
      * The haystack a text query is matched against, folded to lowercase.

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\StampsTeam;
 use App\Policies\CrmStagePolicy;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\UsePolicy;
@@ -22,6 +23,7 @@ use Illuminate\Validation\ValidationException;
 class CrmStage extends Model
 {
     use SoftDeletes;
+    use StampsTeam;
 
     public const ROLES = ['initial', 'won', 'lost'];
 
