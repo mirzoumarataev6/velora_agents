@@ -32,12 +32,21 @@ use App\Http\Controllers\PlaygroundController;
 use App\Http\Controllers\ProductImageController;
 use App\Http\Controllers\RootRedirectController;
 use App\Http\Controllers\SettingsController;
+use App\Http\Controllers\Teams\TeamInvitationController;
 use App\Http\Controllers\TeamSwitchController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', RootRedirectController::class);
 Route::get('/media/knowledge/{source}', [KnowledgeMediaController::class, 'show'])
     ->middleware('signed')->name('knowledge.media.show');
+
+// Public on purpose: the invited person may not have an account yet.
+// TeamInvitationController::accept() does its own auth check and bounces a
+// guest to sign in first — see that method's own docblock. Not a signed
+// route: the invitation's own `token` (a standalone, revocable value — see
+// Invitation's docblock) is the credential here, not a signature over this
+// URL's own query string.
+Route::get('/invitations/{token}/accept', [TeamInvitationController::class, 'accept'])->name('invitations.accept');
 
 Route::post('/locale', [LocaleController::class, 'update'])->name('locale.update');
 
@@ -69,6 +78,12 @@ Route::middleware(['auth', 'auth.session'])->group(function () {
     // this is close to behaviour-neutral in practice; TeamSwitchController's
     // own membership check is what keeps it correct once that stops being true.
     Route::post('/teams/switch', [TeamSwitchController::class, 'update'])->name('teams.switch');
+
+    // Stage 3b: inviting someone to join the active team. Owner-only — see
+    // TeamInvitationController's own docblock for why that check is still
+    // inline here rather than a Policy.
+    Route::post('/teams/invite', [TeamInvitationController::class, 'store'])->name('teams.invite');
+    Route::delete('/teams/invitations/{invitation}', [TeamInvitationController::class, 'destroy'])->name('teams.invitations.destroy');
 
     // The only onboarding endpoint. Step progress is derived from the account's
     // own data at render time, so there is nothing to report back — only the
