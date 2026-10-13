@@ -58,13 +58,16 @@ class CrmWorkspace extends Model
      *
      * `$team` is optional and additive: `null` is byte-for-byte today's
      * behaviour (a plain `firstOrCreate` scoped by `user_id` alone, letting
-     * StampsTeam resolve `team_id` the way it always has). Passed a team,
-     * this still never creates a SECOND `__main__` row for one user —
-     * `crm_workspaces` still carries `unique(user_id, name)`, not yet
-     * `unique(user_id, team_id, name)` (Stage 2d-5a) — so a user whose
-     * existing `__main__` already belongs to a different team has no
-     * second slot to be given here; that stays unsupported on purpose
-     * rather than worked around.
+     * StampsTeam resolve `team_id` the way it always has) — safe only so
+     * long as nothing calls it this way while the user could have more
+     * than one team's own `__main__` row to confuse it with, which is why
+     * every real call site (Stage 2d-4) always passes one explicitly; this
+     * default stays purely for the handful of single-team tests that
+     * predate `$team` existing at all. Passed a team, this now DOES let a
+     * second team get its own `__main__` row — `crm_workspaces` carries
+     * `unique(team_id, name)` (Stage 2d-3-1) instead of `unique(user_id,
+     * name)` as of Stage 2d-5a, so two of this owner's teams no longer
+     * contend over one `__main__` slot.
      *
      * Three outcomes, in order:
      * 1. A `__main__` row already stamped with this exact team — return it.

@@ -34,8 +34,9 @@ class Customer extends Model
      * Frees the phone number the instant a profile is soft-deleted, not only
      * on the hard-delete path the unique index itself would catch.
      *
-     * The index on (user_id, phone_key) is a real DB constraint that knows
-     * nothing about `deleted_at` — a soft-deleted row still occupies its slot
+     * The index on (team_id, phone_key) (Stage 2d-5a; it was (user_id,
+     * phone_key) before) is a real DB constraint that knows nothing about
+     * `deleted_at` — a soft-deleted row still occupies its slot
      * in it. Nulling phone_key here, every time, regardless of which code
      * path deleted the row (today only CustomerResolver::merge(), but this
      * must hold for any future one too), is what makes "a soft-deleted

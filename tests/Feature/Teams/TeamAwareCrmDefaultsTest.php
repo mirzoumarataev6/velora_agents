@@ -106,24 +106,67 @@ class TeamAwareCrmDefaultsTest extends TestCase
         $this->assertSame(1, CrmWorkspace::where('user_id', $owner->id)->count());
     }
 
-    // TEMPORARY: pins the unique(user_id,name) hard stop; replace in Stage 2d-5a when that index becomes team-scoped.
-    public function test_a_main_workspace_owned_by_another_team_is_never_adopted(): void
+    /**
+     * Stage 2d-5a: `crm_workspaces` now carries `unique(team_id, name)`
+     * instead of `unique(user_id, name)`, so a second team of the SAME
+     * owner finally gets its own `__main__` row rather than the hard
+     * constraint refusing the insert — this test replaces the TEMPORARY
+     * one that used to pin that old limitation.
+     */
+    public function test_two_teams_of_the_same_owner_can_each_have_their_own_main_workspace(): void
     {
         [$owner, $teamA, $teamB] = $this->makeOwnerWithASecondTeam();
 
-        // Already correctly stamped with team A — the ordinary, expected
-        // shape for a single-team account.
         $workspaceA = CrmWorkspace::defaultFor($owner, $teamA);
-        $this->assertSame($teamA->id, $workspaceA->team_id);
+        $workspaceB = CrmWorkspace::defaultFor($owner, $teamB);
 
-        // crm_workspaces still carries unique(user_id, name) — not yet
-        // unique(user_id, team_id, name) (Stage 2d-5a) — so there is no
-        // second __main__ slot for team B to be given. Asking for one must
-        // never silently hand back team A's row relabelled; what actually
-        // happens today is the hard constraint itself refusing the insert.
+        $this->assertNotSame($workspaceA->id, $workspaceB->id);
+        $this->assertSame('__main__', $workspaceA->name);
+        $this->assertSame('__main__', $workspaceB->name);
+        $this->assertSame($teamA->id, $workspaceA->team_id);
+        $this->assertSame($teamB->id, $workspaceB->team_id);
+        $this->assertSame(2, CrmWorkspace::where('user_id', $owner->id)->count());
+    }
+
+    /** The replacement is narrower than the old rule, not absent: one team still cannot hold two workspaces of the same name. */
+    public function test_one_team_still_cannot_have_two_workspaces_with_the_same_name(): void
+    {
+        [$owner, $teamA] = $this->makeOwnerWithASecondTeam();
+
+        CrmWorkspace::forceCreate(['user_id' => $owner->id, 'team_id' => $teamA->id, 'name' => 'Retail', 'color' => 'blue']);
+
         $this->expectException(UniqueConstraintViolationException::class);
 
-        CrmWorkspace::defaultFor($owner, $teamB);
+        CrmWorkspace::forceCreate(['user_id' => $owner->id, 'team_id' => $teamA->id, 'name' => 'Retail', 'color' => 'violet']);
+    }
+
+    /**
+     * Same rule, customers' own uniqueness: a phone number may now exist
+     * once in each of this owner's two teams (the exact scenario
+     * `TeamScopedCustomerDedupTest::test_one_owners_second_team_...` used
+     * to pin as blocked, before this migration ran), but never twice
+     * within one team.
+     */
+    public function test_the_same_phone_key_may_exist_in_two_teams_but_not_twice_in_one(): void
+    {
+        [$owner, $teamA, $teamB] = $this->makeOwnerWithASecondTeam();
+
+        Customer::withoutTeamStamping(fn () => Customer::forceCreate([
+            'user_id' => $owner->id, 'team_id' => $teamA->id, 'name' => 'Azim', 'phone_key' => '900112233',
+        ]));
+
+        // Same key, a DIFFERENT team — allowed.
+        $inTeamB = Customer::withoutTeamStamping(fn () => Customer::forceCreate([
+            'user_id' => $owner->id, 'team_id' => $teamB->id, 'name' => 'Azim (team B)', 'phone_key' => '900112233',
+        ]));
+        $this->assertSame($teamB->id, $inTeamB->team_id);
+
+        // Same key, the SAME team — refused.
+        $this->expectException(UniqueConstraintViolationException::class);
+
+        Customer::withoutTeamStamping(fn () => Customer::forceCreate([
+            'user_id' => $owner->id, 'team_id' => $teamA->id, 'name' => 'Azim (duplicate)', 'phone_key' => '900112233',
+        ]));
     }
 
     // --- CrmStage::defaultsFor() et al. -----------------------------------

@@ -350,8 +350,14 @@ class CustomerResolver
 
             // Only if nobody has since claimed it — a number this profile no
             // longer holds is not this undo's problem to fight over.
+            // Team-scoped, not user-scoped (Stage 2d-5a): the only
+            // uniqueness the database still enforces on phone_key is
+            // (team_id, phone_key) — customers' old (user_id, phone_key)
+            // index is gone, and checking that column now would wrongly
+            // treat two of this owner's OWN teams as contending over one
+            // number they are each entitled to hold.
             $key = $this->phoneKey($from->phone);
-            if ($key !== null && ! Customer::where('user_id', $from->user_id)->where('phone_key', $key)->exists()) {
+            if ($key !== null && ! Customer::where('team_id', $from->team_id)->where('phone_key', $key)->exists()) {
                 $from->forceFill(['phone_key' => $key])->save();
             }
 

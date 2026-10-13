@@ -6,6 +6,7 @@ use App\Models\Agent;
 use App\Models\Channel;
 use App\Models\Conversation;
 use App\Models\Customer;
+use App\Models\CustomerMerge;
 use App\Models\Team;
 use App\Models\User;
 use App\Services\Crm\CustomerResolver;
@@ -17,19 +18,18 @@ use Tests\TestCase;
  * Stage 2d-4-3: CustomerResolver's phone-based dedup — findByPhone(),
  * open()'s race fallback, claimPhone() — now matches by the AGENT'S OWN
  * TEAM instead of the conversation owner's `user_id`. `customers` carries
- * `unique(team_id, phone_key)` (Stage 2d-3-1) now, alongside — not instead
- * of — the legacy `unique(user_id, phone_key)` (that one is not dropped
- * until Stage 2d-5), so the scenario this stage can actually prove is the
- * one Stage 3 brings: two DIFFERENT users' agents sharing one team.
- * Simulated here with `Agent::withoutTeamStamping()`, since nothing before
- * Stage 3 lets two real user accounts share a team through the UI yet.
+ * `unique(team_id, phone_key)` (Stage 2d-3-1) now — the legacy
+ * `unique(user_id, phone_key)` it used to sit alongside was dropped in
+ * Stage 2d-5a — so the scenario this stage can actually prove is the one
+ * Stage 3 brings: two DIFFERENT users' agents sharing one team. Simulated
+ * here with `Agent::withoutTeamStamping()`, since nothing before Stage 3
+ * lets two real user accounts share a team through the UI yet.
  *
- * The scenario the legacy index still forbids — one OWNER's own two teams
- * both capturing the same number — is deliberately NOT tested here; it
- * stays broken (a swallowed `UniqueConstraintViolationException`, logged
- * by ConversationObserver's own catch-all rather than thrown) until Stage
- * 2d-5 drops that index. See the Stage 2d-4 report for this called out
- * explicitly.
+ * The scenario the legacy index used to forbid — one OWNER's own two
+ * teams both capturing the same number — is covered by
+ * `test_one_owners_second_team_can_now_capture_a_number_its_first_team_already_holds()`
+ * below, which used to pin that limitation as TEMPORARY until Stage 2d-5a
+ * dropped the index; see that migration and the Stage 2d-5a report.
  */
 class TeamScopedCustomerDedupTest extends TestCase
 {
@@ -105,14 +105,14 @@ class TeamScopedCustomerDedupTest extends TestCase
     }
 
     /**
-     * The scenario the legacy unique(user_id, phone_key) index still
-     * forbids: one owner's own SECOND team capturing a number its FIRST
-     * team already holds. Pinned here, not as a feature, so Stage 2d-5
-     * (which drops that index) has a test that flips from red to green —
-     * the same TEMPORARY convention TeamAwareCrmDefaultsTest already uses
-     * for its own still-blocked case.
+     * Stage 2d-5a dropped the legacy unique(user_id, phone_key) index that
+     * used to block this: one owner's own SECOND team capturing a number
+     * its FIRST team already holds. This test used to pin the OLD, blocked
+     * behaviour (a swallowed insert failure, customer_id left null) as a
+     * TEMPORARY limitation; it now asserts the fixed one — team B gets its
+     * own customer, independent of team A's.
      */
-    public function test_one_owners_second_team_cannot_yet_capture_a_number_its_first_team_already_holds(): void
+    public function test_one_owners_second_team_can_now_capture_a_number_its_first_team_already_holds(): void
     {
         $owner = User::factory()->createQuietly();
         $teamA = app(CreatesPersonalTeam::class)->create($owner);
@@ -124,6 +124,7 @@ class TeamScopedCustomerDedupTest extends TestCase
             'external_user_id' => '992900112233',
         ]);
         $this->assertSame(1, Customer::count());
+        $customerA = Customer::sole();
 
         $teamB = Team::factory()->create();
         $owner->forceFill(['current_team_id' => $teamB->id])->save();
@@ -131,14 +132,69 @@ class TeamScopedCustomerDedupTest extends TestCase
         $this->assertSame($teamB->id, $agentB->team_id);
         $channelB = Channel::factory()->for($agentB)->whatsapp()->create();
 
-        // Swallowed by ConversationObserver's own catch-all (it must never
-        // cost the business the message that triggered it) — so this does
-        // not throw, it simply fails to file a customer for team B's thread.
         $conversation = Conversation::factory()->for($agentB)->for($channelB)->create([
             'external_user_id' => '992900112233',
         ]);
 
-        $this->assertNull($conversation->fresh()->customer_id, 'Team B unexpectedly got its own customer — the legacy unique(user_id, phone_key) index may have been dropped; update this test for Stage 2d-5.');
-        $this->assertSame(1, Customer::count());
+        $this->assertSame(2, Customer::count(), 'Team B should now get its own customer for this number, independent of team A\'s.');
+        $customerB = $conversation->fresh()->customer;
+        $this->assertNotNull($customerB);
+        $this->assertNotSame($customerA->id, $customerB->id);
+        $this->assertSame($teamB->id, $customerB->team_id);
+        $this->assertSame($teamA->id, $customerA->team_id);
+    }
+
+    /**
+     * Stage 2d-5a: CustomerResolver::undoMerge()'s "has anybody since
+     * claimed this number" check now matches by the restored profile's
+     * OWN team, not its owner's `user_id` — exactly because the previous
+     * test above proves a SECOND team of the same owner can legitimately
+     * hold the same phone_key now. Before this fix, restoring a profile
+     * in team A would have wrongly seen team B's unrelated customer
+     * holding that same number and refused to give team A's profile its
+     * phone_key back, even though nothing in team A actually holds it.
+     */
+    public function test_undo_merge_reclaims_the_phone_key_even_when_a_different_team_holds_the_same_one(): void
+    {
+        $owner = User::factory()->create();
+        $teamA = $owner->current_team_id;
+
+        // $keep has no number of its own, so the merge adopts $absorb's —
+        // leaving it free for undo to give back. Same pre-condition
+        // CustomerMergeUndoTest's own base case uses for the same reason.
+        $keep = Customer::withoutTeamStamping(fn () => Customer::forceCreate([
+            'user_id' => $owner->id, 'team_id' => $teamA, 'name' => 'Keep', 'status' => 'lead',
+        ]));
+        $absorb = Customer::withoutTeamStamping(fn () => Customer::forceCreate([
+            'user_id' => $owner->id, 'team_id' => $teamA, 'name' => 'Absorb', 'phone' => '+992900112233', 'phone_key' => '900112233', 'status' => 'lead',
+        ]));
+
+        // A DIFFERENT team of the SAME owner, legitimately holding the
+        // exact same number — allowed since Stage 2d-5a.
+        $teamB = Team::factory()->create()->id;
+        Customer::withoutTeamStamping(fn () => Customer::forceCreate([
+            'user_id' => $owner->id, 'team_id' => $teamB, 'name' => 'Unrelated (team B)', 'phone' => '+992900112233', 'phone_key' => '900112233', 'status' => 'lead',
+        ]));
+
+        $mergedInto = app(CustomerResolver::class)->merge(from: $absorb, into: $keep);
+        $this->assertSame('900112233', $mergedInto->phone_key, 'merge() itself should have adopted the number.');
+
+        // The owner has since given $keep a DIFFERENT number (an ordinary
+        // edit, unrelated to this merge) — team A's slot for 900112233 is
+        // genuinely free again. Without this, $keep itself would still be
+        // the one legitimate holder in team A, and undo correctly refusing
+        // to also hand it to $absorb would not be this bug at all.
+        $mergedInto->forceFill(['phone' => '+992922222222', 'phone_key' => '922222222'])->save();
+
+        $mergeRecord = CustomerMerge::where('into_customer_id', $keep->id)->sole();
+
+        $restored = app(CustomerResolver::class)->undoMerge($mergeRecord);
+
+        $this->assertNotNull($restored);
+        $this->assertSame(
+            '900112233',
+            $restored->fresh()->phone_key,
+            'undoMerge() should have reclaimed the number within team A — team B holding the same number must not block it.'
+        );
     }
 }
