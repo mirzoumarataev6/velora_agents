@@ -18,8 +18,8 @@ use RuntimeException;
 use Tests\TestCase;
 
 /**
- * Stage 2d-3: the four team-keyed unique indexes and the three team-keyed
- * composite foreign keys added ALONGSIDE the existing user-keyed ones.
+ * Stage 2d-3 added four team-keyed unique indexes and three composite FKs.
+ * Stages 2d-5a/5b later retired the competing user-keyed constraints.
  * Nothing here exercises application code — this is schema-only, so the
  * tests are schema-only too.
  */
@@ -94,20 +94,19 @@ class TeamKeyedCrmSchemaTest extends TestCase
         $this->assertTrue($this->fkShapeExists($dealFks, ['team_id', 'crm_stage_id'], 'crm_stages', ['team_id', 'id']));
         $this->assertTrue($this->fkShapeExists($customerFks, ['team_id', 'crm_workspace_id'], 'crm_workspaces', ['team_id', 'id']));
 
-        // The OLD user-keyed ones must still be there too.
-        $this->assertTrue($this->fkShapeExists($dealFks, ['user_id', 'crm_workspace_id'], 'crm_workspaces', ['user_id', 'id']));
-        $this->assertTrue($this->fkShapeExists($dealFks, ['user_id', 'crm_stage_id'], 'crm_stages', ['user_id', 'id']));
-        $this->assertTrue($this->fkShapeExists($customerFks, ['user_id', 'crm_workspace_id'], 'crm_workspaces', ['user_id', 'id']));
+        // Stage 2d-5b retires the three old user-keyed FKs; the team
+        // constraints above now provide the only composite tenant guard.
+        $this->assertFalse($this->fkShapeExists($dealFks, ['user_id', 'crm_workspace_id'], 'crm_workspaces', ['user_id', 'id']));
+        $this->assertFalse($this->fkShapeExists($dealFks, ['user_id', 'crm_stage_id'], 'crm_stages', ['user_id', 'id']));
+        $this->assertFalse($this->fkShapeExists($customerFks, ['user_id', 'crm_workspace_id'], 'crm_workspaces', ['user_id', 'id']));
     }
 
     // --- (b) the unique(team_id, name) actually separates teams -------------
 
     /**
-     * The OLD `unique(user_id, name)` still blocks exercising this with one
-     * user holding two teams (Stage 2d-5 lifts that), so this uses raw
-     * inserts under three distinct `user_id`s instead — enough to prove the
-     * new index does what it says: refuses a duplicate name within one
-     * team, accepts the same name across two different teams.
+     * Raw inserts isolate the database constraint from the model's team
+     * stamping and active-team logic: a duplicate name fails within one
+     * team and succeeds across two teams, independent of the acting user.
      */
     public function test_same_workspace_name_is_refused_within_a_team_and_allowed_across_teams(): void
     {

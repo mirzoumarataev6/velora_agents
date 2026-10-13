@@ -138,6 +138,34 @@ class AccountDeletionGuardsTest extends TestCase
         }
     }
 
+    public function test_account_deletion_fk_inventories_have_no_stale_constraints(): void
+    {
+        // The coverage scans above only detect a new FK missing from an
+        // inventory. Stage 2d-5b removes three FKs, so the reverse check
+        // matters too: otherwise an obsolete entry looks like protection
+        // that the database no longer provides.
+        foreach ([DeletesAccount::HANDLED_RESTRICT_FKS, DeletesAccount::KNOWN_DIAMOND_FKS] as $inventory) {
+            foreach ($inventory as $entry) {
+                $expectedColumns = $entry['columns'];
+                sort($expectedColumns);
+
+                $exists = collect(Schema::getForeignKeys($entry['table']))->contains(function ($fk) use ($entry, $expectedColumns) {
+                    $columns = $fk['columns'];
+                    sort($columns);
+
+                    return $columns === $expectedColumns && $fk['foreign_table'] === $entry['foreign_table'];
+                });
+
+                $this->assertTrue($exists, sprintf(
+                    'Stale account-deletion FK inventory entry: %s.(%s) -> %s.',
+                    $entry['table'],
+                    implode(',', $entry['columns']),
+                    $entry['foreign_table'],
+                ));
+            }
+        }
+    }
+
     /**
      * Every table that has a foreign key pointing directly at `users`,
      * regardless of that foreign key's own delete rule.

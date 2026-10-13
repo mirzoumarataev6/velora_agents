@@ -42,9 +42,8 @@ class TeamKeyedUniqueRetirementTest extends TestCase
         $this->assertTrue($workspaceIndexes->contains('crm_workspaces_team_name_unique'));
         $this->assertTrue($customerIndexes->contains('customers_team_phone_key_unique'));
 
-        // Out of scope for this stage (Stage 2d-5b): crm_workspaces' OTHER
-        // user-keyed unique, which the old composite FKs still reference.
-        $this->assertTrue($workspaceIndexes->contains('crm_workspaces_owner_id_unique'));
+        // Stage 2d-5b has since retired the FK-supporting index too.
+        $this->assertFalse($workspaceIndexes->contains('crm_workspaces_owner_id_unique'));
     }
 
     public function test_two_teams_of_one_owner_can_each_have_a_workspace_of_the_same_name(): void

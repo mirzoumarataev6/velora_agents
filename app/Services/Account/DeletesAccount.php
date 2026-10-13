@@ -11,11 +11,10 @@ use Illuminate\Support\Facades\DB;
 /**
  * Deletes an account the way `$user->delete()` alone cannot, on MySQL.
  *
- * `deals`/`customers` hold composite RESTRICT foreign keys against
- * `crm_workspaces`/`crm_stages` — `deals_user_stage_fk`, `deals_user_workspace_fk`
- * (`2026_10_14_000001_create_crm_stages_table.php`,
- * `2026_10_06_000003_create_crm_workspaces_table.php`) and
- * `customers_user_workspace_fk` (`2026_10_06_000004_add_crm_workspace_to_customers.php`).
+ * `deals`/`customers` hold team-keyed composite RESTRICT foreign keys against
+ * `crm_workspaces`/`crm_stages`. Stage 2d-5b retired the earlier user-keyed
+ * FKs, but the cascade-order problem is unchanged: the team-keyed FKs still
+ * reject deleting a referenced workspace or stage before its child rows.
  * All four tables are direct `CASCADE` children of `users.id`. A plain
  * `$user->delete()` leaves MySQL's own (undocumented, not portable) cascade
  * order to decide whether `crm_stages`/`crm_workspaces` get visited before
@@ -100,33 +99,14 @@ class DeletesAccount
      */
     public const HANDLED_RESTRICT_FKS = [
         [
-            'table' => 'deals',
-            'columns' => ['crm_stage_id', 'user_id'],
-            'foreign_table' => 'crm_stages',
-            'resolution' => 'explicit: Deal::forceDelete() before $user->delete()',
-        ],
-        [
-            'table' => 'deals',
-            'columns' => ['crm_workspace_id', 'user_id'],
-            'foreign_table' => 'crm_workspaces',
-            'resolution' => 'explicit: Deal::forceDelete() before $user->delete()',
-        ],
-        [
-            'table' => 'customers',
-            'columns' => ['crm_workspace_id', 'user_id'],
-            'foreign_table' => 'crm_workspaces',
-            'resolution' => 'explicit: Customer::forceDelete() before $user->delete()',
-        ],
-        [
             'table' => 'bi_sources',
             'columns' => ['bi_connection_id'],
             'foreign_table' => 'bi_connections',
             'resolution' => 'resolved elsewhere: UserObserver::deleting() already deletes every BiSource (not SoftDeletes) before $user->delete()\'s own DELETE statement',
         ],
-        // Stage 2d-3-2's team-keyed composite FKs (deals_team_stage_fk,
-        // deals_team_workspace_fk, customers_team_workspace_fk) — same
-        // shape as the three user-keyed ones above, added alongside them
-        // rather than replacing them, so they need the same resolution.
+        // Stage 2d-3-2's team-keyed composite FKs remain after 2d-5b
+        // retires the user-keyed ones; their RESTRICT behavior still needs
+        // these explicit child deletes before the users cascade runs.
         [
             'table' => 'deals',
             'columns' => ['crm_stage_id', 'team_id'],
@@ -163,29 +143,9 @@ class DeletesAccount
      * @var list<array{table: string, columns: list<string>, foreign_table: string, resolution: string}>
      */
     public const KNOWN_DIAMOND_FKS = [
-        // The four RESTRICT ones are handled (and explained) above; repeated
+        // The RESTRICT ones are handled (and explained) above; repeated
         // here so this list is a complete answer to "is this diamond safe",
         // not just the SET NULL ones.
-        [
-            'table' => 'deals',
-            'columns' => ['crm_stage_id', 'user_id'],
-            'foreign_table' => 'crm_stages',
-            'resolution' => 'see HANDLED_RESTRICT_FKS: explicit, Deal::forceDelete() before $user->delete()',
-        ],
-        [
-            'table' => 'deals',
-            'columns' => ['crm_workspace_id', 'user_id'],
-            'foreign_table' => 'crm_workspaces',
-            'resolution' => 'see HANDLED_RESTRICT_FKS: explicit, Deal::forceDelete() before $user->delete()',
-        ],
-        [
-            'table' => 'customers',
-            'columns' => ['crm_workspace_id', 'user_id'],
-            'foreign_table' => 'crm_workspaces',
-            'resolution' => 'see HANDLED_RESTRICT_FKS: explicit, Customer::forceDelete() before $user->delete()',
-        ],
-        // Stage 2d-3-2's team-keyed composite FKs — same RESTRICT shape as
-        // the three above, resolved the same way.
         [
             'table' => 'deals',
             'columns' => ['crm_stage_id', 'team_id'],
