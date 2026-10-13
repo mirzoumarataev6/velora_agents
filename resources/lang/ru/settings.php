@@ -112,6 +112,8 @@ return [
         'invite_sent' => 'Приглашение отправлено.',
         'invite_already_pending' => 'Этому email уже отправлено приглашение в эту команду.',
         'invite_revoked' => 'Приглашение отозвано.',
+        'member_role_saved' => 'Роль участника обновлена.',
+        'member_removed' => 'Участник удалён из команды.',
         'pending_heading' => 'Ожидающие приглашения',
         'pending_empty' => 'Нет ожидающих приглашений.',
         'pending_invited_by' => 'Пригласил(а) :name',

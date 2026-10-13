@@ -33,6 +33,7 @@ use App\Http\Controllers\ProductImageController;
 use App\Http\Controllers\RootRedirectController;
 use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\Teams\TeamInvitationController;
+use App\Http\Controllers\Teams\TeamMemberController;
 use App\Http\Controllers\TeamSwitchController;
 use Illuminate\Support\Facades\Route;
 
@@ -84,6 +85,11 @@ Route::middleware(['auth', 'auth.session'])->group(function () {
     // inline here rather than a Policy.
     Route::post('/teams/invite', [TeamInvitationController::class, 'store'])->name('teams.invite');
     Route::delete('/teams/invitations/{invitation}', [TeamInvitationController::class, 'destroy'])->name('teams.invitations.destroy');
+
+    // Stage 3c: a member id is checked against the active team inside the
+    // controller, because global route binding by itself is not tenant scoping.
+    Route::patch('/teams/members/{membership}', [TeamMemberController::class, 'update'])->name('teams.members.update');
+    Route::delete('/teams/members/{membership}', [TeamMemberController::class, 'destroy'])->name('teams.members.destroy');
 
     // The only onboarding endpoint. Step progress is derived from the account's
     // own data at render time, so there is nothing to report back — only the

@@ -112,6 +112,8 @@ return [
         'invite_sent' => 'Даъват фиристода шуд.',
         'invite_already_pending' => 'Ба ин email аллакай даъват ба ин даста фиристода шудааст.',
         'invite_revoked' => 'Даъват бекор карда шуд.',
+        'member_role_saved' => 'Нақши аъзо нав шуд.',
+        'member_removed' => 'Аъзо аз даста хориҷ шуд.',
         'pending_heading' => 'Даъватҳои интизор',
         'pending_empty' => 'Даъватҳои интизор нест.',
         'pending_invited_by' => 'Даъват карда шуд аз ҷониби :name',

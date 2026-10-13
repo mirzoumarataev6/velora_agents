@@ -112,6 +112,8 @@ return [
         'invite_sent' => 'Invitation sent.',
         'invite_already_pending' => 'This email already has a pending invitation to this team.',
         'invite_revoked' => 'Invitation revoked.',
+        'member_role_saved' => 'Member role updated.',
+        'member_removed' => 'Member removed from the team.',
         'pending_heading' => 'Pending invitations',
         'pending_empty' => 'No pending invitations.',
         'pending_invited_by' => 'Invited by :name',
