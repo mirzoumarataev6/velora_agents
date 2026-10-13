@@ -6,7 +6,10 @@ use App\Models\Agent;
 use App\Models\CrmStage;
 use App\Models\CrmWorkspace;
 use App\Models\Customer;
+use App\Models\Dataset;
+use App\Models\DatasetProduct;
 use App\Models\Deal;
+use App\Models\ProductImage;
 use App\Models\Task;
 use App\Models\User;
 use Illuminate\Database\QueryException;
@@ -18,10 +21,14 @@ use RuntimeException;
 use Tests\TestCase;
 
 /**
- * Stage 2d-2: team_id is NOT NULL on all 26 StampsTeam tables. No MySQL-only
- * exemption was needed for any group — verified empirically (see each
- * migration's own docblock) before writing them, so there is no exempt
- * list to carry here; every one of the 26 is checked the same way.
+ * Stage 2d-2: team_id is NOT NULL on all 26 StampsTeam tables, on every
+ * driver, once all three migrations have run. Group (b)
+ * (`crm_workspaces`/`crm_stages`) is MySQL-only in its own migration —
+ * verified empirically to reproduce a cascading-delete failure on SQLite
+ * alone (see that migration's docblock) — with group (c) finishing the
+ * SQLite flip for those two tables alongside `customers`/`deals`. Groups
+ * (a) and (c) need no such exemption; every table in every group ends up
+ * NOT NULL on both drivers regardless of which file did it.
  */
 class TeamIdNotNullTest extends TestCase
 {
@@ -188,5 +195,40 @@ class TeamIdNotNullTest extends TestCase
         $this->expectExceptionMessageMatches('/crm_workspaces: \d+ row\(s\) still have a NULL team_id/');
 
         (require database_path('migrations/2026_10_18_000002_make_team_id_not_null_on_crm_workspaces_and_stages.php'))->up();
+    }
+
+    /**
+     * Group (a) guards its whole 22-table group before altering any of
+     * them (Stage 2d-2-4) — proven here from the opposite end of the list
+     * than the generic provider test above: a NULL row on the LAST table
+     * (`product_images`) must stop the migration before the FIRST table
+     * (`agents`) is ever altered, not just before `product_images` itself.
+     */
+    public function test_group_a_guards_every_table_before_altering_any_of_them(): void
+    {
+        (require database_path('migrations/2026_10_18_000001_make_team_id_not_null_on_independent_tables.php'))->down();
+
+        $user = User::factory()->create();
+        $agent = Agent::factory()->for($user)->create();
+        $dataset = Dataset::factory()->for($agent)->create();
+        $product = DatasetProduct::factory()->for($dataset)->create();
+        $image = new ProductImage(['path' => 'x.jpg', 'mime_type' => 'image/jpeg', 'size' => 1]);
+        $image->agent_id = $agent->id;
+        $image->dataset_product_id = $product->id;
+        $image->save();
+
+        DB::table('product_images')->where('id', $image->id)->update(['team_id' => null]);
+
+        $this->assertTrue(DB::table('product_images')->whereNull('team_id')->exists());
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessageMatches('/product_images: \d+ row\(s\) still have a NULL team_id/');
+
+        try {
+            (require database_path('migrations/2026_10_18_000001_make_team_id_not_null_on_independent_tables.php'))->up();
+        } finally {
+            $column = collect(Schema::getColumns('agents'))->firstWhere('name', 'team_id');
+            $this->assertTrue($column['nullable'], 'agents (the first table in the group) was altered before the guard reached product_images (the last).');
+        }
     }
 }

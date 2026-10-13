@@ -24,7 +24,7 @@ use Illuminate\Support\Facades\Schema;
  * group (b) deliberately left undone on this driver. Verified
  * empirically, not assumed: against a scratch SQLite database seeded
  * with one row per StampsTeam table, flipping all four together in the
- * order crm_workspaces, crm_stages, deals, customers, then deleting the
+ * order crm_workspaces, crm_stages, customers, deals, then deleting the
  * owning user (cascading through every one of them), raised no foreign
  * key error — repeated runs included. Reversing that order (deals/
  * customers before crm_workspaces/crm_stages) reproduces the same

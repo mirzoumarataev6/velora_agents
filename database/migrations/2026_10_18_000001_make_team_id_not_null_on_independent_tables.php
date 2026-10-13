@@ -44,13 +44,18 @@ return new class extends Migration
 
     public function up(): void
     {
+        // Every table in the group checked BEFORE any of them is altered
+        // — same shape groups (b)/(c) already use. MySQL's DDL is not
+        // transactional (an ALTER TABLE commits immediately, on its own),
+        // so this ordering is the actual protection: if table #20's data
+        // turns out not to be backfilled, this loop never reaches the
+        // alter loop below at all, and nothing in the group has been
+        // touched yet.
         foreach (self::TABLES as $table) {
-            // Checked immediately before THIS table is altered, not once
-            // for the whole file — see AssertsTeamIdIsBackfilled's own
-            // docblock for why that is what keeps a failure from leaving
-            // any table altered on bad data.
             $this->assertTeamIdBackfilled($table);
+        }
 
+        foreach (self::TABLES as $table) {
             Schema::table($table, function (Blueprint $t) {
                 $t->unsignedBigInteger('team_id')->nullable(false)->change();
             });
