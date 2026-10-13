@@ -19,6 +19,16 @@ use App\Models\BiDataset;
  * The drop is queued rather than immediate so that deleting a source with four
  * sheets does not hold the request open for four DDL statements, and so a failed
  * drop is retried instead of lost.
+ *
+ * `->afterCommit()`: `DeletesAccount` deletes a user's rows inside one
+ * `DB::transaction()`, and this `deleted` event fires inside it too — if
+ * the surrounding transaction later rolls back (the final `$user->delete()`
+ * fails), this dataset row is restored along with everything else, and a
+ * DROP that already ran in the meantime would have destroyed data that
+ * still exists. Dispatching without a transaction open (the ordinary path —
+ * deleting one source or dataset by itself) is unaffected: queued-job
+ * dispatch runs a callback immediately when there is nothing to defer to
+ * (`DatabaseTransactionsManager::addCallback()`).
  */
 class BiDatasetObserver
 {
@@ -29,6 +39,6 @@ class BiDatasetObserver
         DropDatasetTableJob::dispatch(
             $dataset->physicalTable(),
             $dataset->shardDirectory(),
-        );
+        )->afterCommit();
     }
 }
