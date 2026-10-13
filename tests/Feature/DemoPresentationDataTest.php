@@ -40,7 +40,13 @@ class DemoPresentationDataTest extends TestCase
         $edited->title = 'Изменено владельцем';
         $edited->save();
 
-        $legacy = $deals->skip(1)->first();
+        // The legacy purge protects cards with tasks as possible owner work.
+        // Pick a generated card without one, or this test asks the seeder to
+        // delete a card it deliberately preserves.
+        $legacy = $deals->first(fn (Deal $deal) => $deal->id !== $edited->id
+            && $deal->conversation_id !== null
+            && $deal->tasks()->doesntExist());
+        $this->assertNotNull($legacy);
         $legacy->forceFill(['note' => null])->saveQuietly();
         foreach ($legacy->activities as $activity) {
             $activity->forceFill(['data' => null])->save();
