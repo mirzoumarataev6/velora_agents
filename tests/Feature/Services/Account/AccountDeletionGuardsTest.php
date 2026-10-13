@@ -35,6 +35,14 @@ use Tests\TestCase;
  *     before anyone gets to try it against MySQL.
  * (c) a failure partway through must leave nothing deleted and must
  *     never dispatch the table-drop job for data that still exists.
+ * (d) the general shape (a) is a special case of: on a table with a direct
+ *     foreign key to `users`, every OTHER foreign key pointing at a
+ *     cascade-descendant of `users` whose delete rule is SET NULL,
+ *     RESTRICT or NO ACTION must be named in
+ *     DeletesAccount::KNOWN_DIAMOND_FKS — this is what caught
+ *     usage_logs.agent_id (SET NULL to agents), found only by running the
+ *     fix against real MySQL data, where it failed with a different error
+ *     than the RESTRICT one despite being the same family of bug.
  */
 class AccountDeletionGuardsTest extends TestCase
 {
@@ -121,6 +129,81 @@ class AccountDeletionGuardsTest extends TestCase
 
                 $this->assertTrue($isHandled, sprintf(
                     'Uncovered %s foreign key: %s.(%s) -> %s. Add it to DeletesAccount::HANDLED_RESTRICT_FKS and handle it in delete().',
+                    $fk['on_delete'],
+                    $table,
+                    implode(',', $fk['columns']),
+                    $fk['foreign_table'],
+                ));
+            }
+        }
+    }
+
+    /**
+     * Every table that has a foreign key pointing directly at `users`,
+     * regardless of that foreign key's own delete rule.
+     *
+     * @return list<string>
+     */
+    private function tablesWithDirectForeignKeyToUsers(): array
+    {
+        $tables = collect(Schema::getTables())->pluck('name')->all();
+
+        $result = [];
+        foreach ($tables as $table) {
+            foreach (Schema::getForeignKeys($table) as $fk) {
+                if ($fk['foreign_table'] === 'users') {
+                    $result[] = $table;
+
+                    break;
+                }
+            }
+        }
+
+        return $result;
+    }
+
+    public function test_every_set_null_restrict_or_no_action_fk_on_a_table_with_a_direct_edge_to_users_is_accounted_for(): void
+    {
+        $descendants = $this->cascadeDescendantsOfUsers();
+        $directToUsers = $this->tablesWithDirectForeignKeyToUsers();
+
+        // Sanity: the real schema must actually contain the pairing this
+        // guard exists for, or the scan above is broken, not the production
+        // code.
+        $this->assertContains('usage_logs', $directToUsers);
+        $this->assertContains('agents', $descendants);
+
+        $known = DeletesAccount::KNOWN_DIAMOND_FKS;
+
+        foreach ($directToUsers as $table) {
+            foreach (Schema::getForeignKeys($table) as $fk) {
+                if ($fk['foreign_table'] === 'users') {
+                    continue;
+                }
+
+                if (! in_array($fk['on_delete'], ['set null', 'restrict', 'no action'], true)) {
+                    continue;
+                }
+
+                if (! in_array($fk['foreign_table'], $descendants, true)) {
+                    continue;
+                }
+
+                $columns = $fk['columns'];
+                sort($columns);
+
+                $isKnown = collect($known)->contains(function (array $entry) use ($table, $columns, $fk) {
+                    $entryColumns = $entry['columns'];
+                    sort($entryColumns);
+
+                    return $entry['table'] === $table
+                        && $entryColumns === $columns
+                        && $entry['foreign_table'] === $fk['foreign_table'];
+                });
+
+                $this->assertTrue($isKnown, sprintf(
+                    'Unaccounted-for %s diamond: %s.(%s) -> %s, on a table with a direct edge to users. '.
+                    'Add it to DeletesAccount::KNOWN_DIAMOND_FKS with how it is handled or why it is already safe.',
                     $fk['on_delete'],
                     $table,
                     implode(',', $fk['columns']),

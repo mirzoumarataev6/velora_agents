@@ -7,6 +7,7 @@ use App\Models\CrmStage;
 use App\Models\CrmWorkspace;
 use App\Models\Customer;
 use App\Models\Deal;
+use App\Models\UsageLog;
 use App\Models\User;
 use App\Services\Account\DeletesAccount;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -39,8 +40,16 @@ class DeletesAccountTest extends TestCase
             'crm_stage_id' => $stage->id,
             'agent_id' => $agent->id,
         ]);
+        $usageLog = (new UsageLog)->forceFill([
+            'user_id' => $user->id,
+            'agent_id' => $agent->id,
+            'type' => 'generation',
+            'input_tokens' => 1,
+            'output_tokens' => 1,
+        ]);
+        $usageLog->save();
 
-        return compact('user', 'agent', 'workspace', 'stage', 'customer', 'deal');
+        return compact('user', 'agent', 'workspace', 'stage', 'customer', 'deal', 'usageLog');
     }
 
     public function test_it_deletes_the_user_and_everything_hanging_off_it(): void
@@ -55,6 +64,27 @@ class DeletesAccountTest extends TestCase
         $this->assertDatabaseMissing('customers', ['id' => $fixture['customer']->id]);
         $this->assertDatabaseMissing('crm_workspaces', ['id' => $fixture['workspace']->id]);
         $this->assertDatabaseMissing('crm_stages', ['id' => $fixture['stage']->id]);
+        $this->assertDatabaseMissing('usage_logs', ['id' => $fixture['usageLog']->id]);
+    }
+
+    /**
+     * usage_logs.agent_id is SET NULL to agents — a diamond this service has
+     * to resolve itself (see its docblock): deleting a user with an agent
+     * that has a usage_logs row fails on real MySQL even with deals/customers
+     * handled, because nothing else removes usage_logs before $user->delete()
+     * runs. SQLite doesn't reproduce the MySQL failure (same caveat as the
+     * class docblock above), so this proves the explicit delete happens and
+     * stays scoped to this user, not that it fixes a failure visible here.
+     */
+    public function test_usage_logs_are_deleted_with_the_account(): void
+    {
+        $fixture = $this->fullAccount();
+        $other = $this->fullAccount();
+
+        app(DeletesAccount::class)->delete($fixture['user']);
+
+        $this->assertDatabaseMissing('usage_logs', ['id' => $fixture['usageLog']->id]);
+        $this->assertDatabaseHas('usage_logs', ['id' => $other['usageLog']->id]);
     }
 
     /**
@@ -111,5 +141,6 @@ class DeletesAccountTest extends TestCase
         $this->assertDatabaseHas('customers', ['id' => $other['customer']->id]);
         $this->assertDatabaseHas('crm_workspaces', ['id' => $other['workspace']->id]);
         $this->assertDatabaseHas('crm_stages', ['id' => $other['stage']->id]);
+        $this->assertDatabaseHas('usage_logs', ['id' => $other['usageLog']->id]);
     }
 }
