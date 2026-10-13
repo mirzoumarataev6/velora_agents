@@ -52,6 +52,13 @@ class MigrateUsersToTeamsCommandTest extends TestCase
         // the column going back to nullable, no data loss, the same way
         // CrmNoteTest relaxes crm_notes for its own migration re-run.
         foreach ([
+            // Group (c) also controls crm_workspaces/crm_stages' SQLite
+            // nullability (group (b) is a deliberate no-op there — see
+            // its own docblock), so this one file's down() covers all four
+            // of those tables; group (a) covers the rest this class uses
+            // (agents, channels, conversations, datasets, dataset_products,
+            // bi_sources, bi_datasets, usage_logs).
+            '2026_10_18_000003_make_team_id_not_null_on_customers_and_deals.php',
             '2026_10_18_000001_make_team_id_not_null_on_independent_tables.php',
         ] as $file) {
             (require database_path('migrations/'.$file))->down();

@@ -79,6 +79,15 @@ class TeamAwareCrmDefaultsTest extends TestCase
     {
         [$owner, $teamA] = $this->makeOwnerWithASecondTeam();
 
+        // Stage 2d-2 made crm_workspaces.team_id NOT NULL — on SQLite that
+        // is actually completed by group (c)'s migration, not group (b)'s
+        // (which is a deliberate no-op on this driver; see its own
+        // docblock), so that is the file relaxed here. This test exists
+        // specifically to prove defaultFor() still adopts a row from
+        // before that flip (and from before team_id existed on this table
+        // at all) rather than duplicating it.
+        (require database_path('migrations/2026_10_18_000003_make_team_id_not_null_on_customers_and_deals.php'))->down();
+
         // A workspace from before team_id existed on this table at all —
         // built with withoutTeamStamping() so it stays legacy (team_id
         // NULL) despite the owner already having a current team.
@@ -97,6 +106,7 @@ class TeamAwareCrmDefaultsTest extends TestCase
         $this->assertSame(1, CrmWorkspace::where('user_id', $owner->id)->count());
     }
 
+    // TEMPORARY: pins the unique(user_id,name) hard stop; replace in Stage 2d-5a when that index becomes team-scoped.
     public function test_a_main_workspace_owned_by_another_team_is_never_adopted(): void
     {
         [$owner, $teamA, $teamB] = $this->makeOwnerWithASecondTeam();
