@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Middleware\SetLocale;
+use App\Services\Account\DeletesAccount;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -205,7 +206,10 @@ class SettingsController extends Controller
      * The confirmation phrase is checked server-side too: the modal is a
      * courtesy, not the control. Agents, and through them channels, knowledge,
      * conversations, messages and leads, go with the row via the foreign keys
-     * declared in their migrations.
+     * declared in their migrations. `DeletesAccount` exists because two of
+     * those foreign keys (deals/customers against crm_stages/crm_workspaces)
+     * are RESTRICT, not CASCADE, and MySQL's own cascade order trips them —
+     * see that service's docblock.
      */
     public function destroy(Request $request): RedirectResponse|JsonResponse
     {
@@ -226,7 +230,7 @@ class SettingsController extends Controller
 
         Auth::logout();
 
-        $user->delete();
+        app(DeletesAccount::class)->delete($user);
 
         $request->session()->invalidate();
         $request->session()->regenerateToken();
