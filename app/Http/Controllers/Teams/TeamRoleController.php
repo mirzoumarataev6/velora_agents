@@ -1,0 +1,122 @@
+<?php
+
+namespace App\Http\Controllers\Teams;
+
+use App\Http\Controllers\Controller;
+use App\Models\Role;
+use App\Models\Team;
+use App\Services\Permissions\PermissionCatalog;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
+use Illuminate\View\View;
+
+/**
+ * Owner-only until the Policy/Gate stage: the editable permission bundles are
+ * prepared here, but they do not change authorization elsewhere yet.
+ */
+class TeamRoleController extends Controller
+{
+    public function index(Request $request): View
+    {
+        $teamId = $this->ownedActiveTeamId($request);
+        $editId = $request->query('edit');
+        abort_if($editId !== null && (! is_scalar($editId) || ! ctype_digit((string) $editId)), 404);
+        $selectedRole = $editId !== null
+            ? Role::where('team_id', $teamId)->findOrFail((int) $editId)
+            : null;
+
+        return view('teams.roles.index', [
+            'i18nExtraNamespaces' => ['settings'],
+            'team' => Team::findOrFail($teamId),
+            'roles' => Role::where('team_id', $teamId)->orderBy('id')->get(),
+            'selectedRole' => $selectedRole,
+            'selectedPermissions' => $selectedRole?->is_owner
+                ? PermissionCatalog::all()
+                : ($selectedRole?->permissionKeys() ?? []),
+            'permissionGroups' => collect(PermissionCatalog::all())
+                ->groupBy(fn (string $permission) => explode('.', $permission)[0]),
+        ]);
+    }
+
+    public function store(Request $request): RedirectResponse
+    {
+        $teamId = $this->ownedActiveTeamId($request);
+        $data = $request->validateWithBag('roles', [
+            'name' => ['required', 'string', 'max:255', Rule::unique('roles', 'name')->where('team_id', $teamId)],
+            ...$this->permissionRules(),
+        ]);
+
+        $role = DB::transaction(function () use ($teamId, $data): Role {
+            // Slugs are internal identifiers and stay stable after a rename.
+            // A random suffix also keeps a custom "Admin" name from ever
+            // colliding with the seeded system slug on a concurrent create.
+            $base = Str::substr(Str::slug($data['name']) ?: 'role', 0, 230);
+            $role = Role::create([
+                'team_id' => $teamId,
+                'name' => $data['name'],
+                'slug' => $base.'-'.Str::lower(Str::random(12)),
+            ]);
+            $role->syncPermissions($data['permissions'] ?? []);
+
+            return $role;
+        });
+
+        return redirect()->route('teams.roles.index', ['edit' => $role->id])
+            ->with('status', __('settings.roles.created'));
+    }
+
+    public function update(Request $request, Role $role): RedirectResponse
+    {
+        $teamId = $this->ownedActiveTeamId($request);
+        abort_unless((int) $role->team_id === $teamId, 404);
+        abort_if($role->is_owner, 403);
+
+        $isSystem = in_array($role->slug, PermissionCatalog::systemRoleSlugs(), true);
+        $data = $request->validateWithBag('roles', [
+            // Seeded names identify the four default roles throughout the UI;
+            // editing their permission bundle must not silently rename them.
+            'name' => $isSystem
+                ? ['prohibited']
+                : ['required', 'string', 'max:255', Rule::unique('roles', 'name')->where('team_id', $teamId)->ignore($role->id)],
+            ...$this->permissionRules(),
+        ]);
+
+        DB::transaction(function () use ($role, $teamId, $isSystem, $data): void {
+            $locked = Role::whereKey($role->id)->where('team_id', $teamId)->lockForUpdate()->firstOrFail();
+            abort_if($locked->is_owner, 403);
+
+            if (! $isSystem) {
+                $locked->forceFill(['name' => $data['name']])->save();
+            }
+
+            $locked->syncPermissions($data['permissions'] ?? []);
+        });
+
+        $request->user()->flushPermissionCache();
+
+        return redirect()->route('teams.roles.index', ['edit' => $role->id])
+            ->with('status', __('settings.roles.saved'));
+    }
+
+    /** @return array<string, array<int, mixed>> */
+    private function permissionRules(): array
+    {
+        return [
+            'permissions' => ['sometimes', 'array'],
+            'permissions.*' => ['string', Rule::in(PermissionCatalog::all()), 'distinct'],
+        ];
+    }
+
+    private function ownedActiveTeamId(Request $request): int
+    {
+        $user = $request->user();
+        $teamId = $user->activeTeamId();
+
+        abort_unless($teamId !== null && $user->isOwnerOf($teamId), 403);
+
+        return $teamId;
+    }
+}

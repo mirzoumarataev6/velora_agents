@@ -304,6 +304,7 @@
                     @if (! $isTeamOwner)
                         <p class="mt-4 rounded-xl bg-sunk px-4 py-3 text-sm text-muted dark:bg-night-raised dark:text-night-muted" data-i18n="settings.team.not_owner">{{ __('settings.team.not_owner') }}</p>
                     @else
+                        <a href="{{ route('teams.roles.index') }}" class="btn btn-ghost btn-sm mt-5" data-i18n="settings.roles.manage_button">{{ __('settings.roles.manage_button') }}</a>
                         <h3 class="mt-6 text-sm font-semibold" data-i18n="settings.team.members_heading">{{ __('settings.team.members_heading') }}</h3>
                         <ul class="mt-3 divide-y divide-black/5 dark:divide-white/10">
                             @foreach ($teamMembers as $memberMembership)

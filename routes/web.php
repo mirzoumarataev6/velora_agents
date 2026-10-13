@@ -34,6 +34,7 @@ use App\Http\Controllers\RootRedirectController;
 use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\Teams\TeamInvitationController;
 use App\Http\Controllers\Teams\TeamMemberController;
+use App\Http\Controllers\Teams\TeamRoleController;
 use App\Http\Controllers\TeamSwitchController;
 use Illuminate\Support\Facades\Route;
 
@@ -90,6 +91,11 @@ Route::middleware(['auth', 'auth.session'])->group(function () {
     // controller, because global route binding by itself is not tenant scoping.
     Route::patch('/teams/members/{membership}', [TeamMemberController::class, 'update'])->name('teams.members.update');
     Route::delete('/teams/members/{membership}', [TeamMemberController::class, 'destroy'])->name('teams.members.destroy');
+
+    // Stage 3d keeps role management owner-only until the Policy/Gate rewrite.
+    Route::get('/teams/roles', [TeamRoleController::class, 'index'])->name('teams.roles.index');
+    Route::post('/teams/roles', [TeamRoleController::class, 'store'])->name('teams.roles.store');
+    Route::patch('/teams/roles/{role}', [TeamRoleController::class, 'update'])->name('teams.roles.update');
 
     // The only onboarding endpoint. Step progress is derived from the account's
     // own data at render time, so there is nothing to report back — only the

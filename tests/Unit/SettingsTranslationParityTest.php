@@ -2,6 +2,8 @@
 
 namespace Tests\Unit;
 
+use App\Services\Permissions\PermissionCatalog;
+use Illuminate\Support\Facades\Lang;
 use Tests\TestCase;
 
 /**
@@ -17,6 +19,15 @@ class SettingsTranslationParityTest extends TestCase
 
         foreach (['tg', 'en'] as $locale) {
             $this->assertSame($russian, $this->keys(require resource_path("lang/{$locale}/settings.php")), $locale);
+        }
+    }
+
+    public function test_every_catalog_permission_has_a_role_editor_label_in_all_locales(): void
+    {
+        foreach (['ru', 'tg', 'en'] as $locale) {
+            foreach (PermissionCatalog::all() as $permission) {
+                $this->assertTrue(Lang::has('settings.roles.permissions.'.$permission, $locale), "{$locale}: {$permission}");
+            }
         }
     }
 
