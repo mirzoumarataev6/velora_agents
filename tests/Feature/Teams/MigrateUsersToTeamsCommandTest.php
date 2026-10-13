@@ -60,6 +60,20 @@ class MigrateUsersToTeamsCommandTest extends TestCase
             // bi_sources, bi_datasets, usage_logs).
             '2026_10_18_000003_make_team_id_not_null_on_customers_and_deals.php',
             '2026_10_18_000001_make_team_id_not_null_on_independent_tables.php',
+            // Stage 2d-3-2's team-keyed composite FKs enforce deals/customers.team_id
+            // == their workspace's/stage's team_id — a constraint `fillMissingRows()`
+            // (deliberately, correctly) violates mid-backfill in exactly the shape this
+            // test class exercises: it fills `deals.team_id` (DIRECT_TABLES visits it
+            // before crm_workspaces/crm_stages) while the workspace/stage a legacy deal
+            // points at is still NULL, so the composite FK has nothing matching to find.
+            // Real deployments never hit this: Stage 2d-2's NOT NULL flip already
+            // requires every row's team_id to be backfilled and in sync before it can
+            // run, and Stage 2d-3 only ships after that — so by the time these FKs
+            // exist, team:migrate-users never runs against a NULL-team_id row again.
+            // This test class recreates exactly that pre-Stage-2d-2 state on purpose
+            // (see above), which the new FKs cannot coexist with, so they are un-applied
+            // here too, the same way.
+            '2026_10_19_000002_add_team_keyed_composite_fks_to_deals_and_customers.php',
         ] as $file) {
             (require database_path('migrations/'.$file))->down();
         }
