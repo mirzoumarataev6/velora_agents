@@ -62,10 +62,10 @@ class TeamKeyedCrmSchemaTest extends TestCase
             'customers_team_phone_key_unique is missing or shaped wrong.'
         );
 
-        // The OLD user-keyed ones must still be there too — this stage adds,
-        // it never drops.
-        $this->assertTrue($workspaceIndexes->contains(fn ($i) => $i['name'] === 'crm_workspaces_user_id_name_unique'));
-        $this->assertTrue($customerIndexes->contains(fn ($i) => $i['name'] === 'customers_user_id_phone_key_unique'));
+        // crm_workspaces_user_id_name_unique and customers_user_id_phone_key_unique
+        // used to be asserted present here too ("this stage adds, it never
+        // drops") — Stage 2d-5a now drops both; see TeamKeyedUniqueRetirementTest
+        // for that migration's own coverage.
     }
 
     /**
