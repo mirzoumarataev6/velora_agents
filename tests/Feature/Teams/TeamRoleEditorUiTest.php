@@ -22,7 +22,7 @@ class TeamRoleEditorUiTest extends TestCase
 
         $response = $this->get(route('teams.roles.index'));
         $response->assertOk();
-        $response->assertSee('data-i18n="settings.roles.not_enforced_yet"', false);
+        $response->assertSee('data-i18n="settings.roles.enforced"', false);
         foreach (PermissionCatalog::all() as $permission) {
             $response->assertSee('value="'.$permission.'"', false);
             $response->assertSee(__('settings.roles.permissions.'.$permission));
@@ -48,11 +48,11 @@ class TeamRoleEditorUiTest extends TestCase
         $customPage->assertSee('value="agents.view"', false);
     }
 
-    public function test_non_owner_has_no_role_editor_link(): void
+    public function test_operator_has_no_role_editor_link(): void
     {
         $owner = User::factory()->create();
         $member = User::factory()->create();
-        $role = Role::where('team_id', $owner->current_team_id)->where('slug', PermissionCatalog::ADMIN)->sole();
+        $role = Role::where('team_id', $owner->current_team_id)->where('slug', PermissionCatalog::OPERATOR)->sole();
         TeamMembership::create([
             'team_id' => $owner->current_team_id,
             'user_id' => $member->id,

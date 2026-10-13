@@ -3,30 +3,28 @@
 namespace App\Http\Controllers\Teams;
 
 use App\Http\Controllers\Controller;
+use App\Models\Role;
 use App\Models\TeamMembership;
 use App\Models\User;
+use App\Services\Permissions\AuthorizesRoleGrants;
 use App\Services\Teams\CreatesPersonalTeam;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
-/**
- * Stage 3c uses the same temporary owner check as invitations. The later
- * Policy/Gate stage will replace it; roles remain labels until then.
- */
 class TeamMemberController extends Controller
 {
     public function update(Request $request, TeamMembership $membership): RedirectResponse
     {
-        $teamId = $this->ownedActiveTeamId($request);
+        $teamId = $this->permittedActiveTeamId($request, 'team.roles.manage');
         abort_unless((int) $membership->team_id === $teamId, 404);
 
         $data = $request->validateWithBag('team', [
             'role_id' => ['required', 'integer', Rule::exists('roles', 'id')->where('team_id', $teamId)],
         ]);
 
-        $member = DB::transaction(function () use ($membership, $teamId, $data): User {
+        $member = DB::transaction(function () use ($request, $membership, $teamId, $data): User {
             $locked = TeamMembership::whereKey($membership->id)->where('team_id', $teamId)
                 ->lockForUpdate()->firstOrFail();
 
@@ -34,19 +32,24 @@ class TeamMemberController extends Controller
             // loaded must remain immune to a stale role-change submission.
             abort_if($locked->role->is_owner, 403);
 
-            $locked->forceFill(['role_id' => $data['role_id']])->save();
+            $role = Role::where('team_id', $teamId)->whereKey($data['role_id'])->lockForUpdate()->firstOrFail();
+            $grants = app(AuthorizesRoleGrants::class);
+            abort_unless($grants->canGrant($request->user(), $locked->role)
+                && $grants->canGrant($request->user(), $role), 403);
+            $locked->forceFill(['role_id' => $role->id])->save();
 
             return $locked->user;
         });
 
         $member->flushPermissionCache();
+        $request->user()->flushPermissionCache();
 
         return back()->with('status', __('settings.team.member_role_saved'))->with('settings_tab', 'team');
     }
 
     public function destroy(Request $request, TeamMembership $membership, CreatesPersonalTeam $personalTeams): RedirectResponse
     {
-        $teamId = $this->ownedActiveTeamId($request);
+        $teamId = $this->permittedActiveTeamId($request, 'team.members.remove');
         abort_unless((int) $membership->team_id === $teamId, 404);
 
         $member = DB::transaction(function () use ($membership, $teamId, $personalTeams): User {
@@ -75,16 +78,18 @@ class TeamMemberController extends Controller
         });
 
         $member->flushPermissionCache();
+        $request->user()->flushPermissionCache();
 
         return back()->with('status', __('settings.team.member_removed'))->with('settings_tab', 'team');
     }
 
-    private function ownedActiveTeamId(Request $request): int
+    private function permittedActiveTeamId(Request $request, string $permission): int
     {
         $user = $request->user();
         $teamId = $user->activeTeamId();
 
-        abort_unless($teamId !== null && $user->isOwnerOf($teamId), 403);
+        $this->authorize($permission);
+        abort_if($teamId === null, 403);
 
         return $teamId;
     }

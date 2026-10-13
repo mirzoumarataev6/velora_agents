@@ -103,7 +103,7 @@ return [
     'team' => [
         'heading' => 'Team',
         'description' => 'Manage the active team\'s members and invitations.',
-        'not_owner' => 'Only the team owner can manage members and invitations.',
+        'not_owner' => 'Your role does not grant access to team management.',
         'members_heading' => 'Members',
         'change_role_button' => 'Save role',
         'remove_member_button' => 'Remove from team',
@@ -148,7 +148,7 @@ return [
         'custom' => 'Custom role',
         'owner_protected' => 'The Owner role and its permissions cannot be changed.',
         'permissions_heading' => 'Permissions',
-        'not_enforced_yet' => 'Permissions are saved now; they will restrict access when access rules are enabled.',
+        'enforced' => 'Permissions control members’ access to team data and actions.',
         'create_button' => 'Create role',
         'save_button' => 'Save changes',
         'created' => 'Role created.',

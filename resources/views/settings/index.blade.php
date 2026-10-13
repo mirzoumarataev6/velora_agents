@@ -301,10 +301,13 @@
                     <h2 class="font-display text-lg font-semibold" data-i18n="settings.team.heading">{{ __('settings.team.heading') }}</h2>
                     <p class="mt-1 text-sm text-muted dark:text-night-muted" data-i18n="settings.team.description">{{ __('settings.team.description') }}</p>
 
-                    @if (! $isTeamOwner)
+                    @if (! $canViewTeam)
                         <p class="mt-4 rounded-xl bg-sunk px-4 py-3 text-sm text-muted dark:bg-night-raised dark:text-night-muted" data-i18n="settings.team.not_owner">{{ __('settings.team.not_owner') }}</p>
                     @else
+                        @can('team.roles.view')
                         <a href="{{ route('teams.roles.index') }}" class="btn btn-ghost btn-sm mt-5" data-i18n="settings.roles.manage_button">{{ __('settings.roles.manage_button') }}</a>
+                        @endcan
+                        @can('team.members.view')
                         <h3 class="mt-6 text-sm font-semibold" data-i18n="settings.team.members_heading">{{ __('settings.team.members_heading') }}</h3>
                         <ul class="mt-3 divide-y divide-black/5 dark:divide-white/10">
                             @foreach ($teamMembers as $memberMembership)
@@ -317,6 +320,7 @@
                                         <span class="badge badge-neutral">{{ __('agents.nav.teams.roles.owner') }}</span>
                                     @else
                                         <div class="flex flex-wrap items-center gap-2">
+                                            @can('team.roles.manage')
                                             <form method="POST" action="{{ route('teams.members.update', $memberMembership) }}" class="flex items-center gap-2">
                                                 @csrf
                                                 @method('PATCH')
@@ -330,18 +334,25 @@
                                                 </select>
                                                 <button type="submit" class="btn btn-ghost btn-sm" data-i18n="settings.team.change_role_button">{{ __('settings.team.change_role_button') }}</button>
                                             </form>
+                                            @else
+                                                <span class="badge badge-neutral">{{ $memberMembership->role->displayName() }}</span>
+                                            @endcan
+                                            @can('team.members.remove')
                                             <form method="POST" action="{{ route('teams.members.destroy', $memberMembership) }}"
                                                 x-on:submit="if (! window.confirm(window.__i18n.messages[window.__i18n.current].settings.team.remove_confirm)) $event.preventDefault()">
                                                 @csrf
                                                 @method('DELETE')
                                                 <button type="submit" class="btn btn-ghost btn-sm" data-i18n="settings.team.remove_member_button">{{ __('settings.team.remove_member_button') }}</button>
                                             </form>
+                                            @endcan
                                         </div>
                                     @endif
                                 </li>
                             @endforeach
                         </ul>
 
+                        @endcan
+                        @can('team.members.invite')
                         <h3 class="mt-7 border-t border-hairline pt-5 text-sm font-semibold dark:border-white/10" data-i18n="settings.team.invite_heading">{{ __('settings.team.invite_heading') }}</h3>
                         <p class="mt-1 text-sm text-muted dark:text-night-muted" data-i18n="settings.team.invite_description">{{ __('settings.team.invite_description') }}</p>
 
@@ -403,6 +414,7 @@
                                 @endforeach
                             </ul>
                         @endif
+                        @endcan
                     @endif
                 </div>
             </section>

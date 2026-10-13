@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Teams;
 
 use App\Http\Controllers\Controller;
 use App\Models\Role;
+use App\Services\Permissions\AuthorizesRoleGrants;
 use App\Services\Permissions\PermissionCatalog;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -12,15 +13,11 @@ use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
-/**
- * Owner-only until the Policy/Gate stage: the editable permission bundles are
- * prepared here, but they do not change authorization elsewhere yet.
- */
 class TeamRoleController extends Controller
 {
     public function index(Request $request): View
     {
-        $teamId = $this->ownedActiveTeamId($request);
+        $teamId = $this->permittedActiveTeamId($request, 'team.roles.view');
         $editId = $request->query('edit');
         abort_if($editId !== null && (! is_scalar($editId) || ! ctype_digit((string) $editId)), 404);
         $selectedRole = $editId !== null
@@ -41,11 +38,13 @@ class TeamRoleController extends Controller
 
     public function store(Request $request): RedirectResponse
     {
-        $teamId = $this->ownedActiveTeamId($request);
+        $teamId = $this->permittedActiveTeamId($request, 'team.roles.manage');
         $data = $request->validateWithBag('roles', [
             'name' => ['required', 'string', 'max:255', Rule::unique('roles', 'name')->where('team_id', $teamId)],
             ...$this->permissionRules(),
         ]);
+
+        abort_unless(app(AuthorizesRoleGrants::class)->canGrantPermissions($request->user(), $teamId, $data['permissions'] ?? []), 403);
 
         $role = DB::transaction(function () use ($teamId, $data): Role {
             // Slugs are internal identifiers and stay stable after a rename.
@@ -68,7 +67,7 @@ class TeamRoleController extends Controller
 
     public function update(Request $request, Role $role): RedirectResponse
     {
-        $teamId = $this->ownedActiveTeamId($request);
+        $teamId = $this->permittedActiveTeamId($request, 'team.roles.manage');
         abort_unless((int) $role->team_id === $teamId, 404);
         abort_if($role->is_owner, 403);
 
@@ -82,9 +81,12 @@ class TeamRoleController extends Controller
             ...$this->permissionRules(),
         ]);
 
-        DB::transaction(function () use ($role, $teamId, $isSystem, $data): void {
+        DB::transaction(function () use ($request, $role, $teamId, $isSystem, $data): void {
             $locked = Role::whereKey($role->id)->where('team_id', $teamId)->lockForUpdate()->firstOrFail();
             abort_if($locked->is_owner, 403);
+            $grants = app(AuthorizesRoleGrants::class);
+            abort_unless($grants->canGrant($request->user(), $locked)
+                && $grants->canGrantPermissions($request->user(), $teamId, $data['permissions'] ?? []), 403);
 
             if (! $isSystem) {
                 $locked->forceFill(['name' => $data['name']])->save();
@@ -108,12 +110,13 @@ class TeamRoleController extends Controller
         ];
     }
 
-    private function ownedActiveTeamId(Request $request): int
+    private function permittedActiveTeamId(Request $request, string $permission): int
     {
         $user = $request->user();
         $teamId = $user->activeTeamId();
 
-        abort_unless($teamId !== null && $user->isOwnerOf($teamId), 403);
+        $this->authorize($permission);
+        abort_if($teamId === null, 403);
 
         return $teamId;
     }

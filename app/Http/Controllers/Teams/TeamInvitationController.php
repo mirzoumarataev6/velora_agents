@@ -5,7 +5,9 @@ namespace App\Http\Controllers\Teams;
 use App\Http\Controllers\Controller;
 use App\Mail\TeamInvitationMail;
 use App\Models\Invitation;
+use App\Models\Role;
 use App\Models\TeamMembership;
+use App\Services\Permissions\AuthorizesRoleGrants;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -13,16 +15,6 @@ use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
-/**
- * Invite someone by email to join the active team, and accept that
- * invitation. Stage 3b is explicitly scoped NOT to build a Policy class —
- * authorization for store()/destroy() below is a direct
- * `$user->isOwnerOf($team)` check, inline, the same TEMPORARY shape
- * TeamSwitchController already uses for its own membership check. This is
- * meant to be REPLACED, not extended: when a later stage wires
- * `Gate::before` for team permissions, these two checks are exactly what
- * it supersedes, alongside Stage 3c's member-management checks.
- */
 class TeamInvitationController extends Controller
 {
     /** Same window `Invitation`'s own factory default uses. */
@@ -40,12 +32,16 @@ class TeamInvitationController extends Controller
         $user = $request->user();
         $teamId = $user->activeTeamId();
 
-        abort_unless($teamId !== null && $user->isOwnerOf($teamId), 403);
+        $this->authorize('team.members.invite');
+        abort_if($teamId === null, 403);
 
         $data = $request->validateWithBag('team', [
             'email' => ['required', 'string', 'email', 'max:255'],
             'role_id' => ['required', 'integer', Rule::exists('roles', 'id')->where('team_id', $teamId)],
         ]);
+
+        $role = Role::where('team_id', $teamId)->findOrFail($data['role_id']);
+        abort_unless(app(AuthorizesRoleGrants::class)->canGrant($user, $role), 403);
 
         // Pending-and-unexpired only: an invitation that already expired, was
         // revoked, or was accepted leaves this email free to be invited
@@ -90,7 +86,7 @@ class TeamInvitationController extends Controller
      */
     public function destroy(Request $request, Invitation $invitation): RedirectResponse
     {
-        abort_unless($request->user()->isOwnerOf($invitation->team_id), 403);
+        $this->authorize('team.members.invite', $invitation);
 
         if ($invitation->status === Invitation::STATUS_PENDING) {
             $invitation->forceFill(['status' => Invitation::STATUS_REVOKED])->save();
@@ -142,6 +138,8 @@ class TeamInvitationController extends Controller
         if (mb_strtolower($invitation->email) !== mb_strtolower($user->email)) {
             return $this->errorPage('settings.team.accept_email_mismatch', 403, ['email' => $invitation->email]);
         }
+
+        abort_unless(Role::where('team_id', $invitation->team_id)->whereKey($invitation->role_id)->exists(), 403);
 
         // Already a member (a second click on the same link, or they joined
         // some other way since this was sent) — accept idempotently rather

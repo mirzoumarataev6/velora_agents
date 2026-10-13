@@ -3,11 +3,13 @@
 namespace App\Http\Controllers;
 
 use App\Http\Middleware\SetLocale;
+use App\Models\Agent;
 use App\Models\Invitation;
 use App\Models\Role;
 use App\Models\Team;
 use App\Models\TeamMembership;
 use App\Services\Account\DeletesAccount;
+use App\Services\Permissions\AuthorizesRoleGrants;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -37,10 +39,10 @@ class SettingsController extends Controller
     {
         $user = $request->user();
         $teamId = $user->activeTeamId();
-        // Same activeTeamId()-then-isOwnerOf() shape TeamSwitchController and
-        // TeamInvitationController already use: a stale/foreign
-        // current_team_id must read as "not the owner", never crash this page.
         $isTeamOwner = $teamId !== null && $user->isOwnerOf($teamId);
+        $canViewMembers = $user->can('team.members.view');
+        $canInvite = $user->can('team.members.invite');
+        $canManageRoles = $user->can('team.roles.manage');
 
         return view('settings.index', [
             'i18nExtraNamespaces' => ['settings'],
@@ -51,20 +53,22 @@ class SettingsController extends Controller
             'user' => $user,
             // Drives the Telegram lead-alert cards: one per agent, because the
             // link is made through that agent's own bot.
-            'agents' => $user->agents()
+            'agents' => $user->can('agents.update') ? Agent::ownedBy($user)
                 ->orderBy('name')
-                ->get(['id', 'name', 'slug', 'notify_telegram_username', 'notify_telegram_chat_id', 'notify_telegram_linked_at']),
+                ->get(['id', 'name', 'slug', 'notify_telegram_username', 'notify_telegram_chat_id', 'notify_telegram_linked_at']) : collect(),
             'sessions' => $this->sessions($request),
             'sessionsSupported' => $this->sessionsAreListable(),
             'activeTeam' => $teamId !== null ? Team::find($teamId) : null,
             'isTeamOwner' => $isTeamOwner,
-            // Only queried for the one person who can act on them — nobody
-            // else's settings page pays for roles/members/invitations.
-            'teamRoles' => $isTeamOwner ? Role::where('team_id', $teamId)->orderBy('id')->get() : collect(),
-            'teamMembers' => $isTeamOwner
+            'canViewTeam' => $canViewMembers || $canInvite || $user->can('team.roles.view'),
+            'teamRoles' => ($canInvite || $canManageRoles)
+                ? Role::where('team_id', $teamId)->orderBy('id')->get()
+                    ->filter(fn (Role $role) => app(AuthorizesRoleGrants::class)->canGrant($user, $role))
+                : collect(),
+            'teamMembers' => $canViewMembers
                 ? TeamMembership::where('team_id', $teamId)->with(['user', 'role'])->orderBy('id')->get()
                 : collect(),
-            'pendingInvitations' => $isTeamOwner
+            'pendingInvitations' => $canInvite
                 ? Invitation::where('team_id', $teamId)->where('status', Invitation::STATUS_PENDING)
                     ->with(['role', 'inviter'])->orderByDesc('created_at')->get()
                 : collect(),

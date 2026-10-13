@@ -117,18 +117,18 @@ class TeamRoleManagementTest extends TestCase
         $this->assertSame(PermissionCatalog::all(), $role->permissionKeys());
     }
 
-    public function test_non_owner_cannot_view_create_or_edit_roles(): void
+    public function test_operator_cannot_view_create_or_edit_roles(): void
     {
         $owner = User::factory()->create();
         $member = User::factory()->create();
         TeamMembership::create([
             'team_id' => $owner->current_team_id,
             'user_id' => $member->id,
-            'role_id' => $this->role($owner, PermissionCatalog::ADMIN)->id,
+            'role_id' => $this->role($owner, PermissionCatalog::OPERATOR)->id,
             'joined_at' => now(),
         ]);
         $member->forceFill(['current_team_id' => $owner->current_team_id])->save();
-        $admin = $this->role($owner, PermissionCatalog::ADMIN);
+        $admin = $this->role($owner, PermissionCatalog::OPERATOR);
 
         $this->actingAs($member)->get(route('teams.roles.index'))->assertForbidden();
         $this->post(route('teams.roles.store'), ['name' => 'Unauthorized'])->assertForbidden();

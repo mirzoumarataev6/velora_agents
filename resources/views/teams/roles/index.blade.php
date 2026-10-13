@@ -4,6 +4,8 @@
 
 @section('content')
 @php
+    $editable = auth()->user()->can('team.roles.manage') && ! $selectedRole?->is_owner
+        && (! $selectedRole || app(\App\Services\Permissions\AuthorizesRoleGrants::class)->canGrant(auth()->user(), $selectedRole));
     $isSystem = $selectedRole && in_array($selectedRole->slug, \App\Services\Permissions\PermissionCatalog::systemRoleSlugs(), true);
     $postedPermissions = old('permissions', $errors->getBag('roles')->any() ? [] : $selectedPermissions);
     $chosenPermissions = is_array($postedPermissions) ? $postedPermissions : [];
@@ -19,9 +21,11 @@
 
     <div class="grid gap-6 lg:grid-cols-[minmax(0,15rem)_minmax(0,1fr)] lg:items-start">
         <div class="card p-3">
+            @can('team.roles.manage')
             <a href="{{ route('teams.roles.index') }}"
                 class="block rounded-xl px-3 py-2.5 text-sm font-semibold {{ $selectedRole === null ? 'bg-brand-circle text-brand-strong' : 'hover:bg-sunk dark:hover:bg-night-raised' }}"
                 data-i18n="settings.roles.new">{{ __('settings.roles.new') }}</a>
+            @endcan
             <div class="mt-2 border-t border-hairline pt-2 dark:border-white/10">
                 @foreach ($roles as $roleOption)
                     <a href="{{ route('teams.roles.index', ['edit' => $roleOption->id]) }}"
@@ -39,11 +43,11 @@
             <h2 class="font-display text-lg font-semibold">
                 {{ $selectedRole?->displayName() ?? __('settings.roles.new') }}
             </h2>
-            <p class="mt-2 rounded-xl bg-sunk px-4 py-3 text-sm text-muted dark:bg-night-raised dark:text-night-muted" data-i18n="settings.roles.not_enforced_yet">{{ __('settings.roles.not_enforced_yet') }}</p>
+            <p class="mt-2 rounded-xl bg-sunk px-4 py-3 text-sm text-muted dark:bg-night-raised dark:text-night-muted" data-i18n="settings.roles.enforced">{{ __('settings.roles.enforced') }}</p>
 
             @if ($selectedRole?->is_owner)
                 <p class="mt-4 text-sm font-medium" data-i18n="settings.roles.owner_protected">{{ __('settings.roles.owner_protected') }}</p>
-            @else
+            @elseif ($editable)
                 <form id="team-role-form" method="POST" action="{{ $selectedRole ? route('teams.roles.update', $selectedRole) : route('teams.roles.store') }}">
                     @csrf
                     @if ($selectedRole)
@@ -51,7 +55,7 @@
                     @endif
             @endif
 
-            @if (! $selectedRole || ! $isSystem)
+            @if ($editable && (! $selectedRole || ! $isSystem))
                 <div class="mt-5">
                     <label for="team-role-name" class="block text-sm font-medium" data-i18n="settings.roles.name">{{ __('settings.roles.name') }}</label>
                     <input id="team-role-name" name="name" type="text" maxlength="255" required
@@ -76,7 +80,7 @@
                                 <label class="flex items-start gap-2.5 rounded-lg px-2 py-1.5 text-sm hover:bg-sunk dark:hover:bg-night-raised">
                                     <input type="checkbox" name="permissions[]" value="{{ $permission }}"
                                         class="mt-0.5 rounded border-hairline text-brand focus:ring-brand"
-                                        @checked(in_array($permission, $chosenPermissions, true)) @disabled($selectedRole?->is_owner) />
+                                        @checked(in_array($permission, $chosenPermissions, true)) @disabled(! $editable || ! auth()->user()->can($permission)) />
                                     <span data-i18n="settings.roles.permissions.{{ $permission }}">{{ __('settings.roles.permissions.'.$permission) }}</span>
                                 </label>
                             @endforeach
@@ -85,7 +89,7 @@
                 @endforeach
             </div>
 
-            @if (! $selectedRole?->is_owner)
+            @if ($editable)
                     <button type="submit" class="btn btn-primary mt-6" data-i18n="settings.roles.{{ $selectedRole ? 'save_button' : 'create_button' }}">
                         {{ $selectedRole ? __('settings.roles.save_button') : __('settings.roles.create_button') }}
                     </button>

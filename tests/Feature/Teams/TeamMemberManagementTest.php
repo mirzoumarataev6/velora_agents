@@ -28,12 +28,12 @@ class TeamMemberManagementTest extends TestCase
         $this->assertSame(PermissionCatalog::VIEWER, $member->fresh()->membershipIn($owner->current_team_id)->role->slug);
     }
 
-    public function test_non_owner_cannot_change_or_remove_a_member(): void
+    public function test_operator_cannot_change_or_remove_a_member(): void
     {
         $owner = User::factory()->create();
         $actor = User::factory()->create();
         $target = User::factory()->create();
-        $this->join($actor, $owner, PermissionCatalog::ADMIN);
+        $this->join($actor, $owner, PermissionCatalog::OPERATOR);
         $membership = $this->join($target, $owner, PermissionCatalog::OPERATOR);
         $actor->forceFill(['current_team_id' => $owner->current_team_id])->save();
 
