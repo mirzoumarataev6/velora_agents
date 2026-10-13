@@ -54,7 +54,7 @@ class CrmWorkspaceController extends Controller
         $data = $request->validate([
             'name' => [
                 'required', 'string', 'min:2', 'max:80',
-                Rule::unique('crm_workspaces', 'name')->where('team_id', $request->user()->activeTeamId())->ignore($workspace->id),
+                Rule::unique('crm_workspaces', 'name')->where('team_id', $workspace->team_id)->ignore($workspace->id),
             ],
             'color' => ['required', 'string', Rule::in(CrmWorkspace::COLORS)],
         ]);
@@ -72,7 +72,7 @@ class CrmWorkspaceController extends Controller
         DB::transaction(function () use ($request, $workspace) {
             // Removing a folder must not remove its business records. Move
             // them to the stable default folder before deleting the container.
-            $default = CrmWorkspace::defaultFor($request->user(), $request->user()->activeTeamId());
+            $default = CrmWorkspace::defaultFor($request->user(), $workspace->team_id);
             $workspace->deals()->update(['crm_workspace_id' => $default->id]);
             $workspace->customers()->update(['crm_workspace_id' => $default->id]);
             $workspace->delete();

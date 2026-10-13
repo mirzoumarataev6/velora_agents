@@ -20,7 +20,6 @@ class CrmNoteController extends Controller
     public function storeForDeal(Request $request, Deal $deal): RedirectResponse|JsonResponse
     {
         $this->authorize('update', $deal);
-        $this->authorize('create', CrmNote::class);
 
         $note = $this->create($request, $deal);
 
@@ -34,7 +33,6 @@ class CrmNoteController extends Controller
     public function storeForCustomer(Request $request, Customer $customer): RedirectResponse|JsonResponse
     {
         $this->authorize('update', $customer);
-        $this->authorize('create', CrmNote::class);
 
         $this->create($request, $customer);
 
@@ -75,6 +73,7 @@ class CrmNoteController extends Controller
             'notable_type' => $notable::class,
             'notable_id' => $notable->id,
             'user_id' => $request->user()->id,
+            'team_id' => $notable->team_id,
             'kind' => $data['kind'],
             'body' => $data['body'],
             'happened_at' => $data['happened_at'] ?? now(),

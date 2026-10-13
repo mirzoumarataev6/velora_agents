@@ -38,6 +38,8 @@ class CustomerController extends Controller
     /** Searchable customer book with business-focused segments. */
     public function index(Request $request): View
     {
+        $this->authorize('viewAny', Customer::class);
+
         $data = $request->validate([
             'q' => ['nullable', 'string', 'max:120'],
             'status' => ['nullable', 'string', Rule::in(Customer::STATUSES)],
@@ -232,6 +234,8 @@ class CustomerController extends Controller
      */
     public function lookup(Request $request, CustomerResolver $resolver): JsonResponse
     {
+        $this->authorize('viewAny', Customer::class);
+
         $key = $resolver->phoneKey($request->query('phone'));
 
         $customer = $key === null
@@ -246,6 +250,8 @@ class CustomerController extends Controller
     /** Search the owner's full customer book for the deal creation combobox. */
     public function search(Request $request): JsonResponse
     {
+        $this->authorize('viewAny', Customer::class);
+
         $data = $request->validate(['q' => ['nullable', 'string', 'max:120']]);
         $term = trim($data['q'] ?? '');
 
@@ -291,12 +297,12 @@ class CustomerController extends Controller
         return view('crm.customers.show', [
             'i18nExtraNamespaces' => ['crm'],
             'customer' => $customer,
-            'workspaces' => CrmWorkspace::ownedBy($request->user())->orderByDesc('is_default')->orderBy('name')->get(),
+            'workspaces' => CrmWorkspace::where('team_id', $customer->team_id)->orderByDesc('is_default')->orderBy('name')->get(),
             'timeline' => $this->timeline($customer),
             // Candidates for a manual merge: same owner, and no phone number of
             // their own, since a profile that HAS one was already matched
             // automatically and joining it by hand would override real evidence.
-            'mergeCandidates' => Customer::ownedBy($request->user())
+            'mergeCandidates' => Customer::where('team_id', $customer->team_id)
                 ->whereKeyNot($customer->id)
                 ->whereNull('phone_key')
                 ->orderByDesc('last_contact_at')
@@ -330,7 +336,7 @@ class CustomerController extends Controller
             'status' => ['sometimes', 'required', 'string', 'in:'.implode(',', Customer::STATUSES)],
             'tags' => ['sometimes', 'nullable', 'string', 'max:500'],
             'note' => ['sometimes', 'nullable', 'string', 'max:5000'],
-            'crm_workspace_id' => ['sometimes', 'required', 'integer', Rule::exists('crm_workspaces', 'id')->where('team_id', $request->user()->activeTeamId())],
+            'crm_workspace_id' => ['sometimes', 'required', 'integer', Rule::exists('crm_workspaces', 'id')->where('team_id', $customer->team_id)],
         ]);
 
         $updates = [];
@@ -385,7 +391,7 @@ class CustomerController extends Controller
             'customer_id' => ['required', 'integer', 'different:'.$customer->id],
         ]);
 
-        $other = Customer::ownedBy($request->user())->find($data['customer_id']);
+        $other = Customer::where('team_id', $customer->team_id)->find($data['customer_id']);
 
         if ($other === null) {
             return back()->withErrors(['customer_id' => __('crm.customers.merge_not_found')]);

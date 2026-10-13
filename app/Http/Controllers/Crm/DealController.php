@@ -46,6 +46,8 @@ class DealController extends Controller
 
     public function index(Request $request): View
     {
+        $this->authorize('viewAny', Deal::class);
+
         $defaultWorkspace = CrmWorkspace::defaultFor($request->user(), $request->user()->activeTeamId());
         $filters = $this->filters($request);
         $workspaces = CrmWorkspace::ownedBy($request->user())->orderByDesc('is_default')->orderBy('name')->get();
@@ -104,6 +106,8 @@ class DealController extends Controller
      */
     public function poll(Request $request): JsonResponse
     {
+        $this->authorize('viewAny', Deal::class);
+
         $filters = $this->filters($request);
         $showLeads = $filters['stage'] === self::LEADS_BUCKET;
         $hasLeadsBucket = $filters['origin'] === 'social' && $filters['workspace_id'] === null;
@@ -192,7 +196,7 @@ class DealController extends Controller
                 'label' => __('crm.board.timeline_activity'),
             ]);
 
-        $tasks = Task::ownedBy($request->user())->where('deal_id', $deal->id)->latest('created_at')->limit(30)->get()
+        $tasks = Task::where('team_id', $deal->team_id)->where('deal_id', $deal->id)->latest('created_at')->limit(30)->get()
             ->map(fn (Task $task) => [
                 'kind' => 'task',
                 'type' => $task->isDone() ? 'task_done' : 'task_created',
@@ -208,7 +212,7 @@ class DealController extends Controller
                 'text' => $note->body,
                 'author' => $note->user->name,
                 'note_id' => $note->id,
-                'can_delete' => $request->user()->id === $note->user_id,
+                'can_delete' => $request->user()->can('delete', $note),
                 'at' => $note->happened_at->toIso8601String(),
                 'label' => __('crm.notes.kinds.'.$note->kind),
             ]);
@@ -343,6 +347,8 @@ class DealController extends Controller
      */
     public function store(Request $request): RedirectResponse
     {
+        $this->authorize('create', Deal::class);
+
         $isNew = $request->input('customer_id') === self::NEW_CUSTOMER;
 
         $data = $request->validate([
@@ -484,7 +490,7 @@ class DealController extends Controller
     {
         $this->authorize('update', $deal);
 
-        $stages = CrmStage::ownedBy($request->user())->get();
+        $stages = CrmStage::where('team_id', $deal->team_id)->get();
         $targetStage = $stages->firstWhere('name', $request->input('stage'));
 
         $data = $request->validate([
@@ -511,7 +517,7 @@ class DealController extends Controller
     {
         $this->authorize('update', $deal);
 
-        $stages = CrmStage::ownedBy($request->user())->get();
+        $stages = CrmStage::where('team_id', $deal->team_id)->get();
         $stageByName = fn (?string $name) => $stages->firstWhere('name', $name);
         $effectiveStage = $stageByName($request->input('stage', $deal->stage));
 
@@ -542,7 +548,7 @@ class DealController extends Controller
             'stage' => ['nullable', 'string', Rule::in($stages->pluck('name'))],
             'deal_date' => ['nullable', 'date'],
             'sales_origin' => ['sometimes', 'required', 'string', 'in:'.implode(',', Deal::SALES_ORIGINS)],
-            'crm_workspace_id' => ['sometimes', 'required', 'integer', Rule::exists('crm_workspaces', 'id')->where('team_id', $request->user()->activeTeamId())],
+            'crm_workspace_id' => ['sometimes', 'required', 'integer', Rule::exists('crm_workspaces', 'id')->where('team_id', $deal->team_id)],
             'closed' => ['nullable', 'boolean'],
             'cancelled_reason' => [$effectiveStage?->role === 'lost' ? 'required' : 'nullable', 'string', 'max:2000'],
             // Optional, unlike cancelled_reason: a win needs no excuse.

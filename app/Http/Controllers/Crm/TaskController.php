@@ -29,6 +29,8 @@ class TaskController extends Controller
 
     public function index(Request $request): View
     {
+        $this->authorize('viewAny', Task::class);
+
         $workspaces = CrmWorkspace::ownedBy($request->user())->orderByDesc('is_default')->orderBy('name')->get();
         $requestedWorkspace = $request->query('workspace');
         $workspace = ctype_digit((string) $requestedWorkspace)

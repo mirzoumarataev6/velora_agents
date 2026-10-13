@@ -170,7 +170,7 @@ class CrmStage extends Model
         // resolved (the agent's own team, say), which can legitimately
         // differ from the signed-in owner's ACTIVE team that scopeOwnedBy()
         // now reads.
-        $existing = static::where('user_id', $user->id)->where('team_id', $teamId)->ordered()->get();
+        $existing = static::where('team_id', $teamId)->ordered()->get();
 
         if ($existing->isNotEmpty()) {
             return $existing;
@@ -184,7 +184,7 @@ class CrmStage extends Model
             static::forceCreate($stage + ['user_id' => $user->id, 'is_system' => true, 'team_id' => $teamId]);
         }
 
-        return static::where('user_id', $user->id)->where('team_id', $teamId)->ordered()->get();
+        return static::where('team_id', $teamId)->ordered()->get();
     }
 
     public static function initialFor(User $user, Team|int|null $team = null): CrmStage

@@ -231,7 +231,7 @@ class CustomerResolver
      */
     public function merge(Customer $from, Customer $into): Customer
     {
-        if ($from->id === $into->id || $from->user_id !== $into->user_id) {
+        if ($from->id === $into->id || $from->team_id === null || $from->team_id !== $into->team_id) {
             return $into;
         }
 

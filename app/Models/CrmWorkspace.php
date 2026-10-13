@@ -53,29 +53,9 @@ class CrmWorkspace extends Model
     }
 
     /**
-     * The one reserved `__main__` folder a background write files new
-     * customers/deals into when there is no request to ask.
-     *
-     * `$team` is optional and additive: `null` is byte-for-byte today's
-     * behaviour (a plain `firstOrCreate` scoped by `user_id` alone, letting
-     * StampsTeam resolve `team_id` the way it always has) — safe only so
-     * long as nothing calls it this way while the user could have more
-     * than one team's own `__main__` row to confuse it with, which is why
-     * every real call site (Stage 2d-4) always passes one explicitly; this
-     * default stays purely for the handful of single-team tests that
-     * predate `$team` existing at all. Passed a team, this now DOES let a
-     * second team get its own `__main__` row — `crm_workspaces` carries
-     * `unique(team_id, name)` (Stage 2d-3-1) instead of `unique(user_id,
-     * name)` as of Stage 2d-5a, so two of this owner's teams no longer
-     * contend over one `__main__` slot.
-     *
-     * Three outcomes, in order:
-     * 1. A `__main__` row already stamped with this exact team — return it.
-     * 2. A legacy `__main__` row with `team_id` still NULL (created before
-     *    this method existed, or by the `null`-team path above) — adopt
-     *    it in place, one row, no new insert.
-     * 3. Neither exists — create one, with `team_id` set explicitly so
-     *    StampsTeam's own `user_id` fallback is never consulted.
+     * A shared team's default belongs to the team, regardless of who first
+     * opened CRM. firstOrCreate also retries a concurrent insert against the
+     * team/name unique key. The omitted-team branch remains for legacy callers.
      */
     public static function defaultFor(User $user, Team|int|null $team = null): self
     {
@@ -88,30 +68,10 @@ class CrmWorkspace extends Model
 
         $teamId = $team instanceof Team ? $team->id : $team;
 
-        $owned = $user->crmWorkspaces()->where('name', '__main__')->where('team_id', $teamId)->first();
-
-        if ($owned !== null) {
-            return $owned;
-        }
-
-        $legacy = $user->crmWorkspaces()->where('name', '__main__')->whereNull('team_id')->first();
-
-        if ($legacy !== null) {
-            $legacy->forceFill(['team_id' => $teamId])->save();
-
-            return $legacy;
-        }
-
-        $workspace = new self([
-            'name' => '__main__',
-            'color' => 'blue',
-            'is_default' => true,
-        ]);
-        $workspace->user_id = $user->id;
-        $workspace->team_id = $teamId;
-        $workspace->save();
-
-        return $workspace;
+        return static::unguarded(fn () => static::firstOrCreate(
+            ['team_id' => $teamId, 'name' => '__main__'],
+            ['user_id' => $user->id, 'color' => 'blue', 'is_default' => true],
+        ));
     }
 
     public function displayName(): string

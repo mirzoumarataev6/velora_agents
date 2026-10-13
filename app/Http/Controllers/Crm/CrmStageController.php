@@ -19,6 +19,8 @@ class CrmStageController extends Controller
 {
     public function index(Request $request): View
     {
+        $this->authorize('viewAny', CrmStage::class);
+
         $stages = CrmStage::defaultsFor($request->user(), $request->user()->activeTeamId());
         $stages->loadCount('deals');
 
@@ -94,6 +96,8 @@ class CrmStageController extends Controller
      */
     public function reorder(Request $request): RedirectResponse
     {
+        $this->authorize('create', CrmStage::class);
+
         $stages = CrmStage::defaultsFor($request->user(), $request->user()->activeTeamId());
         $intermediateIds = $stages->filter(fn (CrmStage $stage) => $stage->role === null)->pluck('id');
 
@@ -136,7 +140,7 @@ class CrmStageController extends Controller
     {
         $this->authorize('delete', $stage);
 
-        $stages = CrmStage::defaultsFor($request->user(), $request->user()->activeTeamId());
+        $stages = CrmStage::defaultsFor($request->user(), $stage->team_id);
         $destinationId = $request->input('reassign_to');
         $destination = $destinationId !== null ? $stages->firstWhere('id', (int) $destinationId) : null;
 
