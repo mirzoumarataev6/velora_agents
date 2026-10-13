@@ -60,10 +60,11 @@ class DeletesAccount
     /**
      * Every RESTRICT/NO ACTION foreign key, between two tables that are
      * BOTH reachable by an unbroken CASCADE chain from `users`, that this
-     * class is responsible for. `tests/Feature/Settings/AccountDeletionOrderTest`
-     * cross-checks this list against the live schema and fails, naming the
-     * constraint, if a new one like this is ever added without updating
-     * either this list or `delete()` itself.
+     * class is responsible for.
+     * `tests/Feature/Services/Account/AccountDeletionGuardsTest` cross-checks
+     * this list against the live schema and fails, naming the constraint,
+     * if a new one like this is ever added without updating either this
+     * list or `delete()` itself.
      *
      * @var list<array{table: string, columns: list<string>, foreign_table: string, resolution: string}>
      */
