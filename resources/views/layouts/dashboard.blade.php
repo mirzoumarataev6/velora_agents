@@ -202,6 +202,18 @@
         </nav>
 
         <div class="rule shrink-0 p-3">
+            {{-- Stage 3a: which team the rest of the shell (CRM, BI, agents)
+                 currently reads/writes against — above the user's own
+                 identity row, not merged into it, since "who I am" and
+                 "which team I'm looking at" are two different questions
+                 once an account has more than one team. Hidden at rail
+                 width rather than given its own icon-only state: a second
+                 affordance squeezed next to the avatar would be harder to
+                 read than simply not showing it collapsed, same trade-off
+                 the language menu below already makes. --}}
+            <div class="mb-1" :class="$store.shell.railCollapsed && 'lg:hidden'">
+                @include('partials.team-switcher')
+            </div>
             <div class="flex items-center gap-2 rounded-xl px-2 py-2" :class="$store.shell.railCollapsed && 'lg:flex-col lg:gap-1 lg:px-0'">
                 <a href="{{ route('settings.index') }}" aria-label="{{ auth()->user()->name }}"
                     :class="$store.shell.railCollapsed && 'lg:flex-none'"

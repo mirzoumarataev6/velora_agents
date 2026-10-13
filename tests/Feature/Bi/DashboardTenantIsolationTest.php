@@ -268,6 +268,14 @@ class DashboardTenantIsolationTest extends TestCase
         // tenant-scoped chat-history query — plus
         // ONE analytical query, because all eight cards ask the identical
         // question and therefore share a cache entry. Nowhere near 8+.
-        $this->assertLessThanOrEqual(17, $count, "The board ran {$count} queries — possible N+1.");
+        //
+        // 17 -> 18 (Stage 3a): the dashboard shell's new team switcher runs
+        // one flat, page-independent query (a single join over team_user,
+        // so it never scales with anything this test actually guards
+        // against) to list the signed-in user's teams. Every page behind
+        // this layout picked up the same +1 — see Perf\QueryBudgetTest's
+        // own generous, unbumped budgets, which absorbed it without
+        // needing a change.
+        $this->assertLessThanOrEqual(18, $count, "The board ran {$count} queries — possible N+1.");
     }
 }
