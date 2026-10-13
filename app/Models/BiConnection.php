@@ -2,13 +2,13 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\ScopesActiveTeam;
 use App\Models\Concerns\StampsTeam;
 use App\Policies\BiConnectionPolicy;
 use App\Services\Database\ConnectionConfig;
 use Database\Factories\BiConnectionFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\UsePolicy;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -46,6 +46,7 @@ class BiConnection extends Model
     /** @use HasFactory<BiConnectionFactory> */
     use HasFactory;
 
+    use ScopesActiveTeam;
     use StampsTeam;
 
     public const STATUS_READY = 'ready';
@@ -85,15 +86,6 @@ class BiConnection extends Model
     public function sources(): HasMany
     {
         return $this->hasMany(BiSource::class, 'bi_connection_id');
-    }
-
-    /**
-     * @param  Builder<BiConnection>  $query
-     * @return Builder<BiConnection>
-     */
-    public function scopeOwnedBy(Builder $query, User $user): Builder
-    {
-        return $query->where('bi_connections.user_id', $user->id);
     }
 
     /**

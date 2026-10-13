@@ -131,6 +131,7 @@ class ConnectionController extends Controller
 
         $connection = new BiConnection($credentials);
         $connection->user_id = $user->id;
+        $connection->team_id = $user->activeTeamId();
         $connection->status = BiConnection::STATUS_READY;
         $connection->last_error = null;
         $connection->last_tested_at = now();

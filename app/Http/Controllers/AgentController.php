@@ -24,9 +24,11 @@ class AgentController extends Controller
 
     public function index(Request $request, OnboardingService $onboarding): View
     {
+        $this->authorize('viewAny', Agent::class);
+
         $user = $request->user();
 
-        $agents = $user->agents()
+        $agents = Agent::ownedBy($user)
             ->withCount(['knowledgeSources', 'channels', 'conversations'])
             ->latest()
             ->get();
@@ -55,7 +57,10 @@ class AgentController extends Controller
 
     public function store(StoreAgentRequest $request): RedirectResponse
     {
-        $agent = $request->user()->agents()->create($request->agentAttributes());
+        $agent = new Agent($request->agentAttributes());
+        $agent->user_id = $request->user()->id;
+        $agent->team_id = $request->user()->activeTeamId();
+        $agent->save();
 
         return redirect()->route('agents.show', $agent)->with('status', __('agents.controllers.agent_created'));
     }
@@ -64,19 +69,28 @@ class AgentController extends Controller
     {
         $this->authorize('view', $agent);
 
-        $agent->load(['knowledgeSources' => fn ($q) => $q->withCount('chunks')->latest(), 'channels']);
+        $tabs = collect([
+            'knowledge' => 'agents.view', 'catalog' => 'catalog.view',
+            'database' => 'catalog.view', 'channels' => 'channels.view',
+            'playground' => 'agents.update', 'conversations' => 'conversations.view',
+            'settings' => 'agents.update',
+        ])->filter(fn ($permission) => $request->user()->can($permission, $agent))->keys()->all();
 
-        $playgroundConversation = $agent->conversations()
-            ->with(['messages' => fn ($q) => $q->orderBy('created_at')->orderBy('id')])
-            ->where('channel_id', null)
-            ->where('external_user_id', 'playground')
-            ->first();
+        $agent->load(['knowledgeSources' => fn ($q) => $q->withCount('chunks')->latest()]);
+        if (in_array('channels', $tabs, true) || in_array('conversations', $tabs, true)) {
+            $agent->load('channels');
+        } else {
+            $agent->setRelation('channels', collect());
+        }
 
-        $tab = in_array($request->query('tab'), self::TABS, true)
-            ? $request->query('tab')
-            : self::TABS[0];
+        $playgroundConversation = in_array('playground', $tabs, true)
+            ? $agent->conversations()
+                ->with(['messages' => fn ($q) => $q->orderBy('created_at')->orderBy('id')])
+                ->whereNull('channel_id')->where('external_user_id', 'playground')->first()
+            : null;
+        $tab = in_array($request->query('tab'), $tabs, true) ? $request->query('tab') : $tabs[0];
 
-        return view('agents.show', compact('agent', 'tab', 'playgroundConversation') + [
+        return view('agents.show', compact('agent', 'tab', 'tabs', 'playgroundConversation') + [
             'i18nExtraNamespaces' => ['conversations'],
             // The conversations tab renders the shared inbox partial, pinned to
             // this agent. Channel types come off the already-loaded relation so
@@ -85,10 +99,10 @@ class AgentController extends Controller
             'conversationChannelTypes' => $agent->channels->pluck('type')->unique()->values(),
             // Seeds the catalog tab so it paints its real state on first render
             // rather than flashing "empty" until an XHR comes back.
-            'catalog' => DatasetController::state($agent),
+            'catalog' => in_array('catalog', $tabs, true) ? DatasetController::state($agent) : [],
             // Same idea for the live-connection tab: it paints its real state on
             // first render rather than flashing "not connected".
-            'database' => DatabaseConnectionController::state($agent),
+            'database' => in_array('database', $tabs, true) ? DatabaseConnectionController::state($agent) : [],
         ]);
     }
 

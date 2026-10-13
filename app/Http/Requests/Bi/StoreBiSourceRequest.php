@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Bi;
 
+use App\Models\BiSource;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rules\File;
 
@@ -20,6 +21,11 @@ use Illuminate\Validation\Rules\File;
  */
 class StoreBiSourceRequest extends FormRequest
 {
+    public function authorize(): bool
+    {
+        return $this->user()->can('create', BiSource::class);
+    }
+
     public function rules(): array
     {
         $maxKb = max(1, (int) config('agent.bi.ingest.max_file_size_kb', 100 * 1024));

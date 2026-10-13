@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Bi;
 
+use App\Models\BiDashboard;
 use Illuminate\Foundation\Http\FormRequest;
 
 /**
@@ -17,6 +18,11 @@ use Illuminate\Foundation\Http\FormRequest;
  */
 class StoreBiDashboardRequest extends FormRequest
 {
+    public function authorize(): bool
+    {
+        return $this->route('dashboard') ? $this->user()->can('update', $this->route('dashboard')) : $this->user()->can('create', BiDashboard::class);
+    }
+
     public function rules(): array
     {
         return [

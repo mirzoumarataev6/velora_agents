@@ -74,7 +74,7 @@ class ProductImageController extends Controller
      */
     public function moveUp(Request $request, Agent $agent, int $product, int $image): JsonResponse
     {
-        $this->authorize('update', $agent);
+        $this->authorize('catalog.manage', $agent);
         $product = $this->product($agent, $product);
 
         $image = $this->findOwnedImage($agent, $product, $image);
@@ -104,7 +104,7 @@ class ProductImageController extends Controller
      */
     public function destroy(Request $request, Agent $agent, int $product, int $image): JsonResponse
     {
-        $this->authorize('update', $agent);
+        $this->authorize('catalog.manage', $agent);
         $product = $this->product($agent, $product);
 
         $imageId = $image;
@@ -127,7 +127,7 @@ class ProductImageController extends Controller
     /** The product, scoped to this agent — a product id belonging to someone else's catalog fails exactly like one that doesn't exist. */
     private function product(Agent $agent, int $productId): DatasetProduct
     {
-        $this->authorize('update', $agent);
+        $this->authorize('catalog.manage', $agent);
 
         return DatasetProduct::where('agent_id', $agent->id)->findOrFail($productId);
     }

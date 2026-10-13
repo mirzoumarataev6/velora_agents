@@ -126,6 +126,7 @@ class ExternalDatasetImporter
         ]);
 
         $source->user_id = $user->id;
+        $source->team_id = $connection->team_id;
         $source->save();
 
         foreach ($described as $table => $schema) {
@@ -361,7 +362,7 @@ class ExternalDatasetImporter
     protected function assertWithinDatasetQuota(User $user, int $adding): void
     {
         $max = max(1, (int) config('agent.bi.ingest.max_datasets_per_owner', 25));
-        $existing = BiDataset::where('user_id', $user->id)->count();
+        $existing = BiDataset::ownedBy($user)->count();
 
         if ($existing + $adding > $max) {
             throw new BiIngestionException(

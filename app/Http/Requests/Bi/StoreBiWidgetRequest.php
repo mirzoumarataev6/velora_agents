@@ -33,6 +33,11 @@ use Illuminate\Validation\Rule;
  */
 class StoreBiWidgetRequest extends FormRequest
 {
+    public function authorize(): bool
+    {
+        return $this->user()->can('update', $this->route('dashboard'));
+    }
+
     public function rules(): array
     {
         return [

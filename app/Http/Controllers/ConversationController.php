@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Agent;
 use App\Models\Conversation;
 use App\Models\Lead;
 use App\Models\Message;
@@ -33,11 +34,13 @@ class ConversationController extends Controller
 
     public function index(Request $request): View
     {
+        $this->authorize('viewAny', Conversation::class);
+
         $user = $request->user();
 
         return view('conversations.index', [
             'i18nExtraNamespaces' => ['conversations'],
-            'agents' => $user->agents()->orderBy('name')->get(['id', 'name']),
+            'agents' => Agent::ownedBy($user)->orderBy('name')->get(['id', 'name']),
             'channelTypes' => Conversation::ownedBy($user)
                 ->join('channels', 'channels.id', '=', 'conversations.channel_id')
                 ->distinct()
@@ -54,6 +57,8 @@ class ConversationController extends Controller
      */
     public function list(Request $request): JsonResponse
     {
+        $this->authorize('viewAny', Conversation::class);
+
         $filters = $this->filters($request);
         $page = $this->query($request, $filters)->paginate(self::PER_PAGE);
 
@@ -88,7 +93,7 @@ class ConversationController extends Controller
         return response()->json([
             'conversation' => array_merge($this->summarize($conversation, unread: false), [
                 'external_user_id' => $conversation->external_user_id,
-                'can_reply' => $conversation->channel !== null,
+                'can_reply' => $conversation->channel !== null && $request->user()->can('reply', $conversation),
                 'started_at' => $conversation->created_at?->toIso8601String(),
             ]),
             'messages' => $messages->map(fn (Message $m) => $this->presentMessage($m))->all(),
@@ -112,7 +117,7 @@ class ConversationController extends Controller
      */
     public function reply(Request $request, Conversation $conversation, ChannelDriverManager $drivers): JsonResponse
     {
-        $this->authorize('update', $conversation);
+        $this->authorize('reply', $conversation);
 
         $data = $request->validate([
             'content' => ['required', 'string', 'max:4000'],

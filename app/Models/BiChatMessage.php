@@ -2,11 +2,11 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\ScopesActiveTeam;
 use App\Models\Concerns\StampsTeam;
 use App\Policies\BiChatMessagePolicy;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\UsePolicy;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 #[UsePolicy(BiChatMessagePolicy::class)]
 class BiChatMessage extends Model
 {
+    use ScopesActiveTeam;
     use StampsTeam;
 
     protected function casts(): array
@@ -24,10 +25,5 @@ class BiChatMessage extends Model
     public function dashboard(): BelongsTo
     {
         return $this->belongsTo(BiDashboard::class, 'bi_dashboard_id');
-    }
-
-    public function scopeOwnedBy(Builder $query, User $user): Builder
-    {
-        return $query->where('bi_chat_messages.user_id', $user->id);
     }
 }

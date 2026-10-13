@@ -90,6 +90,7 @@ class SourceController extends Controller
         ]);
 
         $source->user_id = $user->id;
+        $source->team_id = $user->activeTeamId();
         $source->save();
 
         // The row is saved first so the directory can be named after its id, which
@@ -262,7 +263,7 @@ class SourceController extends Controller
     {
         $max = max(1, (int) config('agent.bi.ingest.max_datasets_per_owner', 25));
 
-        if (BiDataset::where('user_id', $user->id)->count() >= $max) {
+        if (BiDataset::ownedBy($user)->count() >= $max) {
             throw ValidationException::withMessages([
                 'file' => __('bi.errors.too_many_datasets', ['limit' => $max]),
             ]);

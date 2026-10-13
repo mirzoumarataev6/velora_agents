@@ -2,13 +2,13 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\ScopesActiveTeam;
 use App\Models\Concerns\StampsTeam;
 use App\Policies\BiDatasetPolicy;
 use App\Services\Bi\BiIngestionException;
 use Database\Factories\BiDatasetFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\UsePolicy;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -38,6 +38,7 @@ class BiDataset extends Model
     /** @use HasFactory<BiDatasetFactory> */
     use HasFactory;
 
+    use ScopesActiveTeam;
     use StampsTeam;
 
     public const STATUS_INFERRING = 'inferring';
@@ -91,15 +92,6 @@ class BiDataset extends Model
     public function columns(): HasMany
     {
         return $this->hasMany(BiColumn::class, 'bi_dataset_id')->orderBy('ordinal');
-    }
-
-    /**
-     * @param  Builder<BiDataset>  $query
-     * @return Builder<BiDataset>
-     */
-    public function scopeOwnedBy(Builder $query, User $user): Builder
-    {
-        return $query->where('bi_datasets.user_id', $user->id);
     }
 
     /**

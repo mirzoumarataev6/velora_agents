@@ -80,15 +80,15 @@ class DashboardController extends Controller
     public function analyze(Request $request, BiSource $source, AutoAnalysisGenerator $generator): RedirectResponse
     {
         $this->authorize('view', $source);
-        $this->authorize('create', BiDashboard::class);
+        $this->authorize('update', $source);
 
-        if (BiDashboard::ownedBy($request->user())->count() >= BiDashboard::MAX_PER_OWNER) {
+        if (BiDashboard::where('team_id', $source->team_id)->count() >= BiDashboard::MAX_PER_OWNER) {
             throw ValidationException::withMessages(['source' => __('bi.errors.too_many_dashboards', ['limit' => BiDashboard::MAX_PER_OWNER])]);
         }
 
         $selected = null;
         if ($request->filled('dataset_id')) {
-            $selected = $source->datasets()->where('user_id', $request->user()->id)
+            $selected = $source->datasets()->where('team_id', $source->team_id)
                 ->where('status', BiDataset::STATUS_READY)
                 ->findOrFail($request->integer('dataset_id'));
         }
@@ -134,16 +134,16 @@ class DashboardController extends Controller
             // The dataset picker in the widget editor, and the filter bar's
             // column list. Only READY datasets: a widget over one that is still
             // importing would be created already broken.
-            'datasets' => BiDataset::ownedBy($request->user())
+            'datasets' => BiDataset::where('team_id', $dashboard->team_id)
                 ->where('status', BiDataset::STATUS_READY)
                 ->with('columns')
                 ->orderBy('name')
                 ->get(),
-            'dashboards' => BiDashboard::ownedBy($request->user())
+            'dashboards' => BiDashboard::where('team_id', $dashboard->team_id)
                 ->orderByDesc('is_default')->orderBy('position')->orderBy('id')->get(),
             'widgetTypes' => WidgetType::cases(),
             'statusAsToast' => true,
-            'chatMessages' => $dashboard->chatMessages()->where('user_id', $request->user()->id)->latest('id')->limit(40)->get()->reverse()->values(),
+            'chatMessages' => $dashboard->chatMessages()->where('team_id', $dashboard->team_id)->latest('id')->limit(40)->get()->reverse()->values(),
             'i18nNamespaces' => ['bi', 'agents', 'common'],
         ]);
     }
@@ -162,6 +162,7 @@ class DashboardController extends Controller
 
         $dashboard = new BiDashboard($request->safe()->except('is_default'));
         $dashboard->user_id = $user->id;
+        $dashboard->team_id = $user->activeTeamId();
         $dashboard->position = (int) BiDashboard::ownedBy($user)->max('position') + 1;
         $dashboard->save();
 
@@ -182,7 +183,7 @@ class DashboardController extends Controller
 
         $filters = $request->validated('filters', []);
         foreach ($filters as $datasetId => $entries) {
-            $dataset = BiDataset::ownedBy($request->user())->whereKey($datasetId)->first();
+            $dataset = BiDataset::where('team_id', $dashboard->team_id)->whereKey($datasetId)->first();
             if (! $dataset) {
                 throw ValidationException::withMessages(['filters' => __('bi.validation.dataset_unknown')]);
             }

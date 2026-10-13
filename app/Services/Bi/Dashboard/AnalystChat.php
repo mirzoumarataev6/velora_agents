@@ -32,16 +32,17 @@ class AnalystChat
 
     public function reply(User $owner, BiDashboard $dashboard, string $question): BiChatMessage
     {
-        $dataset = BiDataset::ownedBy($owner)->whereKey($dashboard->bi_dataset_id)->with('columns')->first();
+        $dataset = BiDataset::where('team_id', $dashboard->team_id)->whereKey($dashboard->bi_dataset_id)->with('columns')->first();
         if (! $dataset) {
             throw ValidationException::withMessages(['message' => __('bi.chat.no_dataset')]);
         }
 
-        $history = $dashboard->chatMessages()->where('user_id', $owner->id)->latest('id')->limit(12)->get()->reverse()->values();
+        $history = $dashboard->chatMessages()->where('team_id', $dashboard->team_id)->latest('id')->limit(12)->get()->reverse()->values();
         $turns = $history->map(fn (BiChatMessage $message) => ['role' => $message->role === 'assistant' ? 'model' : 'user', 'text' => $message->content])->all();
         $turns[] = ['role' => 'user', 'text' => $question];
         $userMessage = new BiChatMessage(['role' => 'user', 'content' => $question]);
         $userMessage->user_id = $owner->id;
+        $userMessage->team_id = $dashboard->team_id;
         $userMessage->bi_dashboard_id = $dashboard->id;
         $userMessage->save();
 
@@ -88,6 +89,7 @@ class AnalystChat
 
         $message = new BiChatMessage(['role' => 'assistant', 'content' => $content, 'payload' => $payload]);
         $message->user_id = $owner->id;
+        $message->team_id = $dashboard->team_id;
         $message->bi_dashboard_id = $dashboard->id;
         $message->save();
 
@@ -169,6 +171,7 @@ class AnalystChat
                 'spec' => (array) ($args['spec'] ?? []), 'filters' => (array) ($args['filters'] ?? []),
             ]);
             $widget->user_id = $owner->id;
+            $widget->team_id = $dashboard->team_id;
             $widget->bi_dashboard_id = $dashboard->id;
             $widget->bi_dataset_id = $dataset->id;
             $widget->forceFill(BiWidget::defaultSlot($dashboard, $widget->type));
@@ -180,7 +183,7 @@ class AnalystChat
         }
 
         if (in_array($name, ['update_widget', 'remove_widget'], true)) {
-            $widget = $dashboard->widgets()->where('user_id', $owner->id)->whereKey((int) ($args['widget_id'] ?? 0))->firstOrFail();
+            $widget = $dashboard->widgets()->where('team_id', $dashboard->team_id)->whereKey((int) ($args['widget_id'] ?? 0))->firstOrFail();
             $before = $this->snapshot($widget);
             if ($name === 'remove_widget') {
                 $widget->delete();
@@ -229,7 +232,7 @@ class AnalystChat
     public function undo(User $owner, BiDashboard $dashboard, BiChatMessage $message): array
     {
         return DB::transaction(function () use ($owner, $dashboard, $message): array {
-            $locked = BiChatMessage::ownedBy($owner)->where('bi_dashboard_id', $dashboard->id)->whereKey($message->id)->lockForUpdate()->firstOrFail();
+            $locked = BiChatMessage::where('team_id', $dashboard->team_id)->where('bi_dashboard_id', $dashboard->id)->whereKey($message->id)->lockForUpdate()->firstOrFail();
             if ($locked->undone_at) {
                 throw ValidationException::withMessages(['message' => __('bi.chat.already_undone')]);
             }
@@ -239,16 +242,17 @@ class AnalystChat
                     $dashboard->forceFill(['filters' => $undo['filters']])->save();
                 }
                 if ($undo['kind'] === 'delete') {
-                    $dashboard->widgets()->where('user_id', $owner->id)->whereKey($undo['id'])->delete();
+                    $dashboard->widgets()->where('team_id', $dashboard->team_id)->whereKey($undo['id'])->delete();
                 }
                 if (in_array($undo['kind'], ['restore', 'recreate'], true)) {
                     $snapshot = $undo['widget'];
-                    $dataset = BiDataset::ownedBy($owner)->whereKey($snapshot['bi_dataset_id'])->firstOrFail();
+                    $dataset = BiDataset::where('team_id', $dashboard->team_id)->whereKey($snapshot['bi_dataset_id'])->firstOrFail();
                     $widget = $undo['kind'] === 'restore'
-                        ? $dashboard->widgets()->where('user_id', $owner->id)->whereKey($snapshot['id'])->firstOrFail()
+                        ? $dashboard->widgets()->where('team_id', $dashboard->team_id)->whereKey($snapshot['id'])->firstOrFail()
                         : new BiWidget;
                     $widget->fill(collect($snapshot)->except(['id', 'bi_dataset_id'])->all());
                     $widget->user_id = $owner->id;
+                    $widget->team_id = $dashboard->team_id;
                     $widget->bi_dashboard_id = $dashboard->id;
                     $widget->bi_dataset_id = $dataset->id;
                     $widget->save();

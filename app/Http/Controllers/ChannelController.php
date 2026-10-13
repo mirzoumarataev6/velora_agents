@@ -15,7 +15,7 @@ class ChannelController extends Controller
 {
     public function connectTelegram(Request $request, Agent $agent, ChannelDriverManager $drivers): RedirectResponse|JsonResponse
     {
-        $this->authorize('update', $agent);
+        $this->authorize('channels.manage', $agent);
 
         $request->validate([
             'bot_token' => ['required', 'string', 'regex:/^\d+:[A-Za-z0-9_-]+$/'],
@@ -85,7 +85,7 @@ class ChannelController extends Controller
 
     public function connectWhatsApp(Request $request, Agent $agent, ChannelDriverManager $drivers): RedirectResponse|JsonResponse
     {
-        $this->authorize('update', $agent);
+        $this->authorize('channels.manage', $agent);
 
         $data = $request->validate([
             'phone_number_id' => ['required', 'string'],
@@ -163,7 +163,7 @@ class ChannelController extends Controller
 
     public function connectInstagram(Request $request, Agent $agent, ChannelDriverManager $drivers): RedirectResponse|JsonResponse
     {
-        $this->authorize('update', $agent);
+        $this->authorize('channels.manage', $agent);
 
         $data = $request->validate([
             'ig_business_account_id' => ['required', 'string'],
@@ -240,7 +240,7 @@ class ChannelController extends Controller
 
     public function connectGreenApi(Request $request, Agent $agent, ChannelDriverManager $drivers): RedirectResponse|JsonResponse
     {
-        $this->authorize('update', $agent);
+        $this->authorize('channels.manage', $agent);
 
         $data = $request->validate([
             'id_instance' => ['required', 'string', 'regex:/^\d{6,20}$/'],
@@ -322,7 +322,7 @@ class ChannelController extends Controller
 
     public function connectInstagrapi(Request $request, Agent $agent, ChannelDriverManager $drivers): RedirectResponse|JsonResponse
     {
-        $this->authorize('update', $agent);
+        $this->authorize('channels.manage', $agent);
 
         $data = $request->validate([
             'ig_username' => ['required', 'string', 'max:255'],

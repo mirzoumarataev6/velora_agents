@@ -17,6 +17,11 @@ use Illuminate\Foundation\Http\FormRequest;
  */
 class UpdateBiLayoutRequest extends FormRequest
 {
+    public function authorize(): bool
+    {
+        return $this->user()->can('update', $this->route('dashboard'));
+    }
+
     public function rules(): array
     {
         return [

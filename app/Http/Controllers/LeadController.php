@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Agent;
 use App\Models\Conversation;
 use App\Models\Lead;
 use App\Services\Haggling\HaggleDecisionRelay;
@@ -40,6 +41,8 @@ class LeadController extends Controller
 
     public function index(Request $request): View
     {
+        $this->authorize('viewAny', Lead::class);
+
         $view = in_array($request->query('view'), self::VIEWS, true) ? $request->query('view') : self::VIEWS[0];
         $status = $request->query('status');
         $agentId = $request->query('agent');
@@ -91,7 +94,7 @@ class LeadController extends Controller
         $this->markAllSeen($request);
 
         return view('leads.index', $shared + [
-            'agents' => $request->user()->agents()->orderBy('name')->get(['id', 'name']),
+            'agents' => Agent::ownedBy($request->user())->orderBy('name')->get(['id', 'name']),
             // Drives the badge on the Торг tab. Unfiltered on purpose: a
             // pending decision the current filter hides is still a customer
             // waiting, and hiding the count would be how it gets missed.
@@ -105,6 +108,8 @@ class LeadController extends Controller
      */
     public function poll(Request $request): JsonResponse
     {
+        $this->authorize('viewAny', Lead::class);
+
         $recent = $this->scoped($request)
             ->with('agent:id,name')
             ->latest('leads.created_at')
@@ -157,6 +162,8 @@ class LeadController extends Controller
 
     public function markSeen(Request $request): JsonResponse
     {
+        $this->authorize('viewAny', Lead::class);
+
         $this->markAllSeen($request);
 
         // Not zero: escalations are cleared by OPENING the conversation, not by
@@ -259,7 +266,7 @@ class LeadController extends Controller
      */
     protected function scoped(Request $request)
     {
-        return Lead::whereIn('leads.agent_id', $request->user()->agents()->select('id'));
+        return Lead::ownedBy($request->user());
     }
 
     /** Price requests still waiting on this owner, across every agent. */

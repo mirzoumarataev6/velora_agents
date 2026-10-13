@@ -412,7 +412,7 @@ class SourceNormalizer
 
         // Counted live rather than once up front: a 25-sheet workbook must stop at
         // the quota mid-import instead of discovering afterwards that it blew it.
-        $existing = BiDataset::where('user_id', $source->user_id)
+        $existing = BiDataset::where('team_id', $source->team_id)
             ->where('bi_source_id', '!=', $source->getKey())
             ->count();
 

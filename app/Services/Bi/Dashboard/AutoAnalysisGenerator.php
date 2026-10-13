@@ -32,7 +32,7 @@ class AutoAnalysisGenerator
             ->where('status', BiDataset::STATUS_READY)
             ->orderByDesc('row_count')->orderBy('id')->firstOrFail();
 
-        if ($dataset->bi_source_id !== $source->id || $dataset->user_id !== $owner->id || ! $dataset->isReady()) {
+        if ($dataset->bi_source_id !== $source->id || $dataset->team_id !== $source->team_id || ! $dataset->isReady()) {
             abort(404);
         }
 
@@ -105,12 +105,13 @@ class AutoAnalysisGenerator
         }
 
         return DB::transaction(function () use ($owner, $source, $dataset, $valid): BiDashboard {
-            $dashboard = new BiDashboard(['name' => $source->name, 'position' => (int) BiDashboard::ownedBy($owner)->max('position') + 1]);
+            $dashboard = new BiDashboard(['name' => $source->name, 'position' => (int) BiDashboard::where('team_id', $source->team_id)->max('position') + 1]);
             $dashboard->user_id = $owner->id;
+            $dashboard->team_id = $source->team_id;
             $dashboard->bi_source_id = $source->id;
             $dashboard->bi_dataset_id = $dataset->id;
             $dashboard->save();
-            if (BiDashboard::ownedBy($owner)->count() === 1) {
+            if (BiDashboard::where('team_id', $source->team_id)->count() === 1) {
                 $dashboard->makeDefault();
             }
 
@@ -121,6 +122,7 @@ class AutoAnalysisGenerator
                     'grid_x' => $item['x'], 'grid_y' => $item['y'], 'grid_w' => $item['w'], 'grid_h' => $item['h'],
                 ]);
                 $widget->user_id = $owner->id;
+                $widget->team_id = $source->team_id;
                 $widget->bi_dashboard_id = $dashboard->id;
                 $widget->bi_dataset_id = $dataset->id;
                 $widget->save();

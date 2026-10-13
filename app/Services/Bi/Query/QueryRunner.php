@@ -101,7 +101,7 @@ class QueryRunner
     {
         $dataset = $spec->dataset;
         $connection = $dataset->source?->biConnection;
-        if (! $connection || $connection->user_id !== $dataset->user_id || ! $connection->isUsable()) {
+        if (! $connection || $connection->team_id !== $dataset->team_id || ! $connection->isUsable()) {
             throw new BiQueryException(BiQueryException::EXTERNAL_UNSUPPORTED, 'The BI connection is unavailable for this dataset.');
         }
 

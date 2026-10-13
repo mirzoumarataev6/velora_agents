@@ -68,6 +68,20 @@ class CrmWorkspace extends Model
 
         $teamId = $team instanceof Team ? $team->id : $team;
 
+        $existing = static::where('team_id', $teamId)->where('name', '__main__')->first();
+        if ($existing !== null) {
+            return $existing;
+        }
+
+        // Preserve the backfill seam for a legacy unstamped default. An
+        // explicitly different team is never eligible for this adoption.
+        $legacy = $user->crmWorkspaces()->whereNull('team_id')->where('name', '__main__')->first();
+        if ($legacy !== null) {
+            $legacy->forceFill(['team_id' => $teamId])->save();
+
+            return $legacy;
+        }
+
         return static::unguarded(fn () => static::firstOrCreate(
             ['team_id' => $teamId, 'name' => '__main__'],
             ['user_id' => $user->id, 'color' => 'blue', 'is_default' => true],

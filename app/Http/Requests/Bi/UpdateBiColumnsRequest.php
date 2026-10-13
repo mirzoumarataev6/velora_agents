@@ -23,6 +23,11 @@ use Illuminate\Validation\Rule;
  */
 class UpdateBiColumnsRequest extends FormRequest
 {
+    public function authorize(): bool
+    {
+        return $this->user()->can('update', $this->route('dataset'));
+    }
+
     public function rules(): array
     {
         return [

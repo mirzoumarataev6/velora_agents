@@ -65,7 +65,7 @@
     {{-- Tab nav, on the shared `.tabs` skin so it matches the leads page and
          the dashboard's period switch rather than being a third tab style. --}}
     <div class="tabs">
-        @foreach (__('agents.show.tabs') as $key => $label)
+        @foreach (array_intersect_key(__('agents.show.tabs'), array_flip($tabs)) as $key => $label)
             <button type="button" @click="tab = '{{ $key }}'"
                 :class="tab === '{{ $key }}' && 'tab-active'"
                 :aria-selected="tab === '{{ $key }}'"
@@ -76,27 +76,47 @@
     </div>
 
     <div class="mt-6">
+        @if (in_array('knowledge', $tabs, true))
         <div x-show="tab === 'knowledge'" x-cloak x-transition.opacity.duration.200ms>
             @include('agents.partials.knowledge-tab', ['agent' => $agent])
         </div>
+        @endif
+        @if (in_array('catalog', $tabs, true))
         <div x-show="tab === 'catalog'" x-cloak x-transition.opacity.duration.200ms>
             @include('agents.partials.catalog-tab', ['agent' => $agent, 'catalog' => $catalog])
         </div>
+        @endif
+        @if (in_array('database', $tabs, true))
         <div x-show="tab === 'database'" x-cloak x-transition.opacity.duration.200ms>
             @include('agents.partials.database-tab', ['agent' => $agent, 'database' => $database])
         </div>
+        @endif
+        @if (in_array('channels', $tabs, true))
         <div x-show="tab === 'channels'" x-cloak x-transition.opacity.duration.200ms>
+            @can('channels.manage', $agent)
             @include('agents.partials.channels-tab', ['agent' => $agent])
+            @else
+            @foreach ($agent->channels as $channel)
+                <div class="card card-pad">{{ $channel->type }} · {{ $channel->status }}</div>
+            @endforeach
+            @endcan
         </div>
+        @endif
+        @if (in_array('playground', $tabs, true))
         <div x-show="tab === 'playground'" x-cloak x-transition.opacity.duration.200ms>
             @include('agents.partials.playground-tab', ['agent' => $agent, 'playgroundConversation' => $playgroundConversation])
         </div>
+        @endif
         {{-- No x-show wrapper: the tab partial mounts itself with x-if so the
              inbox only boots when it is actually opened. --}}
+        @if (in_array('conversations', $tabs, true))
         @include('agents.partials.conversations-tab', ['agent' => $agent])
+        @endif
+        @if (in_array('settings', $tabs, true))
         <div x-show="tab === 'settings'" x-cloak x-transition.opacity.duration.200ms>
             @include('agents.partials.settings-tab', ['agent' => $agent])
         </div>
+        @endif
     </div>
 </div>
 @endsection

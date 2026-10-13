@@ -47,7 +47,7 @@ class DatabaseConnectionController extends Controller
      */
     public function show(Agent $agent): JsonResponse
     {
-        $this->authorize('view', $agent);
+        $this->authorize('catalog.view', $agent);
 
         return response()->json(self::state($agent));
     }
@@ -137,7 +137,7 @@ class DatabaseConnectionController extends Controller
      */
     public function tables(Agent $agent): JsonResponse
     {
-        $this->authorize('view', $agent);
+        $this->authorize('catalog.view', $agent);
 
         $connection = $this->connectionOrFail($agent);
 
@@ -165,7 +165,7 @@ class DatabaseConnectionController extends Controller
      */
     public function describe(Request $request, Agent $agent): JsonResponse
     {
-        $this->authorize('view', $agent);
+        $this->authorize('catalog.view', $agent);
 
         $connection = $this->connectionOrFail($agent);
 
@@ -225,7 +225,7 @@ class DatabaseConnectionController extends Controller
      */
     public function discover(Agent $agent): JsonResponse
     {
-        $this->authorize('update', $agent);
+        $this->authorize('catalog.manage', $agent);
 
         $connection = $this->connectionOrFail($agent);
 
@@ -276,7 +276,7 @@ class DatabaseConnectionController extends Controller
      */
     public function confirmDiscovery(Request $request, Agent $agent): JsonResponse
     {
-        $this->authorize('update', $agent);
+        $this->authorize('catalog.manage', $agent);
 
         $connection = $this->connectionOrFail($agent);
 
@@ -409,7 +409,7 @@ class DatabaseConnectionController extends Controller
      */
     public function source(Request $request, Agent $agent): JsonResponse
     {
-        $this->authorize('update', $agent);
+        $this->authorize('catalog.manage', $agent);
 
         $source = (string) $request->input('source');
 
@@ -433,7 +433,7 @@ class DatabaseConnectionController extends Controller
      */
     public function destroy(Agent $agent): JsonResponse
     {
-        $this->authorize('update', $agent);
+        $this->authorize('catalog.manage', $agent);
 
         $agent->databaseConnection()->delete();
 

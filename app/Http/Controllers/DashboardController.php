@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Agent;
 use App\Services\Analytics\DashboardMetrics;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -18,8 +19,10 @@ class DashboardController extends Controller
 {
     public function __invoke(Request $request): View
     {
+        $this->authorize('analytics.view');
+
         $range = (int) $request->query('range', DashboardMetrics::RANGES[0]);
-        $agents = $request->user()->agents()->orderBy('name')->get(['id', 'name']);
+        $agents = Agent::ownedBy($request->user())->orderBy('name')->get(['id', 'name']);
 
         // Trusted only if it actually belongs to this owner — an id copied
         // from another tab, or simply guessed, falls back to "all agents"

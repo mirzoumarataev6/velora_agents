@@ -47,7 +47,7 @@ class DatasetController extends Controller
      */
     public function show(Agent $agent): JsonResponse
     {
-        $this->authorize('view', $agent);
+        $this->authorize('catalog.view', $agent);
 
         return response()->json(self::state($agent));
     }
@@ -212,7 +212,7 @@ class DatasetController extends Controller
      */
     public function cancel(Request $request, Agent $agent): JsonResponse
     {
-        $this->authorize('update', $agent);
+        $this->authorize('catalog.manage', $agent);
 
         $token = (string) $request->input('token');
 
@@ -229,7 +229,7 @@ class DatasetController extends Controller
      */
     public function destroy(Request $request, Agent $agent): RedirectResponse|JsonResponse
     {
-        $this->authorize('update', $agent);
+        $this->authorize('catalog.manage', $agent);
 
         // Before the bulk product delete below: that single query cascades
         // product_images at the DB level but fires no model events, so
@@ -256,7 +256,7 @@ class DatasetController extends Controller
      */
     public function products(Request $request, Agent $agent): JsonResponse
     {
-        $this->authorize('view', $agent);
+        $this->authorize('catalog.view', $agent);
 
         return response()->json(self::page($agent, (int) $request->query('page', 1)));
     }

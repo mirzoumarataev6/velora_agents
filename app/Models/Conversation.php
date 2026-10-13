@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\ScopesActiveTeam;
 use App\Models\Concerns\StampsTeam;
 use App\Observers\ConversationObserver;
 use App\Policies\ConversationPolicy;
@@ -23,6 +24,7 @@ class Conversation extends Model
     /** @use HasFactory<ConversationFactory> */
     use HasFactory;
 
+    use ScopesActiveTeam;
     use StampsTeam;
 
     protected function casts(): array
@@ -60,19 +62,6 @@ class Conversation extends Model
     public function leads(): HasMany
     {
         return $this->hasMany(Lead::class);
-    }
-
-    /**
-     * Only the conversations belonging to agents this user owns. Every inbox
-     * query starts here, so cross-tenant leakage can't happen by forgetting a
-     * where clause on one code path.
-     *
-     * @param  Builder<Conversation>  $query
-     * @return Builder<Conversation>
-     */
-    public function scopeOwnedBy(Builder $query, User $user): Builder
-    {
-        return $query->whereIn('conversations.agent_id', $user->agents()->select('id'));
     }
 
     /**

@@ -474,7 +474,7 @@ class DashboardMetrics
             return [];
         }
 
-        $agents = $this->user->agents()->orderBy('name')->get(['id', 'name']);
+        $agents = Agent::ownedBy($this->user)->orderBy('name')->get(['id', 'name']);
 
         if ($agents->count() < 2) {
             return [];
@@ -567,7 +567,7 @@ class DashboardMetrics
     // Возвращает идентификаторы агентов пользователя, отфильтрованные по выбранному агенту
     protected function agentIds()
     {
-        return $this->user->agents()
+        return Agent::ownedBy($this->user)
             ->select('agents.id')
             ->when($this->agentId !== null, fn ($q) => $q->where('agents.id', $this->agentId));
     }

@@ -37,7 +37,6 @@ class WidgetController extends Controller
     public function store(StoreBiWidgetRequest $request, BiDashboard $dashboard): RedirectResponse|JsonResponse
     {
         $this->authorize('update', $dashboard);
-        $this->authorize('create', BiWidget::class);
 
         if ($dashboard->isFull()) {
             throw ValidationException::withMessages([
@@ -45,7 +44,7 @@ class WidgetController extends Controller
             ]);
         }
 
-        $dataset = $this->dataset($request);
+        $dataset = $this->dataset($request, $dashboard);
         $type = WidgetType::from($request->validated('type'));
 
         $widget = new BiWidget($request->safe()->only([
@@ -54,6 +53,7 @@ class WidgetController extends Controller
         ]));
 
         $widget->user_id = $request->user()->id;
+        $widget->team_id = $dashboard->team_id;
         $widget->bi_dashboard_id = $dashboard->getKey();
         $widget->bi_dataset_id = $dataset->getKey();
         $widget->filters = $request->validated('filters', []);
@@ -83,7 +83,7 @@ class WidgetController extends Controller
         $this->authorize('update', $dashboard);
         $this->authorize('update', $widget);
 
-        $dataset = $this->dataset($request);
+        $dataset = $this->dataset($request, $dashboard);
 
         $widget->fill($request->safe()->only([
             'title', 'type', 'spec', 'filters', 'options',
@@ -215,9 +215,9 @@ class WidgetController extends Controller
      * that confirms the row exists; the policy is the check that would still be
      * there if someone replaced the scope with a plain `find`.
      */
-    private function dataset(StoreBiWidgetRequest $request): BiDataset
+    private function dataset(StoreBiWidgetRequest $request, BiDashboard $dashboard): BiDataset
     {
-        $dataset = BiDataset::ownedBy($request->user())
+        $dataset = BiDataset::where('team_id', $dashboard->team_id)
             ->whereKey($request->validated('bi_dataset_id'))
             ->first();
 

@@ -13,7 +13,7 @@ class AnalystChatController extends Controller
 {
     public function store(Request $request, BiDashboard $dashboard, AnalystChat $analyst): JsonResponse
     {
-        $this->authorize('view', $dashboard);
+        $this->authorize('update', $dashboard);
         $data = $request->validate(['message' => ['required', 'string', 'max:2000']]);
         $reply = $analyst->reply($request->user(), $dashboard, $data['message']);
 
@@ -25,6 +25,7 @@ class AnalystChatController extends Controller
     {
         $this->authorize('update', $dashboard);
         $this->authorize('update', $message);
+        abort_unless($message->bi_dashboard_id === $dashboard->id, 404);
 
         return response()->json($analyst->undo($request->user(), $dashboard, $message));
     }

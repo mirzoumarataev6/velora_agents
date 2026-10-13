@@ -2,13 +2,13 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\ScopesActiveTeam;
 use App\Models\Concerns\StampsTeam;
 use App\Policies\BiWidgetPolicy;
 use App\Services\Bi\Dashboard\WidgetType;
 use Database\Factories\BiWidgetFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\UsePolicy;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -40,6 +40,7 @@ class BiWidget extends Model
     /** @use HasFactory<BiWidgetFactory> */
     use HasFactory;
 
+    use ScopesActiveTeam;
     use StampsTeam;
 
     /** The grid is twelve columns wide, as every gridstack board is. */
@@ -80,15 +81,6 @@ class BiWidget extends Model
     public function dataset(): BelongsTo
     {
         return $this->belongsTo(BiDataset::class, 'bi_dataset_id');
-    }
-
-    /**
-     * @param  Builder<BiWidget>  $query
-     * @return Builder<BiWidget>
-     */
-    public function scopeOwnedBy(Builder $query, User $user): Builder
-    {
-        return $query->where('bi_widgets.user_id', $user->id);
     }
 
     /**

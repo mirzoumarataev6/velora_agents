@@ -2,12 +2,12 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\ScopesActiveTeam;
 use App\Models\Concerns\StampsTeam;
 use App\Policies\BiDashboardPolicy;
 use Database\Factories\BiDashboardFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\UsePolicy;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -29,6 +29,7 @@ class BiDashboard extends Model
     /** @use HasFactory<BiDashboardFactory> */
     use HasFactory;
 
+    use ScopesActiveTeam;
     use StampsTeam;
 
     /** Widgets one board may hold, before it stops being a board. */
@@ -81,19 +82,10 @@ class BiDashboard extends Model
     }
 
     /**
-     * @param  Builder<BiDashboard>  $query
-     * @return Builder<BiDashboard>
-     */
-    public function scopeOwnedBy(Builder $query, User $user): Builder
-    {
-        return $query->where('bi_dashboards.user_id', $user->id);
-    }
-
-    /**
      * Make this the account's landing board, demoting whichever held the title.
      *
      * Done in a transaction and with an explicit demote rather than with a
-     * partial unique index, because a `UNIQUE (user_id) WHERE is_default` is
+     * partial unique index, because a `UNIQUE (team_id) WHERE is_default` is
      * not portable to SQLite — which `phpunit.xml` pins the whole suite to. An
      * invariant the test suite cannot exercise is not an invariant.
      */
@@ -101,7 +93,7 @@ class BiDashboard extends Model
     {
         DB::transaction(function () {
             static::query()
-                ->where('user_id', $this->user_id)
+                ->where('team_id', $this->team_id)
                 ->whereKeyNot($this->getKey())
                 ->where('is_default', true)
                 ->update(['is_default' => false]);

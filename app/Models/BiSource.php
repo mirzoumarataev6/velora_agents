@@ -2,12 +2,12 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\ScopesActiveTeam;
 use App\Models\Concerns\StampsTeam;
 use App\Policies\BiSourcePolicy;
 use Database\Factories\BiSourceFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\UsePolicy;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -37,6 +37,7 @@ class BiSource extends Model
     /** @use HasFactory<BiSourceFactory> */
     use HasFactory;
 
+    use ScopesActiveTeam;
     use StampsTeam;
 
     public const KIND_FILE = 'file';
@@ -79,18 +80,6 @@ class BiSource extends Model
     public function datasets(): HasMany
     {
         return $this->hasMany(BiDataset::class);
-    }
-
-    /**
-     * Only this owner's sources. Every BI read starts here, so a forgotten where
-     * clause cannot show one account another's uploads.
-     *
-     * @param  Builder<BiSource>  $query
-     * @return Builder<BiSource>
-     */
-    public function scopeOwnedBy(Builder $query, User $user): Builder
-    {
-        return $query->where('bi_sources.user_id', $user->id);
     }
 
     /**

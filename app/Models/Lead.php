@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\ScopesActiveTeam;
 use App\Models\Concerns\StampsTeam;
 use App\Observers\LeadObserver;
 use App\Policies\LeadPolicy;
@@ -25,6 +26,7 @@ class Lead extends Model
     /** @use HasFactory<LeadFactory> */
     use HasFactory;
 
+    use ScopesActiveTeam;
     use StampsTeam;
 
     protected function casts(): array
