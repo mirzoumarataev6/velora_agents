@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Teams;
 
 use App\Http\Controllers\Controller;
 use App\Models\Role;
-use App\Models\Team;
 use App\Services\Permissions\PermissionCatalog;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -30,7 +29,6 @@ class TeamRoleController extends Controller
 
         return view('teams.roles.index', [
             'i18nExtraNamespaces' => ['settings'],
-            'team' => Team::findOrFail($teamId),
             'roles' => Role::where('team_id', $teamId)->orderBy('id')->get(),
             'selectedRole' => $selectedRole,
             'selectedPermissions' => $selectedRole?->is_owner
@@ -51,8 +49,8 @@ class TeamRoleController extends Controller
 
         $role = DB::transaction(function () use ($teamId, $data): Role {
             // Slugs are internal identifiers and stay stable after a rename.
-            // A random suffix also keeps a custom "Admin" name from ever
-            // colliding with the seeded system slug on a concurrent create.
+            // Different names can normalize to the same text; the suffix
+            // keeps their slugs distinct without renaming existing roles.
             $base = Str::substr(Str::slug($data['name']) ?: 'role', 0, 230);
             $role = Role::create([
                 'team_id' => $teamId,

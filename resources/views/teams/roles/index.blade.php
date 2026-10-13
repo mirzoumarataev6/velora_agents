@@ -26,7 +26,7 @@
                 @foreach ($roles as $roleOption)
                     <a href="{{ route('teams.roles.index', ['edit' => $roleOption->id]) }}"
                         class="flex items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-sm {{ $selectedRole?->id === $roleOption->id ? 'bg-brand-circle text-brand-strong' : 'hover:bg-sunk dark:hover:bg-night-raised' }}">
-                        <span class="min-w-0 truncate font-medium">{{ \Illuminate\Support\Facades\Lang::has('agents.nav.teams.roles.'.$roleOption->slug) ? __('agents.nav.teams.roles.'.$roleOption->slug) : $roleOption->name }}</span>
+                        <span class="min-w-0 truncate font-medium">{{ $roleOption->displayName() }}</span>
                         @if ($roleOption->is_owner)
                             <span class="badge badge-neutral shrink-0" data-i18n="settings.roles.system">{{ __('settings.roles.system') }}</span>
                         @endif
@@ -37,7 +37,7 @@
 
         <div class="card p-5 sm:p-6">
             <h2 class="font-display text-lg font-semibold">
-                {{ $selectedRole === null ? __('settings.roles.new') : (\Illuminate\Support\Facades\Lang::has('agents.nav.teams.roles.'.$selectedRole->slug) ? __('agents.nav.teams.roles.'.$selectedRole->slug) : $selectedRole->name) }}
+                {{ $selectedRole?->displayName() ?? __('settings.roles.new') }}
             </h2>
             <p class="mt-2 rounded-xl bg-sunk px-4 py-3 text-sm text-muted dark:bg-night-raised dark:text-night-muted" data-i18n="settings.roles.not_enforced_yet">{{ __('settings.roles.not_enforced_yet') }}</p>
 

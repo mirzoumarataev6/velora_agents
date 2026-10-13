@@ -324,7 +324,7 @@
                                                 <select id="team-member-role-{{ $memberMembership->id }}" name="role_id" class="field px-3 py-2 text-sm">
                                                     @foreach ($teamRoles as $roleOption)
                                                         <option value="{{ $roleOption->id }}" @selected((int) $memberMembership->role_id === $roleOption->id)>
-                                                            {{ \Illuminate\Support\Facades\Lang::has('agents.nav.teams.roles.'.$roleOption->slug) ? __('agents.nav.teams.roles.'.$roleOption->slug) : $roleOption->name }}
+                                                            {{ $roleOption->displayName() }}
                                                         </option>
                                                     @endforeach
                                                 </select>
@@ -361,7 +361,7 @@
                                 <select id="team-invite-role" name="role_id" required class="field w-full px-3 py-2.5 text-sm">
                                     @foreach ($teamRoles as $roleOption)
                                         <option value="{{ $roleOption->id }}" @selected((int) old('role_id') === $roleOption->id)>
-                                            {{ __('agents.nav.teams.roles.'.$roleOption->slug) }}
+                                            {{ $roleOption->displayName() }}
                                         </option>
                                     @endforeach
                                 </select>
@@ -385,7 +385,7 @@
                                         <div class="min-w-0">
                                             <p class="truncate text-sm font-medium">
                                                 {{ $invitation->email }}
-                                                <span class="badge badge-neutral ml-2">{{ __('agents.nav.teams.roles.'.$invitation->role->slug) }}</span>
+                                                <span class="badge badge-neutral ml-2">{{ $invitation->role->displayName() }}</span>
                                             </p>
                                             <p class="mt-0.5 text-xs text-muted dark:text-night-muted">
                                                 {{ __('settings.team.pending_invited_by', ['name' => $invitation->inviter?->name ?? '—']) }}

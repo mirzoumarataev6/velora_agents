@@ -37,7 +37,7 @@ class TeamInvitationMail extends Mailable
             with: [
                 'teamName' => $this->invitation->team->name,
                 'inviterName' => $this->invitation->inviter->name,
-                'roleName' => __('agents.nav.teams.roles.'.$this->invitation->role->slug),
+                'roleName' => $this->invitation->role->displayName(),
                 'acceptUrl' => route('invitations.accept', $this->invitation->token),
                 'expiresAt' => $this->invitation->expires_at,
             ],

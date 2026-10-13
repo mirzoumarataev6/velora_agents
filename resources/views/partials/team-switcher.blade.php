@@ -14,7 +14,7 @@
         ->join('roles', 'roles.id', '=', 'team_user.role_id')
         ->where('team_user.user_id', auth()->id())
         ->orderBy('team_user.joined_at')
-        ->select('team_user.team_id', 'teams.name as team_name', 'roles.slug as role_slug')
+        ->select('team_user.team_id', 'teams.name as team_name', 'roles.slug as role_slug', 'roles.name as role_name')
         ->get();
     $__currentTeamId = auth()->user()->current_team_id;
     $__currentTeamName = $__teamMemberships->first(fn ($m) => (int) $m->team_id === (int) $__currentTeamId)?->team_name
@@ -65,7 +65,7 @@
                         class="flex w-full items-center gap-2 px-4 py-2 text-left text-sm transition-colors hover:bg-paper focus:bg-paper focus:outline-none dark:hover:bg-white/5 dark:focus:bg-white/5 {{ (int) $loop_membership->team_id === (int) $__currentTeamId ? 'font-semibold text-brand' : 'text-ink dark:text-white/80' }}">
                         <span class="min-w-0 flex-1 truncate">{{ $loop_membership->team_name }}</span>
                         <span class="badge-neutral shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium">
-                            {{ __('agents.nav.teams.roles.'.$loop_membership->role_slug) }}
+                            {{ \App\Models\Role::displayNameFor($loop_membership->role_slug, $loop_membership->role_name) }}
                         </span>
                     </button>
                 </form>

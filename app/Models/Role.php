@@ -9,14 +9,15 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Lang;
 
 /**
  * A named bundle of permissions. `team_id` NULL marks one of the 4 global
  * system-role templates seeded once in a migration — never assigned to a
  * `team_user` row directly, only copied (see `copyTemplatesFor()`) into
  * real, per-team rows at team creation. `is_owner` marks the one role per
- * team that is immune to edit/delete: enforcement lives in a later stage's
- * Policy, not here.
+ * team that is immune to edit/delete. TeamRoleController protects it while
+ * role management is owner-only; resource Policies are updated later.
  */
 #[Fillable(['team_id', 'name', 'slug'])]
 class Role extends Model
@@ -32,6 +33,20 @@ class Role extends Model
     public function team(): BelongsTo
     {
         return $this->belongsTo(Team::class);
+    }
+
+    public function displayName(): string
+    {
+        return self::displayNameFor($this->slug, $this->name);
+    }
+
+    public static function displayNameFor(string $slug, string $name): string
+    {
+        // Only the four seeded roles have translated slugs. A custom role's
+        // own name is the owner's chosen label, not a missing translation key.
+        $key = 'agents.nav.teams.roles.'.$slug;
+
+        return Lang::has($key) ? __($key) : $name;
     }
 
     /**
