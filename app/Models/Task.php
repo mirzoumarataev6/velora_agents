@@ -36,12 +36,20 @@ class Task extends Model
     }
 
     /**
+     * Team-scoped, not user-scoped — see CrmWorkspace::scopeOwnedBy() for
+     * the full reasoning (behaviour-neutral today, never falls back to
+     * user_id on a null/stale active team).
+     *
      * @param  Builder<Task>  $query
      * @return Builder<Task>
      */
     public function scopeOwnedBy(Builder $query, User $user): Builder
     {
-        return $query->where('tasks.user_id', $user->id);
+        $teamId = $user->activeTeamId();
+
+        return $teamId !== null
+            ? $query->where('tasks.team_id', $teamId)
+            : $query->whereRaw('1 = 0');
     }
 
     /**

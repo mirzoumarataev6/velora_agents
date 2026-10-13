@@ -27,10 +27,29 @@ class CrmWorkspace extends Model
         return ['is_default' => 'boolean'];
     }
 
-    /** @param Builder<CrmWorkspace> $query */
+    /**
+     * Team-scoped, not user-scoped: Stage 2d-4 makes this (and the other
+     * five CRM scopeOwnedBy()s) read `team_id` instead of `user_id`, so a
+     * teammate sharing the active team sees the same rows the owner does —
+     * the entire point of this stage. Behaviour-neutral for the only case
+     * that exists today (one user, one team, current_team_id always valid):
+     * `activeTeamId()` resolves to that team's id and this reduces to
+     * exactly the same single-team result `user_id` scoping always gave.
+     *
+     * A null/stale `activeTeamId()` returns nothing, never falling back to
+     * `user_id` — a stale `current_team_id` must not leak another team's
+     * rows into view just because they happen to share an owner.
+     *
+     * @param  Builder<CrmWorkspace>  $query
+     * @return Builder<CrmWorkspace>
+     */
     public function scopeOwnedBy(Builder $query, User $user): Builder
     {
-        return $query->where('crm_workspaces.user_id', $user->id);
+        $teamId = $user->activeTeamId();
+
+        return $teamId !== null
+            ? $query->where('crm_workspaces.team_id', $teamId)
+            : $query->whereRaw('1 = 0');
     }
 
     /**

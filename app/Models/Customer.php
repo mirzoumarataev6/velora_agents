@@ -70,15 +70,23 @@ class Customer extends Model
     }
 
     /**
-     * Only this owner's customers. Every CRM query starts here, so a forgotten
+     * Only this team's customers. Every CRM query starts here, so a forgotten
      * where clause cannot leak one account's book into another's.
+     *
+     * Team-scoped, not user-scoped — see CrmWorkspace::scopeOwnedBy() for
+     * the full reasoning (behaviour-neutral today, never falls back to
+     * user_id on a null/stale active team).
      *
      * @param  Builder<Customer>  $query
      * @return Builder<Customer>
      */
     public function scopeOwnedBy(Builder $query, User $user): Builder
     {
-        return $query->where('customers.user_id', $user->id);
+        $teamId = $user->activeTeamId();
+
+        return $teamId !== null
+            ? $query->where('customers.team_id', $teamId)
+            : $query->whereRaw('1 = 0');
     }
 
     /**

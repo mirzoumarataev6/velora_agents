@@ -208,4 +208,28 @@ class User extends Authenticatable
     {
         return $this->hasMany(TeamMembership::class);
     }
+
+    /**
+     * The team CRM reads/writes should scope to right now — `current_team_id`
+     * itself, but only once confirmed to still be a team this user actually
+     * belongs to (a stale pointer left over from, say, being removed from a
+     * team must not resolve to it). Null for both "no current team" and "not
+     * a member of it any more" — callers treat the two identically, since
+     * the only safe thing to show for either is nothing.
+     *
+     * Routes through `membershipIn()`, which HasTeams already memoizes per
+     * instance, so asking this more than once per request (every
+     * `scopeOwnedBy()` call on this request's $request->user()) costs at
+     * most the one query that method already pays for.
+     */
+    public function activeTeamId(): ?int
+    {
+        if ($this->current_team_id === null) {
+            return null;
+        }
+
+        return $this->membershipIn($this->current_team_id) !== null
+            ? $this->current_team_id
+            : null;
+    }
 }

@@ -76,12 +76,20 @@ class CrmStage extends Model
     }
 
     /**
+     * Team-scoped, not user-scoped — see CrmWorkspace::scopeOwnedBy() for
+     * the full reasoning (behaviour-neutral today, never falls back to
+     * user_id on a null/stale active team).
+     *
      * @param  Builder<CrmStage>  $query
      * @return Builder<CrmStage>
      */
     public function scopeOwnedBy(Builder $query, User $user): Builder
     {
-        return $query->where('crm_stages.user_id', $user->id);
+        $teamId = $user->activeTeamId();
+
+        return $teamId !== null
+            ? $query->where('crm_stages.team_id', $teamId)
+            : $query->whereRaw('1 = 0');
     }
 
     /**
@@ -131,7 +139,14 @@ class CrmStage extends Model
     public static function defaultsFor(User $user, Team|int|null $team = null): Collection
     {
         if ($team === null) {
-            $existing = static::ownedBy($user)->ordered()->get();
+            // where('user_id', ...) directly, deliberately NOT scopeOwnedBy():
+            // that scope now reads the caller's ACTIVE team (Stage 2d-4), but
+            // this branch is reached by background call sites passing no
+            // team at all alongside ones mid-adoption of the explicit-team
+            // parameter — its existence check must key off the same user_id
+            // it always has, independent of whichever team the signed-in
+            // owner happens to be looking at right now.
+            $existing = static::where('user_id', $user->id)->ordered()->get();
 
             if ($existing->isNotEmpty()) {
                 return $existing;
@@ -145,12 +160,17 @@ class CrmStage extends Model
                 static::forceCreate($stage + ['user_id' => $user->id, 'is_system' => true]);
             }
 
-            return static::ownedBy($user)->ordered()->get();
+            return static::where('user_id', $user->id)->ordered()->get();
         }
 
         $teamId = $team instanceof Team ? $team->id : $team;
 
-        $existing = static::ownedBy($user)->where('team_id', $teamId)->ordered()->get();
+        // Same reasoning as the null-team branch above: a direct where(),
+        // not scopeOwnedBy() — $teamId here is whatever team the caller
+        // resolved (the agent's own team, say), which can legitimately
+        // differ from the signed-in owner's ACTIVE team that scopeOwnedBy()
+        // now reads.
+        $existing = static::where('user_id', $user->id)->where('team_id', $teamId)->ordered()->get();
 
         if ($existing->isNotEmpty()) {
             return $existing;
@@ -164,7 +184,7 @@ class CrmStage extends Model
             static::forceCreate($stage + ['user_id' => $user->id, 'is_system' => true, 'team_id' => $teamId]);
         }
 
-        return static::ownedBy($user)->where('team_id', $teamId)->ordered()->get();
+        return static::where('user_id', $user->id)->where('team_id', $teamId)->ordered()->get();
     }
 
     public static function initialFor(User $user, Team|int|null $team = null): CrmStage

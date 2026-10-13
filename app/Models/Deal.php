@@ -68,12 +68,20 @@ class Deal extends Model
     }
 
     /**
+     * Team-scoped, not user-scoped — see CrmWorkspace::scopeOwnedBy() for
+     * the full reasoning (behaviour-neutral today, never falls back to
+     * user_id on a null/stale active team).
+     *
      * @param  Builder<Deal>  $query
      * @return Builder<Deal>
      */
     public function scopeOwnedBy(Builder $query, User $user): Builder
     {
-        return $query->where('deals.user_id', $user->id);
+        $teamId = $user->activeTeamId();
+
+        return $teamId !== null
+            ? $query->where('deals.team_id', $teamId)
+            : $query->whereRaw('1 = 0');
     }
 
     /**

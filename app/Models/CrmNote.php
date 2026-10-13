@@ -34,17 +34,26 @@ class CrmNote extends Model
     }
 
     /**
-     * Only this owner's notes. Same convention as every other CRM model,
+     * Only this team's notes. Same convention as every other CRM model,
      * even though a note's own `user_id` is the author, not necessarily the
-     * subject's owner — in this product the two are always the same person,
-     * since only the owner themselves ever logs an entry.
+     * subject's owner — once a team has several members the two can differ
+     * (a teammate logging a call on the owner's customer), which is exactly
+     * why this scope reads `team_id` and not `user_id`.
+     *
+     * Team-scoped, not user-scoped — see CrmWorkspace::scopeOwnedBy() for
+     * the full reasoning (behaviour-neutral today, never falls back to
+     * user_id on a null/stale active team).
      *
      * @param  Builder<CrmNote>  $query
      * @return Builder<CrmNote>
      */
     public function scopeOwnedBy(Builder $query, User $user): Builder
     {
-        return $query->where('crm_notes.user_id', $user->id);
+        $teamId = $user->activeTeamId();
+
+        return $teamId !== null
+            ? $query->where('crm_notes.team_id', $teamId)
+            : $query->whereRaw('1 = 0');
     }
 
     public function notable(): MorphTo
