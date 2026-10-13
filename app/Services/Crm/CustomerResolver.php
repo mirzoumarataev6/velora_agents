@@ -78,7 +78,13 @@ class CustomerResolver
         $phone = $this->phoneFor($conversation);
 
         if ($customer === null) {
-            $customer = $this->findByPhone($userId, $phone) ?? $this->open($userId, $conversation, $phone);
+            // The thread's own agent's team — same reasoning open()
+            // already gives the team_id it creates with, and the one a
+            // dedup lookup must match: a number already claimed by team
+            // B's profile is not this team A thread's own customer, even
+            // though both agents share an owner.
+            $team = $conversation->agent?->team_id;
+            $customer = $this->findByPhone($team, $phone) ?? $this->open($userId, $conversation, $phone);
         } elseif ($phone !== null) {
             // The thread already had a profile and has now produced a number:
             // this is the retroactive merge path.
@@ -124,7 +130,10 @@ class CustomerResolver
                 return null;
             }
 
-            $customer = $this->findByPhone($userId, $phone)
+            // The lead's own agent's team — same reasoning as
+            // resolveForConversation()'s own lookup just below in this
+            // file.
+            $customer = $this->findByPhone($lead->agent?->team_id, $phone)
                 // forceCreate: user_id is deliberately not mass-assignable on
                 // Customer, so no request payload can ever file a customer
                 // under another account.
@@ -188,7 +197,11 @@ class CustomerResolver
             return $customer;
         }
 
-        $holder = Customer::where('user_id', $customer->user_id)->where('phone_key', $key)->first();
+        // Team-scoped, not user-scoped: matches the (team_id, phone_key)
+        // unique index this is a pre-check for — a number already claimed
+        // by another of this owner's teams is not this team's own
+        // customer to fold into.
+        $holder = Customer::where('team_id', $customer->team_id)->where('phone_key', $key)->first();
 
         if ($holder !== null && $holder->id !== $customer->id) {
             return $this->merge(from: $customer, into: $holder);
@@ -199,7 +212,8 @@ class CustomerResolver
         } catch (UniqueConstraintViolationException) {
             // Two webhooks resolved the same new number at once. The other one
             // won the unique index; join it rather than fail the message.
-            $holder = Customer::where('user_id', $customer->user_id)->where('phone_key', $key)->first();
+            // Same team-scoped lookup as the pre-check above.
+            $holder = Customer::where('team_id', $customer->team_id)->where('phone_key', $key)->first();
 
             return $holder !== null ? $this->merge(from: $customer, into: $holder) : $customer->refresh();
         }
@@ -229,8 +243,11 @@ class CustomerResolver
             // the customer_id column alone any more.
             $conversationIds = Conversation::where('customer_id', $from->id)->pluck('id')->all();
             $leadIds = Lead::where('customer_id', $from->id)->pluck('id')->all();
-            $dealIds = Deal::where('user_id', $into->user_id)->where('customer_id', $from->id)->pluck('id')->all();
-            $taskIds = Task::where('user_id', $into->user_id)->where('customer_id', $from->id)->pluck('id')->all();
+            // Team-scoped, not user-scoped: $into's own team, which — same
+            // as every other lookup in this class — is the actual tenancy
+            // boundary once an owner has more than one.
+            $dealIds = Deal::where('team_id', $into->team_id)->where('customer_id', $from->id)->pluck('id')->all();
+            $taskIds = Task::where('team_id', $into->team_id)->where('customer_id', $from->id)->pluck('id')->all();
 
             Conversation::where('customer_id', $from->id)->update(['customer_id' => $into->id]);
             Lead::where('customer_id', $from->id)->update(['customer_id' => $into->id]);
@@ -385,18 +402,28 @@ class CustomerResolver
         return $conversation->leads()->whereNotNull('phone')->orderBy('id')->value('phone');
     }
 
-    private function findByPhone(int $userId, ?string $phone): ?Customer
+    /**
+     * Team-scoped, not user-scoped: a phone number is claimed by at most
+     * one profile PER TEAM, the same granularity `customers`' own
+     * `unique(team_id, phone_key)` index (Stage 2d-3-1) already enforces —
+     * matching by `user_id` instead would let two of this owner's teams
+     * silently collide over (or steal) the same customer. Null $teamId
+     * (an agent not yet stamped with one) finds nothing, same as today's
+     * "no match" rather than a guess.
+     */
+    private function findByPhone(?int $teamId, ?string $phone): ?Customer
     {
         $key = $this->phoneKey($phone);
 
-        return $key === null
+        return $key === null || $teamId === null
             ? null
-            : Customer::where('user_id', $userId)->where('phone_key', $key)->first();
+            : Customer::where('team_id', $teamId)->where('phone_key', $key)->first();
     }
 
     private function open(int $userId, Conversation $conversation, ?string $phone): Customer
     {
         $key = $this->phoneKey($phone);
+        $team = $conversation->agent?->team_id;
 
         try {
             return Customer::forceCreate([
@@ -410,11 +437,11 @@ class CustomerResolver
                 // already in scope. Null if the relation is somehow
                 // missing — StampsTeam falls back exactly as today in that
                 // case.
-                'team_id' => $conversation->agent?->team_id,
+                'team_id' => $team,
                 // Same team, passed through to the workspace lookup too,
                 // so a background-filed customer and the folder it lands
                 // in never disagree about which team they belong to.
-                'crm_workspace_id' => CrmWorkspace::defaultFor(User::findOrFail($userId), $conversation->agent?->team_id)->id,
+                'crm_workspace_id' => CrmWorkspace::defaultFor(User::findOrFail($userId), $team)->id,
                 'name' => $conversation->external_user_name,
                 'phone' => $key !== null ? $phone : null,
                 'phone_key' => $key,
@@ -423,7 +450,10 @@ class CustomerResolver
                 'last_contact_at' => $conversation->last_message_at ?? $conversation->created_at ?? now(),
             ]);
         } catch (UniqueConstraintViolationException) {
-            return Customer::where('user_id', $userId)->where('phone_key', $key)->firstOrFail();
+            // Team-scoped, same reasoning as findByPhone(): the unique
+            // index this collided with is (team_id, phone_key), so the row
+            // that won the race is found the same way.
+            return Customer::where('team_id', $team)->where('phone_key', $key)->firstOrFail();
         }
     }
 
