@@ -71,7 +71,15 @@ class AuthController extends Controller
         // construction rather than by agreement between two flags.
         $request->session()->put(self::GREETING_SESSION_KEY, self::GREETING_WELCOME);
 
-        return redirect()->route('home');
+        // intended(), not a plain redirect: a guest who landed here because a
+        // protected page (Stage 3b's invitation accept link, say) sent them
+        // to sign in has `url.intended` already stored by Laravel's own
+        // redirect()->guest() — exactly what login() already honors below.
+        // Without this, registering from that link stranded a brand-new user
+        // on the dashboard with no invitation accepted. A no-op for every
+        // other registration: with nothing stored, intended() falls back to
+        // the same route('home') this always redirected to.
+        return redirect()->intended(route('home'));
     }
 
     public function login(Request $request): RedirectResponse
