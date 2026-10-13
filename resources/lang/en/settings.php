@@ -103,7 +103,11 @@ return [
     'team' => [
         'heading' => 'Team',
         'description' => 'Manage the active team\'s members and invitations.',
-        'not_owner' => 'Only the team owner can manage invitations.',
+        'not_owner' => 'Only the team owner can manage members and invitations.',
+        'members_heading' => 'Members',
+        'change_role_button' => 'Save role',
+        'remove_member_button' => 'Remove from team',
+        'remove_confirm' => 'Remove this member from the team?',
         'invite_heading' => 'Invite a teammate',
         'invite_description' => 'Send an email invitation — they join once they sign up or sign in.',
         'email_label' => 'Email',

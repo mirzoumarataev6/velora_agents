@@ -20,7 +20,7 @@ class TeamMemberController extends Controller
     public function update(Request $request, TeamMembership $membership): RedirectResponse
     {
         $teamId = $this->ownedActiveTeamId($request);
-        abort_unless($membership->team_id === $teamId, 404);
+        abort_unless((int) $membership->team_id === $teamId, 404);
 
         $data = $request->validateWithBag('team', [
             'role_id' => ['required', 'integer', Rule::exists('roles', 'id')->where('team_id', $teamId)],
@@ -41,13 +41,13 @@ class TeamMemberController extends Controller
 
         $member->flushPermissionCache();
 
-        return back()->with('status', __('settings.team.member_role_saved'));
+        return back()->with('status', __('settings.team.member_role_saved'))->with('settings_tab', 'team');
     }
 
     public function destroy(Request $request, TeamMembership $membership, CreatesPersonalTeam $personalTeams): RedirectResponse
     {
         $teamId = $this->ownedActiveTeamId($request);
-        abort_unless($membership->team_id === $teamId, 404);
+        abort_unless((int) $membership->team_id === $teamId, 404);
 
         $member = DB::transaction(function () use ($membership, $teamId, $personalTeams): User {
             $locked = TeamMembership::whereKey($membership->id)->where('team_id', $teamId)
@@ -60,7 +60,7 @@ class TeamMemberController extends Controller
             $member = User::whereKey($locked->user_id)->lockForUpdate()->firstOrFail();
             $locked->delete();
 
-            if ($member->current_team_id === $teamId) {
+            if ((int) $member->current_team_id === $teamId) {
                 $nextTeamId = TeamMembership::where('user_id', $member->id)
                     ->orderBy('id')->value('team_id');
 
@@ -76,7 +76,7 @@ class TeamMemberController extends Controller
 
         $member->flushPermissionCache();
 
-        return back()->with('status', __('settings.team.member_removed'));
+        return back()->with('status', __('settings.team.member_removed'))->with('settings_tab', 'team');
     }
 
     private function ownedActiveTeamId(Request $request): int

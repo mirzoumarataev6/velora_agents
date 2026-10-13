@@ -21,8 +21,7 @@ use Illuminate\Validation\ValidationException;
  * TeamSwitchController already uses for its own membership check. This is
  * meant to be REPLACED, not extended: when a later stage wires
  * `Gate::before` for team permissions, these two checks are exactly what
- * it supersedes — do not add a third inline check elsewhere in the
- * meantime instead of waiting for that stage.
+ * it supersedes, alongside Stage 3c's member-management checks.
  */
 class TeamInvitationController extends Controller
 {

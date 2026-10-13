@@ -6,6 +6,7 @@ use App\Http\Middleware\SetLocale;
 use App\Models\Invitation;
 use App\Models\Role;
 use App\Models\Team;
+use App\Models\TeamMembership;
 use App\Services\Account\DeletesAccount;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -58,8 +59,11 @@ class SettingsController extends Controller
             'activeTeam' => $teamId !== null ? Team::find($teamId) : null,
             'isTeamOwner' => $isTeamOwner,
             // Only queried for the one person who can act on them — nobody
-            // else's settings page pays for a roles/invitations lookup.
+            // else's settings page pays for roles/members/invitations.
             'teamRoles' => $isTeamOwner ? Role::where('team_id', $teamId)->orderBy('id')->get() : collect(),
+            'teamMembers' => $isTeamOwner
+                ? TeamMembership::where('team_id', $teamId)->with(['user', 'role'])->orderBy('id')->get()
+                : collect(),
             'pendingInvitations' => $isTeamOwner
                 ? Invitation::where('team_id', $teamId)->where('status', Invitation::STATUS_PENDING)
                     ->with(['role', 'inviter'])->orderByDesc('created_at')->get()

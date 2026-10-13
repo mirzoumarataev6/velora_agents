@@ -77,4 +77,55 @@ class TeamSettingsUiTest extends TestCase
         $response->assertDontSee('pending@example.com');
         $response->assertSee(__('settings.team.not_owner'));
     }
+
+    public function test_owner_sees_only_active_team_members_with_controls_for_non_owners(): void
+    {
+        $owner = User::factory()->create();
+        $member = User::factory()->create(['name' => 'Visible teammate']);
+        $otherOwner = User::factory()->create();
+        $otherMember = User::factory()->create(['name' => 'Other team only']);
+        $operator = Role::where('team_id', $owner->current_team_id)->where('slug', PermissionCatalog::OPERATOR)->sole();
+        $otherOperator = Role::where('team_id', $otherOwner->current_team_id)->where('slug', PermissionCatalog::OPERATOR)->sole();
+        $membership = TeamMembership::create([
+            'team_id' => $owner->current_team_id,
+            'user_id' => $member->id,
+            'role_id' => $operator->id,
+            'joined_at' => now(),
+        ]);
+        TeamMembership::create([
+            'team_id' => $otherOwner->current_team_id,
+            'user_id' => $otherMember->id,
+            'role_id' => $otherOperator->id,
+            'joined_at' => now(),
+        ]);
+
+        $response = $this->actingAs($owner)->get('/settings');
+
+        $response->assertOk();
+        $response->assertSee('Visible teammate');
+        $response->assertDontSee('Other team only');
+        $response->assertSee(route('teams.members.update', $membership));
+        $response->assertSee(route('teams.members.destroy', $membership));
+        $response->assertDontSee(route('teams.members.destroy', $owner->membershipIn($owner->current_team_id)));
+    }
+
+    public function test_non_owner_sees_no_member_list_or_member_controls(): void
+    {
+        $owner = User::factory()->create();
+        $member = User::factory()->create(['name' => 'Hidden teammate']);
+        $operator = Role::where('team_id', $owner->current_team_id)->where('slug', PermissionCatalog::OPERATOR)->sole();
+        $membership = TeamMembership::create([
+            'team_id' => $owner->current_team_id,
+            'user_id' => $member->id,
+            'role_id' => $operator->id,
+            'joined_at' => now(),
+        ]);
+        $member->forceFill(['current_team_id' => $owner->current_team_id])->save();
+
+        $response = $this->actingAs($member)->get('/settings');
+
+        $response->assertOk();
+        $response->assertDontSee('data-i18n="settings.team.members_heading"', false);
+        $response->assertDontSee(route('teams.members.destroy', $membership));
+    }
 }
