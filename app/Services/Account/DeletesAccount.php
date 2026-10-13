@@ -123,6 +123,28 @@ class DeletesAccount
             'foreign_table' => 'bi_connections',
             'resolution' => 'resolved elsewhere: UserObserver::deleting() already deletes every BiSource (not SoftDeletes) before $user->delete()\'s own DELETE statement',
         ],
+        // Stage 2d-3-2's team-keyed composite FKs (deals_team_stage_fk,
+        // deals_team_workspace_fk, customers_team_workspace_fk) — same
+        // shape as the three user-keyed ones above, added alongside them
+        // rather than replacing them, so they need the same resolution.
+        [
+            'table' => 'deals',
+            'columns' => ['crm_stage_id', 'team_id'],
+            'foreign_table' => 'crm_stages',
+            'resolution' => 'explicit: Deal::forceDelete() before $user->delete()',
+        ],
+        [
+            'table' => 'deals',
+            'columns' => ['crm_workspace_id', 'team_id'],
+            'foreign_table' => 'crm_workspaces',
+            'resolution' => 'explicit: Deal::forceDelete() before $user->delete()',
+        ],
+        [
+            'table' => 'customers',
+            'columns' => ['crm_workspace_id', 'team_id'],
+            'foreign_table' => 'crm_workspaces',
+            'resolution' => 'explicit: Customer::forceDelete() before $user->delete()',
+        ],
     ];
 
     /**
@@ -159,6 +181,26 @@ class DeletesAccount
         [
             'table' => 'customers',
             'columns' => ['crm_workspace_id', 'user_id'],
+            'foreign_table' => 'crm_workspaces',
+            'resolution' => 'see HANDLED_RESTRICT_FKS: explicit, Customer::forceDelete() before $user->delete()',
+        ],
+        // Stage 2d-3-2's team-keyed composite FKs — same RESTRICT shape as
+        // the three above, resolved the same way.
+        [
+            'table' => 'deals',
+            'columns' => ['crm_stage_id', 'team_id'],
+            'foreign_table' => 'crm_stages',
+            'resolution' => 'see HANDLED_RESTRICT_FKS: explicit, Deal::forceDelete() before $user->delete()',
+        ],
+        [
+            'table' => 'deals',
+            'columns' => ['crm_workspace_id', 'team_id'],
+            'foreign_table' => 'crm_workspaces',
+            'resolution' => 'see HANDLED_RESTRICT_FKS: explicit, Deal::forceDelete() before $user->delete()',
+        ],
+        [
+            'table' => 'customers',
+            'columns' => ['crm_workspace_id', 'team_id'],
             'foreign_table' => 'crm_workspaces',
             'resolution' => 'see HANDLED_RESTRICT_FKS: explicit, Customer::forceDelete() before $user->delete()',
         ],
