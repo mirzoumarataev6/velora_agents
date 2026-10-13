@@ -15,10 +15,12 @@ class CrmWorkspaceController extends Controller
     {
         $this->authorize('create', CrmWorkspace::class);
 
+        $teamId = $request->user()->activeTeamId();
+
         $data = $request->validate([
             'name' => [
                 'required', 'string', 'min:2', 'max:80',
-                Rule::unique('crm_workspaces', 'name')->where('user_id', $request->user()->id),
+                Rule::unique('crm_workspaces', 'name')->where('team_id', $teamId),
                 function ($attribute, $value, $fail) {
                     if (mb_strtolower(trim($value)) === '__main__') {
                         $fail(__('crm.workspaces.reserved_name'));
@@ -31,6 +33,12 @@ class CrmWorkspaceController extends Controller
         $workspace = new CrmWorkspace;
         $workspace->forceFill([
             'user_id' => $request->user()->id,
+            // Explicit, not left to StampsTeam's own current_team_id
+            // fallback: that resolution happens at INSERT time against
+            // whatever current_team_id is by then, whereas $teamId here is
+            // the one this very request already validated the name's
+            // uniqueness against — the two must never disagree.
+            'team_id' => $teamId,
             'name' => trim($data['name']),
             'color' => $data['color'],
         ])->save();
@@ -46,7 +54,7 @@ class CrmWorkspaceController extends Controller
         $data = $request->validate([
             'name' => [
                 'required', 'string', 'min:2', 'max:80',
-                Rule::unique('crm_workspaces', 'name')->where('user_id', $request->user()->id)->ignore($workspace->id),
+                Rule::unique('crm_workspaces', 'name')->where('team_id', $request->user()->activeTeamId())->ignore($workspace->id),
             ],
             'color' => ['required', 'string', Rule::in(CrmWorkspace::COLORS)],
         ]);
@@ -64,7 +72,7 @@ class CrmWorkspaceController extends Controller
         DB::transaction(function () use ($request, $workspace) {
             // Removing a folder must not remove its business records. Move
             // them to the stable default folder before deleting the container.
-            $default = CrmWorkspace::defaultFor($request->user());
+            $default = CrmWorkspace::defaultFor($request->user(), $request->user()->activeTeamId());
             $workspace->deals()->update(['crm_workspace_id' => $default->id]);
             $workspace->customers()->update(['crm_workspace_id' => $default->id]);
             $workspace->delete();

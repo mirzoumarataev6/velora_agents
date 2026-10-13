@@ -308,7 +308,7 @@ class DealBoard
             ->when(! empty($filters['workspace_id']), fn ($query) => $query->where('crm_workspace_id', $filters['workspace_id']))
             ->when(in_array($filters['origin'] ?? 'all', Deal::SALES_ORIGINS, true), fn ($query) => $query->where('sales_origin', $filters['origin']));
 
-        $stages = CrmStage::defaultsFor($user);
+        $stages = CrmStage::defaultsFor($user, $user->activeTeamId());
 
         $countsByStage = (clone $scopedDeals)
             ->selectRaw('crm_stage_id, COUNT(*) as total, COALESCE(SUM(amount), 0) as value')
@@ -422,7 +422,12 @@ class DealBoard
         DB::transaction(function () use ($deal, $stage, $position, $byOwner, $changedStage, $leavingWon, $cancelledReason) {
             $target = $position ?? 0;
 
-            Deal::where('user_id', $deal->user_id)
+            // Keyed on the DEAL'S OWN team, not user_id or the signed-in
+            // caller's active team: this runs from both the UI (the owner
+            // moving a card) and DealStageAutomation (off a webhook, no
+            // signed-in user at all), and the deal's own team is the one
+            // thing both callers already agree on.
+            Deal::where('team_id', $deal->team_id)
                 ->where('crm_stage_id', $stage->id)
                 ->whereKeyNot($deal->id)
                 ->where('position', '>=', $target)

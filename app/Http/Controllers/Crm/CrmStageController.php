@@ -19,7 +19,7 @@ class CrmStageController extends Controller
 {
     public function index(Request $request): View
     {
-        $stages = CrmStage::defaultsFor($request->user());
+        $stages = CrmStage::defaultsFor($request->user(), $request->user()->activeTeamId());
         $stages->loadCount('deals');
 
         return view('crm.stages', [
@@ -38,7 +38,7 @@ class CrmStageController extends Controller
             'color' => ['required', 'string', Rule::in(CrmStage::COLORS)],
         ]);
 
-        $stages = CrmStage::defaultsFor($request->user());
+        $stages = CrmStage::defaultsFor($request->user(), $request->user()->activeTeamId());
         $won = $stages->firstWhere('role', 'won');
 
         DB::transaction(function () use ($request, $data, $won) {
@@ -48,6 +48,11 @@ class CrmStageController extends Controller
 
             CrmStage::forceCreate([
                 'user_id' => $request->user()->id,
+                // Explicit, not left to StampsTeam's own current_team_id
+                // fallback — $won (and the position shift above) were
+                // already resolved against THIS active team, so the new
+                // stage must land in the same one.
+                'team_id' => $request->user()->activeTeamId(),
                 'name' => trim($data['name']),
                 'role' => null,
                 'position' => $won->position,
@@ -89,7 +94,7 @@ class CrmStageController extends Controller
      */
     public function reorder(Request $request): RedirectResponse
     {
-        $stages = CrmStage::defaultsFor($request->user());
+        $stages = CrmStage::defaultsFor($request->user(), $request->user()->activeTeamId());
         $intermediateIds = $stages->filter(fn (CrmStage $stage) => $stage->role === null)->pluck('id');
 
         $data = $request->validate([
@@ -131,7 +136,7 @@ class CrmStageController extends Controller
     {
         $this->authorize('delete', $stage);
 
-        $stages = CrmStage::defaultsFor($request->user());
+        $stages = CrmStage::defaultsFor($request->user(), $request->user()->activeTeamId());
         $destinationId = $request->input('reassign_to');
         $destination = $destinationId !== null ? $stages->firstWhere('id', (int) $destinationId) : null;
 

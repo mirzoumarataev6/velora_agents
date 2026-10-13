@@ -74,8 +74,8 @@ class TaskController extends Controller
     {
         $this->authorize('create', Task::class);
 
-        $ownerId = $request->user()->id;
-        $dealExists = Rule::exists('deals', 'id')->where('user_id', $ownerId);
+        $teamId = $request->user()->activeTeamId();
+        $dealExists = Rule::exists('deals', 'id')->where('team_id', $teamId);
 
         // When both references are supplied, they must describe the same
         // customer. A task may still be linked to only a deal or to neither.
@@ -86,7 +86,7 @@ class TaskController extends Controller
         $data = $request->validate([
             'title' => ['required', 'string', 'max:255'],
             'due_at' => ['nullable', 'date'],
-            'customer_id' => ['nullable', 'integer', Rule::exists('customers', 'id')->where('user_id', $ownerId)],
+            'customer_id' => ['nullable', 'integer', Rule::exists('customers', 'id')->where('team_id', $teamId)],
             'new_customer_name' => ['nullable', 'string', 'max:255'],
             'deal_id' => ['nullable', 'integer', $dealExists],
             'priority' => ['nullable', 'string', Rule::in(Task::PRIORITIES)],
@@ -96,13 +96,18 @@ class TaskController extends Controller
             'deal_id.exists' => __('crm.tasks.deal_invalid'),
         ]);
 
-        $task = DB::transaction(function () use ($request, $data): Task {
+        $task = DB::transaction(function () use ($request, $data, $teamId): Task {
             $customerId = $data['customer_id'] ?? null;
 
             if (blank($customerId) && filled($data['new_customer_name'] ?? null)) {
                 $customer = Customer::forceCreate([
                     'user_id' => $request->user()->id,
-                    'crm_workspace_id' => CrmWorkspace::defaultFor($request->user())->id,
+                    // Explicit, not left to StampsTeam's own current_team_id
+                    // fallback — the workspace below is already resolved
+                    // against $teamId, and the new customer must land in
+                    // the same one.
+                    'team_id' => $teamId,
+                    'crm_workspace_id' => CrmWorkspace::defaultFor($request->user(), $teamId)->id,
                     'name' => trim($data['new_customer_name']),
                     'status' => 'lead',
                 ]);
@@ -112,6 +117,8 @@ class TaskController extends Controller
             $task = new Task;
             $task->forceFill([
                 'user_id' => $request->user()->id,
+                // Explicit, same reasoning as the customer above.
+                'team_id' => $teamId,
                 'title' => $data['title'],
                 'due_at' => $data['due_at'] ?? null,
                 'customer_id' => $customerId,

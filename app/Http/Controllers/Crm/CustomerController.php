@@ -124,12 +124,14 @@ class CustomerController extends Controller
     {
         $this->authorize('create', Customer::class);
 
+        $teamId = $request->user()->activeTeamId();
+
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'phone' => ['nullable', 'string', 'max:32'],
             'status' => ['nullable', 'string', 'in:'.implode(',', Customer::STATUSES)],
             'note' => ['nullable', 'string', 'max:5000'],
-            'crm_workspace_id' => ['nullable', 'integer', Rule::exists('crm_workspaces', 'id')->where('user_id', $request->user()->id)],
+            'crm_workspace_id' => ['nullable', 'integer', Rule::exists('crm_workspaces', 'id')->where('team_id', $teamId)],
         ]);
 
         $key = $resolver->phoneKey($data['phone'] ?? null);
@@ -145,7 +147,11 @@ class CustomerController extends Controller
 
         $customer = Customer::forceCreate([
             'user_id' => $request->user()->id,
-            'crm_workspace_id' => $data['crm_workspace_id'] ?? CrmWorkspace::defaultFor($request->user())->id,
+            // Explicit, not left to StampsTeam's own current_team_id
+            // fallback: the dedup lookup and the workspace below are
+            // already resolved against $teamId.
+            'team_id' => $teamId,
+            'crm_workspace_id' => $data['crm_workspace_id'] ?? CrmWorkspace::defaultFor($request->user(), $teamId)->id,
             'name' => $data['name'],
             'phone' => $key !== null ? $data['phone'] : null,
             'phone_key' => $key,
@@ -324,7 +330,7 @@ class CustomerController extends Controller
             'status' => ['sometimes', 'required', 'string', 'in:'.implode(',', Customer::STATUSES)],
             'tags' => ['sometimes', 'nullable', 'string', 'max:500'],
             'note' => ['sometimes', 'nullable', 'string', 'max:5000'],
-            'crm_workspace_id' => ['sometimes', 'required', 'integer', Rule::exists('crm_workspaces', 'id')->where('user_id', $request->user()->id)],
+            'crm_workspace_id' => ['sometimes', 'required', 'integer', Rule::exists('crm_workspaces', 'id')->where('team_id', $request->user()->activeTeamId())],
         ]);
 
         $updates = [];

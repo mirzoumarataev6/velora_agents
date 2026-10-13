@@ -46,13 +46,13 @@ class DealController extends Controller
 
     public function index(Request $request): View
     {
-        $defaultWorkspace = CrmWorkspace::defaultFor($request->user());
+        $defaultWorkspace = CrmWorkspace::defaultFor($request->user(), $request->user()->activeTeamId());
         $filters = $this->filters($request);
         $workspaces = CrmWorkspace::ownedBy($request->user())->orderByDesc('is_default')->orderBy('name')->get();
         $selectedWorkspace = $filters['workspace_id'] ? $workspaces->firstWhere('id', $filters['workspace_id']) : null;
         // Already in pipeline order — initial, intermediates, won, then the
         // lost stage last (its NULL position sorts after every other one).
-        $stages = CrmStage::defaultsFor($request->user());
+        $stages = CrmStage::defaultsFor($request->user(), $request->user()->activeTeamId());
         $showLeads = $filters['stage'] === self::LEADS_BUCKET;
         $hasLeadsBucket = $filters['origin'] === 'social' && $filters['workspace_id'] === null;
         $dealPage = $showLeads ? null : $this->board->list($request->user(), $filters);
@@ -357,7 +357,7 @@ class DealController extends Controller
             'amount' => ['required', 'numeric', 'gt:0', 'max:99999999.99'],
             'deal_date' => ['nullable', 'date'],
             'sales_origin' => ['sometimes', 'required', 'string', 'in:'.implode(',', Deal::SALES_ORIGINS)],
-            'crm_workspace_id' => ['nullable', 'integer', Rule::exists('crm_workspaces', 'id')->where('user_id', $request->user()->id)],
+            'crm_workspace_id' => ['nullable', 'integer', Rule::exists('crm_workspaces', 'id')->where('team_id', $request->user()->activeTeamId())],
         ], [
             'customer_id.required' => __('crm.board.customer_required'),
             'new_customer_name.required' => __('crm.board.customer_name_required'),
@@ -385,12 +385,18 @@ class DealController extends Controller
             $matchedExisting = false;
         }
 
-        $initial = CrmStage::initialFor($request->user());
+        $teamId = $request->user()->activeTeamId();
+        $initial = CrmStage::initialFor($request->user(), $teamId);
 
         $deal = new Deal;
         $deal->forceFill([
             'user_id' => $request->user()->id,
-            'crm_workspace_id' => $data['crm_workspace_id'] ?? CrmWorkspace::defaultFor($request->user())->id,
+            // Explicit, not left to StampsTeam's own current_team_id
+            // fallback: $initial and the workspace below are already
+            // resolved against $teamId, and the deal must land in the
+            // same one.
+            'team_id' => $teamId,
+            'crm_workspace_id' => $data['crm_workspace_id'] ?? CrmWorkspace::defaultFor($request->user(), $teamId)->id,
             'customer_id' => $customer->id,
             // The customer's most recent thread, so the row can show a
             // channel icon like every other deal in the list. A brand-new
@@ -431,9 +437,14 @@ class DealController extends Controller
     private function resolveOrCreateCustomer(User $user, string $name, ?string $phone, ?int $workspaceId = null): array
     {
         $key = $this->customers->phoneKey($phone);
+        $teamId = $user->activeTeamId();
 
         if ($key !== null) {
-            $existing = Customer::where('user_id', $user->id)->where('phone_key', $key)->first();
+            // Team-scoped, not user-scoped: this is the same dedup rule
+            // CustomerResolver's background paths enforce, keyed the same
+            // way — a number already belongs to at most one profile PER
+            // TEAM, not per owner, once a team has several members.
+            $existing = Customer::where('team_id', $teamId)->where('phone_key', $key)->first();
 
             if ($existing !== null) {
                 return [$existing, true];
@@ -444,7 +455,11 @@ class DealController extends Controller
         // request payload can file a customer under another account.
         $customer = Customer::forceCreate([
             'user_id' => $user->id,
-            'crm_workspace_id' => $workspaceId ?? CrmWorkspace::defaultFor($user)->id,
+            // Explicit, not left to StampsTeam's own current_team_id
+            // fallback: the dedup lookup above already happened against
+            // $teamId, and the new row must land in the same one.
+            'team_id' => $teamId,
+            'crm_workspace_id' => $workspaceId ?? CrmWorkspace::defaultFor($user, $teamId)->id,
             'name' => $name,
             'phone' => $key !== null ? $phone : null,
             'phone_key' => $key,
@@ -527,7 +542,7 @@ class DealController extends Controller
             'stage' => ['nullable', 'string', Rule::in($stages->pluck('name'))],
             'deal_date' => ['nullable', 'date'],
             'sales_origin' => ['sometimes', 'required', 'string', 'in:'.implode(',', Deal::SALES_ORIGINS)],
-            'crm_workspace_id' => ['sometimes', 'required', 'integer', Rule::exists('crm_workspaces', 'id')->where('user_id', $request->user()->id)],
+            'crm_workspace_id' => ['sometimes', 'required', 'integer', Rule::exists('crm_workspaces', 'id')->where('team_id', $request->user()->activeTeamId())],
             'closed' => ['nullable', 'boolean'],
             'cancelled_reason' => [$effectiveStage?->role === 'lost' ? 'required' : 'nullable', 'string', 'max:2000'],
             // Optional, unlike cancelled_reason: a win needs no excuse.
