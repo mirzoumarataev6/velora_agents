@@ -32,6 +32,7 @@ use App\Http\Controllers\PlaygroundController;
 use App\Http\Controllers\ProductImageController;
 use App\Http\Controllers\RootRedirectController;
 use App\Http\Controllers\SettingsController;
+use App\Http\Controllers\TeamSwitchController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', RootRedirectController::class);
@@ -62,6 +63,12 @@ Route::middleware(['auth', 'auth.session'])->group(function () {
     Route::redirect('/home', '/dashboard')->name('home');
     Route::get('/dashboard', DashboardController::class)->name('dashboard');
     Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
+
+    // Stage 3a: read-only groundwork for multi-team accounts — the header's
+    // own team switcher posts here. Everyone has exactly one team today, so
+    // this is close to behaviour-neutral in practice; TeamSwitchController's
+    // own membership check is what keeps it correct once that stops being true.
+    Route::post('/teams/switch', [TeamSwitchController::class, 'update'])->name('teams.switch');
 
     // The only onboarding endpoint. Step progress is derived from the account's
     // own data at render time, so there is nothing to report back — only the
