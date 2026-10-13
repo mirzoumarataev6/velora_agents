@@ -14,6 +14,16 @@ return [
         'toggle_theme' => 'Переключить тему',
         'collapse_sidebar' => 'Свернуть меню',
         'expand_sidebar' => 'Развернуть меню',
+        'teams' => [
+            'switcher_label' => 'Команда: :name',
+            'switched' => 'Команда изменена',
+            'roles' => [
+                'owner' => 'Владелец',
+                'admin' => 'Администратор',
+                'operator' => 'Оператор',
+                'viewer' => 'Наблюдатель',
+            ],
+        ],
     ],
 
     'index' => [

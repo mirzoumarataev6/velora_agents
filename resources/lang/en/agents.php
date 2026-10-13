@@ -14,6 +14,16 @@ return [
         'toggle_theme' => 'Toggle theme',
         'collapse_sidebar' => 'Collapse menu',
         'expand_sidebar' => 'Expand menu',
+        'teams' => [
+            'switcher_label' => 'Team: :name',
+            'switched' => 'Team switched',
+            'roles' => [
+                'owner' => 'Owner',
+                'admin' => 'Admin',
+                'operator' => 'Operator',
+                'viewer' => 'Viewer',
+            ],
+        ],
     ],
 
     'index' => [

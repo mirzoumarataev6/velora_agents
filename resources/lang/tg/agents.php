@@ -17,6 +17,16 @@ return [
         'toggle_theme' => 'Иваз кардани мавзӯъ',
         'collapse_sidebar' => 'Пинҳон кардани меню',
         'expand_sidebar' => 'Кушодани меню',
+        'teams' => [
+            'switcher_label' => 'Даста: :name',
+            'switched' => 'Даста иваз карда шуд',
+            'roles' => [
+                'owner' => 'Соҳиб',
+                'admin' => 'Маъмур',
+                'operator' => 'Оператор',
+                'viewer' => 'Тамошобин',
+            ],
+        ],
     ],
 
     'index' => [
