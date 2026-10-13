@@ -27,12 +27,12 @@ class SettingsPageTest extends TestCase
         $this->user = User::factory()->create();
     }
 
-    public function test_the_page_renders_all_four_sections(): void
+    public function test_the_page_renders_all_five_sections(): void
     {
         $response = $this->actingAs($this->user)->get('/settings');
 
         $response->assertOk();
-        foreach (['profile', 'security', 'preferences', 'account'] as $tab) {
+        foreach (['profile', 'security', 'preferences', 'team', 'account'] as $tab) {
             $response->assertSee('data-i18n="settings.tabs.'.$tab.'"', false);
         }
     }

@@ -3,6 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Http\Middleware\SetLocale;
+use App\Models\Invitation;
+use App\Models\Role;
+use App\Models\Team;
 use App\Services\Account\DeletesAccount;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -32,6 +35,11 @@ class SettingsController extends Controller
     public function index(Request $request): View
     {
         $user = $request->user();
+        $teamId = $user->activeTeamId();
+        // Same activeTeamId()-then-isOwnerOf() shape TeamSwitchController and
+        // TeamInvitationController already use: a stale/foreign
+        // current_team_id must read as "not the owner", never crash this page.
+        $isTeamOwner = $teamId !== null && $user->isOwnerOf($teamId);
 
         return view('settings.index', [
             'i18nExtraNamespaces' => ['settings'],
@@ -47,6 +55,15 @@ class SettingsController extends Controller
                 ->get(['id', 'name', 'slug', 'notify_telegram_username', 'notify_telegram_chat_id', 'notify_telegram_linked_at']),
             'sessions' => $this->sessions($request),
             'sessionsSupported' => $this->sessionsAreListable(),
+            'activeTeam' => $teamId !== null ? Team::find($teamId) : null,
+            'isTeamOwner' => $isTeamOwner,
+            // Only queried for the one person who can act on them — nobody
+            // else's settings page pays for a roles/invitations lookup.
+            'teamRoles' => $isTeamOwner ? Role::where('team_id', $teamId)->orderBy('id')->get() : collect(),
+            'pendingInvitations' => $isTeamOwner
+                ? Invitation::where('team_id', $teamId)->where('status', Invitation::STATUS_PENDING)
+                    ->with(['role', 'inviter'])->orderByDesc('created_at')->get()
+                : collect(),
         ]);
     }
 
