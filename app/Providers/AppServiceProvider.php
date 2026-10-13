@@ -15,6 +15,7 @@ use App\Services\Llm\GeminiProvider;
 use App\Services\Llm\LlmProviderInterface;
 use App\Services\Llm\OpenAiProvider;
 use App\Services\Llm\UsageRecorder;
+use App\Services\Permissions\RegistersTeamPermissions;
 use App\Services\Quality\FeedbackCadence;
 use App\Services\Queue\WorkerHeartbeat;
 use App\Services\Rag\MySqlCosineVectorStore;
@@ -83,6 +84,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        $this->app->make(RegistersTeamPermissions::class)->register();
+
         Deal::observe(DealObserver::class);
 
         // The BI module stores each dataset as a real table plus a directory of

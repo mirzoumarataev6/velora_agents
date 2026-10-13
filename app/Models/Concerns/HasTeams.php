@@ -7,30 +7,26 @@ use App\Models\Team;
 use App\Models\TeamMembership;
 use App\Services\Permissions\PermissionCatalog;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Support\Collection;
 
 /**
  * The RBAC read side: "is this user a member of this team, with what role,
- * and does that role carry this permission." Nothing here is wired into
- * authorization yet (no Policy, no Gate::before) — this stage only builds
- * the backbone a later one reads from.
+ * and does that role carry this permission." Policies and catalog Gates
+ * share these memoized answers so rendering a list does not query per row.
  *
  * Memoized per User instance, not per request: `flushPermissionCache()` is
- * the seam a later stage's Policy would call after a role/membership
+ * the seam controllers call after a role/membership
  * change mid-request (switching teams, an admin editing their own
  * permissions), and it is what the tests use to prove the cache does not
  * paper over a stale answer.
  *
- * Membership (and its role) is fetched in one query per team the first
- * time it's asked about, and never again for that instance — `isOwnerOf()`
- * and `hasPermissionOn()` both read the same cached membership, so asking
- * both about the same team costs nothing extra. `hasPermissionOn()` adds
- * at most one more query, for the role's permission bundle, also cached
- * per team — an Owner never pays that cost at all, since Owner short-
- * circuits to true without reading the permission set.
+ * Memberships and roles share one joined snapshot with the navigation menu.
+ * Non-owner permission sets are loaded once per team on demand; an Owner
+ * never needs that extra query. Flush after changing membership or roles.
  */
 trait HasTeams
 {
-    /** @var array<int, ?TeamMembership>|null team_id => this user's membership on it (or null, meaning "checked, not a member") */
+    /** @var array<int, TeamMembership>|null A null cache has not been loaded yet. */
     private ?array $teamMembershipCache = null;
 
     /** @var array<int, list<string>> team_id => that team's role's permission keys, fetched once */
@@ -43,22 +39,44 @@ trait HasTeams
             ->withTimestamps();
     }
 
-    public function membershipIn(Team|int $team): ?TeamMembership
+    /** @return Collection<int, TeamMembership> */
+    public function cachedTeamMemberships(): Collection
     {
-        $teamId = $this->teamIdOf($team);
+        if ($this->teamMembershipCache === null) {
+            // Authorization and the team switcher consume the same membership
+            // snapshot. One join avoids adding two policy queries to every
+            // page, while checking role.team_id prevents a malformed pivot
+            // from borrowing another team's Owner role.
+            $memberships = TeamMembership::query()
+                ->join('roles', function ($join) {
+                    $join->on('roles.id', '=', 'team_user.role_id')
+                        ->on('roles.team_id', '=', 'team_user.team_id');
+                })
+                ->join('teams', 'teams.id', '=', 'team_user.team_id')
+                ->where('team_user.user_id', $this->id)
+                ->orderBy('team_user.joined_at')
+                ->select('team_user.*', 'teams.name as team_name', 'roles.name as role_name', 'roles.slug as role_slug', 'roles.is_owner as role_is_owner')
+                ->get();
 
-        $this->teamMembershipCache ??= [];
+            foreach ($memberships as $membership) {
+                $membership->setRelation('role', (new Role)->newFromBuilder([
+                    'id' => $membership->role_id,
+                    'team_id' => $membership->team_id,
+                    'name' => $membership->role_name,
+                    'slug' => $membership->role_slug,
+                    'is_owner' => $membership->role_is_owner,
+                ]));
+            }
 
-        if (array_key_exists($teamId, $this->teamMembershipCache)) {
-            return $this->teamMembershipCache[$teamId];
+            $this->teamMembershipCache = $memberships->keyBy('team_id')->all();
         }
 
-        $membership = TeamMembership::with('role')
-            ->where('team_id', $teamId)
-            ->where('user_id', $this->id)
-            ->first();
+        return collect($this->teamMembershipCache);
+    }
 
-        return $this->teamMembershipCache[$teamId] = $membership;
+    public function membershipIn(Team|int $team): ?TeamMembership
+    {
+        return $this->cachedTeamMemberships()->get($this->teamIdOf($team));
     }
 
     public function isOwnerOf(Team|int $team): bool

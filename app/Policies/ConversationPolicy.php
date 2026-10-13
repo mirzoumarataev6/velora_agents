@@ -5,17 +5,21 @@ namespace App\Policies;
 use App\Models\Agent;
 use App\Models\Conversation;
 use App\Models\User;
+use App\Policies\Concerns\ChecksTeamPermissions;
+use App\Services\Permissions\PermissionCatalog;
 
 class ConversationPolicy
 {
+    use ChecksTeamPermissions;
+
     public function viewAny(User $user): bool
     {
-        return true;
+        return $this->permitted($user, PermissionCatalog::CONVERSATIONS_VIEW);
     }
 
     public function view(User $user, Conversation $conversation): bool
     {
-        return $user->id === $conversation->agent->user_id;
+        return $this->permitted($user, PermissionCatalog::CONVERSATIONS_VIEW, $conversation);
     }
 
     /**
@@ -23,16 +27,21 @@ class ConversationPolicy
      */
     public function create(User $user, Agent $agent): bool
     {
-        return $user->id === $agent->user_id;
+        return $this->permitted($user, PermissionCatalog::CONVERSATIONS_REPLY, $agent);
+    }
+
+    public function reply(User $user, Conversation $conversation): bool
+    {
+        return $this->permitted($user, PermissionCatalog::CONVERSATIONS_REPLY, $conversation);
     }
 
     public function update(User $user, Conversation $conversation): bool
     {
-        return $user->id === $conversation->agent->user_id;
+        return $this->permitted($user, PermissionCatalog::CONVERSATIONS_TAKEOVER, $conversation);
     }
 
     public function delete(User $user, Conversation $conversation): bool
     {
-        return $user->id === $conversation->agent->user_id;
+        return $this->permitted($user, PermissionCatalog::CONVERSATIONS_TAKEOVER, $conversation);
     }
 }

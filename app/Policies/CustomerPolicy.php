@@ -4,41 +4,41 @@ namespace App\Policies;
 
 use App\Models\Customer;
 use App\Models\User;
+use App\Policies\Concerns\ChecksTeamPermissions;
+use App\Services\Permissions\PermissionCatalog;
 
-/**
- * Single-owner product: the only question is whether this row belongs to the
- * signed-in account.
- */
 class CustomerPolicy
 {
+    use ChecksTeamPermissions;
+
     public function viewAny(User $user): bool
     {
-        return true;
+        return $this->permitted($user, PermissionCatalog::ANALYTICS_VIEW);
     }
 
     public function create(User $user): bool
     {
-        return true;
+        return $this->permitted($user, PermissionCatalog::ANALYTICS_MANAGE);
     }
 
     /** Downloading the directory as CSV — same question as viewAny, named for what it is. */
     public function export(User $user): bool
     {
-        return true;
+        return $this->permitted($user, PermissionCatalog::ANALYTICS_VIEW);
     }
 
     public function view(User $user, Customer $customer): bool
     {
-        return $user->id === $customer->user_id;
+        return $this->permitted($user, PermissionCatalog::ANALYTICS_VIEW, $customer);
     }
 
     public function update(User $user, Customer $customer): bool
     {
-        return $user->id === $customer->user_id;
+        return $this->permitted($user, PermissionCatalog::ANALYTICS_MANAGE, $customer);
     }
 
     public function delete(User $user, Customer $customer): bool
     {
-        return $user->id === $customer->user_id;
+        return $this->permitted($user, PermissionCatalog::ANALYTICS_MANAGE, $customer);
     }
 }

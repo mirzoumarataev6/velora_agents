@@ -5,17 +5,16 @@ namespace App\Policies;
 use App\Models\Agent;
 use App\Models\DatabaseConnection;
 use App\Models\User;
+use App\Policies\Concerns\ChecksTeamPermissions;
+use App\Services\Permissions\PermissionCatalog;
 
-/**
- * A live connection carries the customer's own database credentials, so every
- * gate here is the same question: does this user own the agent the connection
- * hangs off? There is no sharing, no read-only role, and no admin bypass.
- */
 class DatabaseConnectionPolicy
 {
+    use ChecksTeamPermissions;
+
     public function view(User $user, DatabaseConnection $connection): bool
     {
-        return $user->id === $connection->agent->user_id;
+        return $this->permitted($user, PermissionCatalog::CATALOG_VIEW, $connection);
     }
 
     /**
@@ -23,16 +22,16 @@ class DatabaseConnectionPolicy
      */
     public function create(User $user, Agent $agent): bool
     {
-        return $user->id === $agent->user_id;
+        return $this->permitted($user, PermissionCatalog::CATALOG_MANAGE, $agent);
     }
 
     public function update(User $user, DatabaseConnection $connection): bool
     {
-        return $user->id === $connection->agent->user_id;
+        return $this->permitted($user, PermissionCatalog::CATALOG_MANAGE, $connection);
     }
 
     public function delete(User $user, DatabaseConnection $connection): bool
     {
-        return $user->id === $connection->agent->user_id;
+        return $this->permitted($user, PermissionCatalog::CATALOG_MANAGE, $connection);
     }
 }

@@ -188,12 +188,11 @@ class HasTeamsTest extends TestCase
         DB::flushQueryLog();
         DB::enableQueryLog();
 
-        // First check warms the cache: membership + its role (2 queries),
-        // plus the role's permission bundle for this first real permission
-        // lookup (1 more) — 3 queries, not per-check.
+        // The shared membership/role snapshot and permission bundle cost
+        // two queries in total; subsequent checks must reuse both.
         $admin->hasPermissionOn($this->team, PermissionCatalog::AGENTS_VIEW);
         $warmQueries = count(DB::getQueryLog());
-        $this->assertLessThanOrEqual(3, $warmQueries, 'Warming the cache cost more than membership + role + permission set.');
+        $this->assertLessThanOrEqual(2, $warmQueries, 'Warming the cache cost more than membership + role + permission set.');
 
         // 100 more checks, mixing isOwnerOf and every catalog permission,
         // all against the same team: must add zero further queries.
@@ -212,12 +211,12 @@ class HasTeamsTest extends TestCase
         DB::enableQueryLog();
 
         // Owner short-circuits on role->is_owner, so only membership + role
-        // is ever fetched (2 queries) — never the role_permission lookup.
+        // is fetched in one join — never the role_permission lookup.
         foreach (PermissionCatalog::all() as $permission) {
             $this->owner->hasPermissionOn($this->team, $permission);
         }
 
-        $this->assertCount(2, DB::getQueryLog());
+        $this->assertCount(1, DB::getQueryLog());
         DB::disableQueryLog();
     }
 

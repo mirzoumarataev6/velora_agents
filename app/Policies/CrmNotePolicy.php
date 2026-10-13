@@ -4,17 +4,26 @@ namespace App\Policies;
 
 use App\Models\CrmNote;
 use App\Models\User;
+use App\Policies\Concerns\ChecksTeamPermissions;
+use App\Services\Permissions\PermissionCatalog;
 
 class CrmNotePolicy
 {
-    public function create(User $user): bool
+    use ChecksTeamPermissions;
+
+    public function view(User $user, CrmNote $note): bool
     {
-        return true;
+        return $this->permitted($user, PermissionCatalog::ANALYTICS_VIEW, $note);
     }
 
-    /** Author or the subject's owner — in this product always the same person, but checked both ways regardless. */
+    public function create(User $user): bool
+    {
+        return $this->permitted($user, PermissionCatalog::ANALYTICS_MANAGE);
+    }
+
+    /** Notes are shared CRM data; deletion requires the team's manage permission. */
     public function delete(User $user, CrmNote $note): bool
     {
-        return $user->id === $note->user_id;
+        return $this->permitted($user, PermissionCatalog::ANALYTICS_MANAGE, $note);
     }
 }

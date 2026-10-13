@@ -1,21 +1,7 @@
 @php
-    // Own query rather than threaded through every controller that renders
-    // the dashboard shell (there is no View::composer for this today, and
-    // adding one for a single partial would be more machinery than the
-    // data warrants). One plain join, not Eloquent's `with(['team',
-    // 'role'])` eager loading: the latter is 3 queries (memberships, then
-    // a whereIn for teams, then a whereIn for roles) on EVERY dashboard
-    // page, for data this partial only ever reads as plain name/slug
-    // strings — a model hydration it never needed. This renders on every
-    // authenticated page, so the difference is a flat +1 query per page
-    // load versus +3; see Perf\QueryBudgetTest's own updated budgets.
-    $__teamMemberships = \Illuminate\Support\Facades\DB::table('team_user')
-        ->join('teams', 'teams.id', '=', 'team_user.team_id')
-        ->join('roles', 'roles.id', '=', 'team_user.role_id')
-        ->where('team_user.user_id', auth()->id())
-        ->orderBy('team_user.joined_at')
-        ->select('team_user.team_id', 'teams.name as team_name', 'roles.slug as role_slug', 'roles.name as role_name')
-        ->get();
+    // Policies and navigation share the user's memoized membership snapshot;
+    // rendering this menu must not repeat the authorization lookup.
+    $__teamMemberships = auth()->user()->cachedTeamMemberships();
     $__currentTeamId = auth()->user()->current_team_id;
     $__currentTeamName = $__teamMemberships->first(fn ($m) => (int) $m->team_id === (int) $__currentTeamId)?->team_name
         ?? $__teamMemberships->first()?->team_name

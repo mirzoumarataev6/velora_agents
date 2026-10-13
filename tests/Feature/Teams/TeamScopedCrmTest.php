@@ -173,12 +173,8 @@ class TeamScopedCrmTest extends TestCase
     }
 
     /**
-     * The whole point of this stage: a second user V, sharing U's team,
-     * sees U's rows through the exact same scope — Stage 3 wires up real
-     * multi-member teams and invites; this proves the READ SIDE already
-     * works once that exists. Policies are explicitly NOT part of this —
-     * they still reduce to `$user->id === $model->user_id` and would deny
-     * V outright; that is the policy stage's job, not this one's.
+     * Shared scopes and policies must agree: attribution to the creator
+     * cannot hide a teammate's rows from an Operator with analytics.view.
      */
     public function test_a_second_user_sharing_the_team_sees_the_same_rows_through_the_scope(): void
     {
@@ -208,13 +204,11 @@ class TeamScopedCrmTest extends TestCase
                 "{$model}: the scope should surface U's row to V, who shares the active team."
             );
 
-            // The policy still reduces to user_id === the row's own
-            // user_id (untouched by this stage) and so still denies V
-            // outright — proving that is the policy stage's job, not this
-            // one's; what changed here is only the READ-SIDE scope.
+            // The policy stage now grants the Operator's analytics.view
+            // permission on teammates' CRM rows, matching the shared scope.
             $this->assertTrue(
-                Gate::forUser($teammate)->denies('view', $row),
-                "{$model}: the policy should still deny V — Stage 2d-4 only changes the scope, not authorization."
+                Gate::forUser($teammate)->allows('view', $row),
+                "{$model}: analytics.view should grant access to the shared team's row."
             );
         }
     }

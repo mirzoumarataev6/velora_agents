@@ -4,35 +4,35 @@ namespace App\Policies;
 
 use App\Models\BiSource;
 use App\Models\User;
+use App\Policies\Concerns\ChecksTeamPermissions;
+use App\Services\Permissions\PermissionCatalog;
 
-/**
- * Single-owner product: the only question is whether this row belongs to the
- * signed-in account. Same shape as CustomerPolicy and for the same reason.
- */
 class BiSourcePolicy
 {
+    use ChecksTeamPermissions;
+
     public function viewAny(User $user): bool
     {
-        return true;
+        return $this->permitted($user, PermissionCatalog::ANALYTICS_VIEW);
     }
 
     public function create(User $user): bool
     {
-        return true;
+        return $this->permitted($user, PermissionCatalog::ANALYTICS_MANAGE);
     }
 
     public function view(User $user, BiSource $source): bool
     {
-        return $user->id === $source->user_id;
+        return $this->permitted($user, PermissionCatalog::ANALYTICS_VIEW, $source);
     }
 
     public function update(User $user, BiSource $source): bool
     {
-        return $user->id === $source->user_id;
+        return $this->permitted($user, PermissionCatalog::ANALYTICS_MANAGE, $source);
     }
 
     public function delete(User $user, BiSource $source): bool
     {
-        return $user->id === $source->user_id;
+        return $this->permitted($user, PermissionCatalog::ANALYTICS_MANAGE, $source);
     }
 }
