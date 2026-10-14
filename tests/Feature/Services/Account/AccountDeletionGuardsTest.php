@@ -190,6 +190,33 @@ class AccountDeletionGuardsTest extends TestCase
         return $result;
     }
 
+    public function test_every_team_row_attributed_to_a_user_is_checked_before_account_deletion(): void
+    {
+        $actual = [];
+        foreach ($this->tablesWithDirectForeignKeyToUsers() as $table) {
+            if ($table === 'team_user' || ! Schema::hasColumn($table, 'team_id')) {
+                continue;
+            }
+
+            $hasAttributedCascade = collect(Schema::getForeignKeys($table))->contains(fn (array $fk) => $fk['foreign_table'] === 'users'
+                && in_array('user_id', $fk['columns'], true)
+                && $fk['on_delete'] === 'cascade'
+            );
+
+            if ($hasAttributedCascade) {
+                $actual[] = $table;
+            }
+        }
+
+        sort($actual);
+        $guarded = DeletesAccount::ATTRIBUTED_TEAM_TABLES;
+        sort($guarded);
+
+        // A missing table would silently erase another member's work when
+        // the attributed user leaves, even if team_user was removed earlier.
+        $this->assertSame($actual, $guarded);
+    }
+
     public function test_every_set_null_restrict_or_no_action_fk_on_a_table_with_a_direct_edge_to_users_is_accounted_for(): void
     {
         $descendants = $this->cascadeDescendantsOfUsers();

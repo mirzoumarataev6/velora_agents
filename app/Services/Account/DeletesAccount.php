@@ -4,6 +4,8 @@ namespace App\Services\Account;
 
 use App\Models\Customer;
 use App\Models\Deal;
+use App\Models\Invitation;
+use App\Models\Team;
 use App\Models\UsageLog;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
@@ -86,6 +88,19 @@ use Illuminate\Support\Facades\DB;
  */
 class DeletesAccount
 {
+    /**
+     * Direct user_id FK children whose rows can belong to an explicit team.
+     * A departing member may have left team_user already, so membership alone
+     * cannot tell whether deleting that user would cascade away team data.
+     * AccountDeletionGuardsTest checks this inventory against the schema.
+     */
+    public const ATTRIBUTED_TEAM_TABLES = [
+        'agents', 'usage_logs', 'deals', 'bi_sources', 'bi_datasets',
+        'bi_columns', 'bi_dashboards', 'bi_widgets', 'bi_connections',
+        'bi_chat_messages', 'deal_activities', 'tasks', 'customers', 'crm_workspaces',
+        'crm_stages', 'crm_notes', 'customer_merges',
+    ];
+
     /**
      * Every RESTRICT/NO ACTION foreign key, between two tables that are
      * BOTH reachable by an unbroken CASCADE chain from `users`, that this
@@ -233,6 +248,17 @@ class DeletesAccount
     public function delete(User $user): void
     {
         DB::transaction(function () use ($user) {
+            // Lock the parent row before checking its children. InnoDB FK
+            // inserts take a lock on it too, so a simultaneous write cannot
+            // slip in after this check and then be cascade-deleted.
+            User::whereKey($user->id)->lockForUpdate()->firstOrFail();
+            if ($this->hasExplicitTeamDependants($user)) {
+                throw new SharedTeamAccountDeletionException;
+            }
+
+            $personalTeamIds = Team::where('created_by', $user->id)
+                ->where('is_personal', true)->pluck('id');
+
             Deal::where('user_id', $user->id)->forceDelete();
             Customer::where('user_id', $user->id)->forceDelete();
 
@@ -255,6 +281,34 @@ class DeletesAccount
             // BiDatasetObserver's chain (and the DropDatasetTableJob it
             // queues) running exactly as it does today.
             $user->delete();
+
+            // The personal team is only an internal tenant namespace. Its
+            // created_by FK becomes NULL when the user goes away; deleting
+            // it now avoids leaving an ownerless shell and orphan roles.
+            Team::whereIn('id', $personalTeamIds)->delete();
         });
+    }
+
+    private function hasExplicitTeamDependants(User $user): bool
+    {
+        // A team creator cannot disappear while their collaborative team
+        // still exists, even when it has no content yet. Invitations also
+        // retain a non-null inviter FK and need an ownership handoff first.
+        if (Team::where('created_by', $user->id)->where('is_personal', false)->exists()
+            || Invitation::where('invited_by', $user->id)->exists()) {
+            return true;
+        }
+
+        foreach (self::ATTRIBUTED_TEAM_TABLES as $table) {
+            if (DB::table($table)
+                ->join('teams', 'teams.id', '=', $table.'.team_id')
+                ->where($table.'.user_id', $user->id)
+                ->where('teams.is_personal', false)
+                ->exists()) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

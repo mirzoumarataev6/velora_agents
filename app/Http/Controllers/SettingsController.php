@@ -4,12 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Http\Middleware\SetLocale;
 use App\Models\Agent;
-use App\Models\Invitation;
-use App\Models\Role;
-use App\Models\Team;
-use App\Models\TeamMembership;
 use App\Services\Account\DeletesAccount;
-use App\Services\Permissions\AuthorizesRoleGrants;
+use App\Services\Account\SharedTeamAccountDeletionException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -38,11 +34,6 @@ class SettingsController extends Controller
     public function index(Request $request): View
     {
         $user = $request->user();
-        $teamId = $user->activeTeamId();
-        $isTeamOwner = $teamId !== null && $user->isOwnerOf($teamId);
-        $canViewMembers = $user->can('team.members.view');
-        $canInvite = $user->can('team.members.invite');
-        $canManageRoles = $user->can('team.roles.manage');
 
         return view('settings.index', [
             'i18nExtraNamespaces' => ['settings'],
@@ -58,20 +49,6 @@ class SettingsController extends Controller
                 ->get(['id', 'name', 'slug', 'notify_telegram_username', 'notify_telegram_chat_id', 'notify_telegram_linked_at']) : collect(),
             'sessions' => $this->sessions($request),
             'sessionsSupported' => $this->sessionsAreListable(),
-            'activeTeam' => $teamId !== null ? Team::find($teamId) : null,
-            'isTeamOwner' => $isTeamOwner,
-            'canViewTeam' => $canViewMembers || $canInvite || $user->can('team.roles.view'),
-            'teamRoles' => ($canInvite || $canManageRoles)
-                ? Role::where('team_id', $teamId)->orderBy('id')->get()
-                    ->filter(fn (Role $role) => app(AuthorizesRoleGrants::class)->canGrant($user, $role))
-                : collect(),
-            'teamMembers' => $canViewMembers
-                ? TeamMembership::where('team_id', $teamId)->with(['user', 'role'])->orderBy('id')->get()
-                : collect(),
-            'pendingInvitations' => $canInvite
-                ? Invitation::where('team_id', $teamId)->where('status', Invitation::STATUS_PENDING)
-                    ->with(['role', 'inviter'])->orderByDesc('created_at')->get()
-                : collect(),
         ]);
     }
 
@@ -253,9 +230,18 @@ class SettingsController extends Controller
             ])->errorBag('account');
         }
 
-        Auth::logout();
+        try {
+            app(DeletesAccount::class)->delete($user);
+        } catch (SharedTeamAccountDeletionException) {
+            throw ValidationException::withMessages([
+                'confirmation' => __('settings.account.shared_team_blocked'),
+            ])->errorBag('account');
+        }
 
-        app(DeletesAccount::class)->delete($user);
+        // The user row is gone. Full logout rotates the remember token by
+        // writing that row again; clearing this device is sufficient because
+        // any old remember cookie can no longer resolve a deleted account.
+        Auth::logoutCurrentDevice();
 
         $request->session()->invalidate();
         $request->session()->regenerateToken();

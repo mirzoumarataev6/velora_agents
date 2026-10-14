@@ -60,10 +60,14 @@ is not a substitute for the team boundary.
 - The tenant key is denormalized onto the row being read, rather than reached
   through a join (see the `dataset_products` and `bi_datasets` migrations for
   the reasoning): a forgotten `where` cannot leak a book, a forgotten join can.
-- Account deletion is still an open multi-member risk: `DeletesAccount` removes
-  deals and customers attributed to the departing user by `user_id`, even when
-  teammates share the team. Fix this before supporting account removal from
-  shared teams.
+- A solo account has a hidden personal team as its data namespace. Creating its
+  first named team promotes that same row so existing agent, CRM, and BI data
+  stay attached; invited members see resources through their role permissions.
+- `DeletesAccount` blocks deletion when the user created an explicit team,
+  sent invitations, or has attributed rows in one. This prevents `user_id`
+  cascades from deleting collaborators' data. Ownership transfer and deleting
+  an explicit team remain separate future work; a member with no shared
+  attribution can still delete their own account.
 
 ### Services (`app/Services/`)
 `Channels/` messaging drivers behind `ChannelDriverInterface` · `Llm/` OpenAI +
