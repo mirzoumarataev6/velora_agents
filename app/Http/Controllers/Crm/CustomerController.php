@@ -278,7 +278,7 @@ class CustomerController extends Controller
 
         $customer->load([
             'workspace',
-            'conversations' => fn ($q) => $q->orderByDesc('last_message_at'),
+            'conversations' => fn ($q) => $q->when(! $request->user()->can('conversations.view', $customer), fn ($query) => $query->whereRaw('1 = 0'))->orderByDesc('last_message_at'),
             'conversations.channel:id,type',
             'conversations.agent:id,name,slug',
             'leads' => fn ($q) => $q->latest('id'),
@@ -443,7 +443,7 @@ class CustomerController extends Controller
      */
     protected function timeline(Customer $customer): LengthAwarePaginator
     {
-        return Message::whereHas('conversation', fn ($query) => $query->where('customer_id', $customer->id))
+        return Message::query()->when(! auth()->user()->can('conversations.view', $customer), fn ($q) => $q->whereRaw('1 = 0'))->whereHas('conversation', fn ($query) => $query->where('customer_id', $customer->id))
             ->with('conversation.channel:id,type')
             ->orderByDesc('created_at')
             ->orderByDesc('id')

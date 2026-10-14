@@ -44,16 +44,28 @@ anything about test database setup.
 ## Architecture
 
 ### Tenancy — read this first
-Single-owner-per-account. **Owner-level** data (`customers`, `deals`, `tasks`,
-`bi_*`) hangs off `user_id`; **agent-level** data hangs off `agent_id`. Rules the
-codebase follows everywhere:
+Teams own tenant data. The signed-in user's `current_team_id` is navigation
+state; `activeTeamId()` accepts it only while membership exists. CRM, BI,
+agent and conversation lists use `team_id` from that active team and return no
+rows for a stale or missing membership. Resource policies use the row's own
+`team_id`, so switching the menu does not change authorization for a bound
+resource. `user_id` records the creator/owner for attribution and cleanup; it
+is not a substitute for the team boundary.
 
-- Every model has a policy reducing to `$user->id === $model->user_id`, wired with
-  `#[UsePolicy(...)]` on the model. Controllers call `$this->authorize(...)`.
-- Models expose `scopeOwnedBy(Builder, User)`; queries start there.
-- The tenant key is **denormalized onto the row being read** rather than reached
-  through a join (see the `dataset_products` and `bi_datasets` migrations for the
-  reasoning): a forgotten `where` cannot leak a book, a forgotten join can.
+- `PermissionCatalog` defines Owner/Admin/Operator/Viewer rights. Named Gates
+  and model policies check team membership and the role's permissions. Owner's
+  shortcut applies only to catalog permissions, so protected resources such
+  as default CRM folders and permanent stages retain their policy invariants.
+- Controllers authorize list/create operations before reading or writing, and
+  validate related IDs in the resource's team. Background paths use the
+  agent's team explicitly rather than the account owner's active menu.
+- The tenant key is denormalized onto the row being read, rather than reached
+  through a join (see the `dataset_products` and `bi_datasets` migrations for
+  the reasoning): a forgotten `where` cannot leak a book, a forgotten join can.
+- Account deletion is still an open multi-member risk: `DeletesAccount` removes
+  deals and customers attributed to the departing user by `user_id`, even when
+  teammates share the team. Fix this before supporting account removal from
+  shared teams.
 
 ### Services (`app/Services/`)
 `Channels/` messaging drivers behind `ChannelDriverInterface` · `Llm/` OpenAI +

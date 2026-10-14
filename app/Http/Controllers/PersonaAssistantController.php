@@ -102,7 +102,7 @@ class PersonaAssistantController extends Controller
             // draft is written from the form's own fields either way, and the
             // only thing an unowned id could leak is catalog context — which is
             // exactly what this drops.
-            if ($agent !== null && $request->user()->cannot('update', $agent)) {
+            if ($agent !== null && ($request->user()->cannot('update', $agent) || $request->user()->cannot('catalog.view', $agent))) {
                 $agent = null;
             }
         }

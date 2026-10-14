@@ -175,7 +175,7 @@ class DealController extends Controller
     {
         $this->authorize('view', $deal);
 
-        $messages = Message::whereHas('conversation', fn ($query) => $query->where('customer_id', $deal->customer_id))
+        $messages = Message::query()->when(! $request->user()->can('conversations.view', $deal), fn ($q) => $q->whereRaw('1 = 0'))->whereHas('conversation', fn ($query) => $query->where('customer_id', $deal->customer_id))
             ->with('conversation.channel:id,type')
             ->latest('created_at')->latest('id')->limit(30)->get()
             ->map(fn (Message $message) => [

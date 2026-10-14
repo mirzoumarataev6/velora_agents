@@ -131,7 +131,7 @@ class LeadController extends Controller
         // Escalated conversations ride the same bell as leads: both are "a human
         // is needed here", and a second badge would just compete with the first.
         $escalations = Conversation::ownedBy($request->user())
-            ->needsHumanUnattended()
+            ->when(! $request->user()->can('conversations.view'), fn ($q) => $q->whereRaw('1 = 0'))->needsHumanUnattended()
             ->with('agent:id,name')
             ->orderByDesc('needs_human_at')
             ->limit(6)
@@ -147,7 +147,7 @@ class LeadController extends Controller
 
         $pendingPrices = $this->pendingHaggleQuery($request)->count();
         $unseenLeads = $this->scoped($request)->whereNull('leads.seen_at')->count();
-        $unattended = Conversation::ownedBy($request->user())->needsHumanUnattended()->count();
+        $unattended = Conversation::ownedBy($request->user())->when(! $request->user()->can('conversations.view'), fn ($q) => $q->whereRaw('1 = 0'))->needsHumanUnattended()->count();
 
         return response()->json([
             'count' => $unseenLeads + $unattended,
@@ -170,7 +170,7 @@ class LeadController extends Controller
         // dismissing the bell, so any still-unattended ones must keep the badge
         // lit rather than be silently marked as dealt with.
         return response()->json([
-            'count' => Conversation::ownedBy($request->user())->needsHumanUnattended()->count(),
+            'count' => Conversation::ownedBy($request->user())->when(! $request->user()->can('conversations.view'), fn ($q) => $q->whereRaw('1 = 0'))->needsHumanUnattended()->count(),
         ]);
     }
 

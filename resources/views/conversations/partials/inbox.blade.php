@@ -343,15 +343,15 @@
                                         data-i18n="conversations.thread.open_agent">{{ __('conversations.thread.open_agent') }}</a>
                                 @endunless
 
-                                <button type="button" x-show="thread?.status !== 'human_takeover'" @click="setStatusFor('human_takeover')"
+                                <button type="button" x-show="thread?.can_takeover && thread?.status !== 'human_takeover'" @click="setStatusFor('human_takeover')"
                                     class="rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors hover:border-brand/40 hover:text-brand-strong"
                                     data-i18n="conversations.thread.take_over">{{ __('conversations.thread.take_over') }}</button>
 
-                                <button type="button" x-show="thread?.status === 'human_takeover'" x-cloak @click="setStatusFor('ai')"
+                                <button type="button" x-show="thread?.can_takeover && thread?.status === 'human_takeover'" x-cloak @click="setStatusFor('ai')"
                                     class="rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors hover:border-brand/40 hover:text-brand-strong"
                                     data-i18n="conversations.thread.hand_back">{{ __('conversations.thread.hand_back') }}</button>
 
-                                <button type="button" x-show="thread?.status !== 'closed'" @click="setStatusFor('closed')"
+                                <button type="button" x-show="thread?.can_takeover && thread?.status !== 'closed'" @click="setStatusFor('closed')"
                                     class="hidden rounded-lg px-2.5 py-1.5 text-xs font-semibold text-muted transition-colors hover:border-danger/40 hover:text-danger dark:text-night-muted sm:block"
                                     data-i18n="conversations.thread.close">{{ __('conversations.thread.close') }}</button>
 

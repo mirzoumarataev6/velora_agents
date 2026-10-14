@@ -8,7 +8,7 @@ class StoreProductImageRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return $this->user()->can('update', $this->route('agent'));
+        return $this->user()->can('catalog.manage', $this->route('agent'));
     }
 
     public function rules(): array

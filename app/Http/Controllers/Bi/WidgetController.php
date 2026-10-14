@@ -115,6 +115,8 @@ class WidgetController extends Controller
     {
         $this->authorize('view', $dashboard);
         $this->authorize('view', $widget);
+        abort_unless($widget->team_id === $dashboard->team_id
+            && $widget->dataset?->team_id === $dashboard->team_id, 403);
         $this->authorize('query', $widget->dataset);
 
         $request->validate([

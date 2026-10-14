@@ -120,6 +120,7 @@
                  gives screen readers the name with nothing shown on hover, in
                  either state. It carries data-i18n-al so the instant locale
                  swap updates it too. --}}
+            @can('analytics.view')
             <a href="{{ route('dashboard') }}" aria-label="{{ __('agents.nav.dashboard') }}" data-i18n-al="agents.nav.dashboard"
                 data-nav="dashboard"
                 @if (request()->routeIs('dashboard')) aria-current="page" @endif
@@ -128,7 +129,9 @@
                 <svg class="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M3 3v18h18M7 15l4-4 3 3 5-6"/></svg>
                 <span data-i18n="agents.nav.dashboard" :class="$store.shell.railCollapsed && 'lg:hidden'">{{ __('agents.nav.dashboard') }}</span>
             </a>
+            @endcan
 
+            @can('agents.view')
             <a href="{{ route('agents.index') }}" aria-label="{{ __('agents.nav.agents') }}" data-i18n-al="agents.nav.agents"
                 data-nav="agents"
                 @if (request()->routeIs('agents.*')) aria-current="page" @endif
@@ -137,7 +140,9 @@
                 <svg class="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 12a4 4 0 100-8 4 4 0 000 8zm0 0c-4.4 0-8 2.24-8 5v2h16v-2c0-2.76-3.6-5-8-5z"/></svg>
                 <span data-i18n="agents.nav.agents" :class="$store.shell.railCollapsed && 'lg:hidden'">{{ __('agents.nav.agents') }}</span>
             </a>
+            @endcan
 
+            @can('conversations.view')
             <a href="{{ route('conversations.index') }}" aria-label="{{ __('agents.nav.conversations') }}" data-i18n-al="agents.nav.conversations"
                 data-nav="conversations"
                 @if (request()->routeIs('conversations.*')) aria-current="page" @endif
@@ -146,11 +151,13 @@
                 <svg class="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8-1.06 0-2.08-.16-3.02-.46L3 21l1.5-4.5C3.55 15.1 3 13.6 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
                 <span data-i18n="agents.nav.conversations" :class="$store.shell.railCollapsed && 'lg:hidden'">{{ __('agents.nav.conversations') }}</span>
             </a>
+            @endcan
 
             {{-- CRM sits between the inbox and Заявки on purpose: it is what
                  the conversations on the left turn INTO, and it is the section
                  the owner works in rather than reads. Kept distinct from
                  Аналитика at the top, which stays a pure report. --}}
+            @can('analytics.view')
             <a href="{{ route('crm.board') }}" aria-label="{{ __('agents.nav.crm') }}" data-i18n-al="agents.nav.crm"
                 data-nav="crm"
                 @if (request()->routeIs('crm.*')) aria-current="page" @endif
@@ -159,11 +166,13 @@
                 <svg class="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 5h5v14H4zM10 5h5v9h-5zM16 5h4v6h-4z"/></svg>
                 <span data-i18n="agents.nav.crm" :class="$store.shell.railCollapsed && 'lg:hidden'">{{ __('agents.nav.crm') }}</span>
             </a>
+            @endcan
 
             {{-- Данные sits after CRM and before Заявки: the analytics page at the
                  top reports on the ASSISTANTS, this section answers questions about
                  whatever the owner uploads. Both are reading rather than working,
                  so they bracket the two sections where work happens. --}}
+            @can('analytics.view')
             <a href="{{ route('bi.dashboards.index') }}" aria-label="{{ __('agents.nav.bi') }}" data-i18n-al="agents.nav.bi"
                 data-nav="bi"
                 @if (request()->routeIs('bi.*')) aria-current="page" @endif
@@ -172,7 +181,9 @@
                 <svg class="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 7c0-1.657 3.582-3 8-3s8 1.343 8 3-3.582 3-8 3-8-1.343-8-3z"/><path stroke-linecap="round" stroke-linejoin="round" d="M20 7v5c0 1.657-3.582 3-8 3s-8-1.343-8-3V7M20 12v5c0 1.657-3.582 3-8 3s-8-1.343-8-3v-5"/></svg>
                 <span data-i18n="agents.nav.bi" :class="$store.shell.railCollapsed && 'lg:hidden'">{{ __('agents.nav.bi') }}</span>
             </a>
+            @endcan
 
+            @can('analytics.view')
             <a href="{{ route('leads.index') }}" aria-label="{{ __('agents.nav.leads') }}" data-i18n-al="agents.nav.leads"
                 data-nav="leads"
                 @if (request()->routeIs('leads.*')) aria-current="page" @endif
@@ -190,6 +201,7 @@
                     :class="$store.shell.railCollapsed && 'lg:hidden'"
                     class="nav-unread-count ml-auto" aria-live="polite"></span>
             </a>
+            @endcan
 
             <a href="{{ route('settings.index') }}" aria-label="{{ __('agents.nav.settings') }}" data-i18n-al="agents.nav.settings"
                 data-nav="settings"
@@ -323,7 +335,7 @@
     // script that defines `window.Alpine` and registers the store has had a
     // chance to execute, so there is nothing yet to call here.
     window.__shellConfig = {
-        pollUrl: '{{ route('leads.poll') }}',
+        pollUrl: @js(auth()->user()->can('analytics.view') ? route('leads.poll') : ''),
         seenUrl: '{{ route('leads.seen') }}',
         leadsUrl: '{{ route('leads.index') }}',
         needsHumanUrl: '{{ route('conversations.index', ['status' => 'needs_human']) }}',

@@ -108,6 +108,15 @@ class DashboardController extends Controller
 
         $widgets = $dashboard->widgets()->with('dataset.columns')->get();
 
+        // Rendering the whole board must enforce the same boundary as the
+        // single-widget endpoint, including rows with a corrupt foreign link.
+        foreach ($widgets as $widget) {
+            $this->authorize('view', $widget);
+            abort_unless($widget->team_id === $dashboard->team_id
+                && $widget->dataset?->team_id === $dashboard->team_id, 403);
+            $this->authorize('query', $widget->dataset);
+        }
+
         // `fresh` is the refresh button: skip the cache for every card on the
         // board at once. Not a query parameter the page links to itself with,
         // so an ordinary navigation always takes the cheap path.
