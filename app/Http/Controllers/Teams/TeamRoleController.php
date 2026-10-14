@@ -106,7 +106,26 @@ class TeamRoleController extends Controller
     private function permissionRules(): array
     {
         return [
-            'permissions' => ['sometimes', 'array'],
+            // Rejects rather than silently completing the set: PermissionCatalog::requires()'s
+            // own docblock is why — the role editor UI auto-checks/unchecks the same pair
+            // client-side so nobody normally reaches this, but a direct request must not be
+            // able to save "manage" without "view" just because nothing client-side stopped it.
+            'permissions' => ['sometimes', 'array', function (string $attribute, mixed $value, \Closure $fail): void {
+                $selected = (array) $value;
+                foreach (PermissionCatalog::requires() as $permission => $dependencies) {
+                    if (! in_array($permission, $selected, true)) {
+                        continue;
+                    }
+                    foreach ($dependencies as $dependency) {
+                        if (! in_array($dependency, $selected, true)) {
+                            $fail(__('settings.roles.validation.requires', [
+                                'permission' => __('settings.roles.permissions.'.$permission),
+                                'dependency' => __('settings.roles.permissions.'.$dependency),
+                            ]));
+                        }
+                    }
+                }
+            }],
             'permissions.*' => ['string', Rule::in(PermissionCatalog::all()), 'distinct'],
         ];
     }

@@ -58,6 +58,33 @@ class TeamRoleManagementTest extends TestCase
         $this->assertDatabaseMissing('roles', ['team_id' => $owner->current_team_id, 'name' => 'Invalid role']);
     }
 
+    public function test_manage_permissions_are_rejected_without_their_view_dependency(): void
+    {
+        $owner = $this->owner();
+        $this->actingAs($owner);
+
+        foreach ([
+            [PermissionCatalog::CRM_MANAGE],
+            [PermissionCatalog::ANALYTICS_MANAGE],
+            [PermissionCatalog::CRM_MANAGE, PermissionCatalog::ANALYTICS_MANAGE],
+        ] as $permissions) {
+            $this->post(route('teams.roles.store'), [
+                'name' => 'Invalid dependency role',
+                'permissions' => $permissions,
+            ])->assertSessionHasErrors('permissions', null, 'roles');
+        }
+
+        $this->assertDatabaseMissing('roles', ['team_id' => $owner->current_team_id, 'name' => 'Invalid dependency role']);
+
+        $this->post(route('teams.roles.store'), [
+            'name' => 'Valid CRM role',
+            'permissions' => [PermissionCatalog::CRM_VIEW, PermissionCatalog::CRM_MANAGE],
+        ])->assertRedirect();
+
+        $role = Role::where('team_id', $owner->current_team_id)->where('name', 'Valid CRM role')->sole();
+        $this->assertSame([PermissionCatalog::CRM_VIEW, PermissionCatalog::CRM_MANAGE], $role->permissionKeys());
+    }
+
     public function test_same_name_is_allowed_in_another_team_but_not_twice_in_one_team(): void
     {
         $owner = $this->owner();

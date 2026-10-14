@@ -71,7 +71,34 @@
             @if ($errors->getBag('roles')->has('permissions') || $errors->getBag('roles')->has('permissions.*'))
                 <p class="mt-2 text-sm text-danger dark:text-danger-light">{{ $errors->getBag('roles')->first('permissions') ?: $errors->getBag('roles')->first('permissions.*') }}</p>
             @endif
-            <div class="mt-3 space-y-5">
+            {{--
+                PermissionCatalog::requires() says e.g. crm.manage needs
+                crm.view — the server rejects saving one without the other
+                (TeamRoleController's own validation), so this is purely a
+                convenience that keeps a person from ever hitting that
+                rejection: ticking "manage" also ticks "view", and
+                unticking "view" also unticks whatever "manage" depends on
+                it, both ways, so the boxes on screen can never disagree
+                with what the server would accept.
+            --}}
+            <div class="mt-3 space-y-5"
+                x-data="{
+                    requires: @js(\App\Services\Permissions\PermissionCatalog::requires()),
+                    setChecked(permission, value) {
+                        const box = this.$el.querySelector(`input[name='permissions[]'][value='${permission}']`);
+                        if (box && ! box.disabled) box.checked = value;
+                    },
+                    onToggle(permission, checked) {
+                        if (checked) {
+                            (this.requires[permission] ?? []).forEach((dependency) => this.setChecked(dependency, true));
+
+                            return;
+                        }
+                        Object.entries(this.requires).forEach(([manage, dependencies]) => {
+                            if (dependencies.includes(permission)) this.setChecked(manage, false);
+                        });
+                    },
+                }">
                 @foreach ($permissionGroups as $group => $permissions)
                     <fieldset>
                         <legend class="text-xs font-semibold uppercase tracking-wide text-muted dark:text-night-muted" data-i18n="settings.roles.groups.{{ $group }}">{{ __('settings.roles.groups.'.$group) }}</legend>
@@ -79,6 +106,7 @@
                             @foreach ($permissions as $permission)
                                 <label class="flex items-start gap-2.5 rounded-lg px-2 py-1.5 text-sm hover:bg-sunk dark:hover:bg-night-raised">
                                     <input type="checkbox" name="permissions[]" value="{{ $permission }}"
+                                        x-on:change="onToggle('{{ $permission }}', $event.target.checked)"
                                         class="mt-0.5 rounded border-hairline text-brand focus:ring-brand"
                                         @checked(in_array($permission, $chosenPermissions, true)) @disabled(! $editable || ! auth()->user()->can($permission)) />
                                     <span data-i18n="settings.roles.permissions.{{ $permission }}">{{ __('settings.roles.permissions.'.$permission) }}</span>

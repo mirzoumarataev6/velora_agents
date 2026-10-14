@@ -73,4 +73,62 @@ class PermissionCatalogTest extends TestCase
 
         $this->addToAssertionCount(1);
     }
+
+    /**
+     * Stage B split crm.* out of analytics.*. Before this, Admin/Operator/
+     * Viewer's bundles were exactly this (the pre-split hardcoded lists,
+     * kept here only as a frozen snapshot — never update them to match a
+     * future change, that would defeat the point). The only thing allowed
+     * to differ now is the new crm.* pair, added everywhere
+     * analytics.view/analytics.manage already was, nothing else touched
+     * and nothing removed.
+     */
+    public function test_admin_operator_and_viewer_bundles_are_unchanged_except_for_the_new_crm_pair(): void
+    {
+        $oldAdmin = [
+            PermissionCatalog::TEAM_SETTINGS_VIEW, PermissionCatalog::TEAM_SETTINGS_UPDATE,
+            PermissionCatalog::TEAM_MEMBERS_VIEW, PermissionCatalog::TEAM_MEMBERS_INVITE, PermissionCatalog::TEAM_MEMBERS_REMOVE,
+            PermissionCatalog::TEAM_ROLES_VIEW, PermissionCatalog::TEAM_ROLES_MANAGE,
+            PermissionCatalog::AGENTS_VIEW, PermissionCatalog::AGENTS_CREATE, PermissionCatalog::AGENTS_UPDATE, PermissionCatalog::AGENTS_DELETE,
+            PermissionCatalog::CATALOG_VIEW, PermissionCatalog::CATALOG_MANAGE,
+            PermissionCatalog::CHANNELS_VIEW, PermissionCatalog::CHANNELS_MANAGE,
+            PermissionCatalog::CONVERSATIONS_VIEW, PermissionCatalog::CONVERSATIONS_REPLY, PermissionCatalog::CONVERSATIONS_TAKEOVER,
+            PermissionCatalog::ANALYTICS_VIEW, PermissionCatalog::ANALYTICS_MANAGE,
+            PermissionCatalog::PROJECTS_VIEW, PermissionCatalog::PROJECTS_CREATE, PermissionCatalog::PROJECTS_EDIT,
+            PermissionCatalog::PROJECTS_ASSIGN, PermissionCatalog::PROJECTS_COMMENT, PermissionCatalog::PROJECTS_MANAGE,
+            PermissionCatalog::BILLING_VIEW,
+        ];
+        $oldOperator = [
+            PermissionCatalog::AGENTS_VIEW,
+            PermissionCatalog::CATALOG_VIEW,
+            PermissionCatalog::CHANNELS_VIEW,
+            PermissionCatalog::CONVERSATIONS_VIEW, PermissionCatalog::CONVERSATIONS_REPLY, PermissionCatalog::CONVERSATIONS_TAKEOVER,
+            PermissionCatalog::ANALYTICS_VIEW,
+            PermissionCatalog::PROJECTS_VIEW, PermissionCatalog::PROJECTS_CREATE, PermissionCatalog::PROJECTS_EDIT,
+            PermissionCatalog::PROJECTS_ASSIGN, PermissionCatalog::PROJECTS_COMMENT,
+        ];
+        $oldViewer = [
+            PermissionCatalog::TEAM_MEMBERS_VIEW,
+            PermissionCatalog::TEAM_ROLES_VIEW,
+            PermissionCatalog::AGENTS_VIEW,
+            PermissionCatalog::CATALOG_VIEW,
+            PermissionCatalog::CHANNELS_VIEW,
+            PermissionCatalog::CONVERSATIONS_VIEW,
+            PermissionCatalog::ANALYTICS_VIEW,
+            PermissionCatalog::PROJECTS_VIEW,
+        ];
+
+        $matrix = PermissionCatalog::defaultMatrix();
+
+        foreach ([
+            PermissionCatalog::ADMIN => [$oldAdmin, [PermissionCatalog::CRM_VIEW, PermissionCatalog::CRM_MANAGE]],
+            PermissionCatalog::OPERATOR => [$oldOperator, [PermissionCatalog::CRM_VIEW]],
+            PermissionCatalog::VIEWER => [$oldViewer, [PermissionCatalog::CRM_VIEW]],
+        ] as $role => [$old, $expectedAddition]) {
+            $current = $matrix[$role];
+
+            $this->assertSame([], array_values(array_diff($old, $current)), "{$role}: lost a pre-existing permission");
+            $this->assertSame($expectedAddition, array_values(array_diff($current, $old)), "{$role}: gained something other than the new crm.* pair");
+        }
+    }
 }

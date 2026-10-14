@@ -59,7 +59,17 @@ final class PermissionCatalog
 
     public const CONVERSATIONS_TAKEOVER = 'conversations.takeover';
 
-    // Analytics (CRM + BI)
+    // CRM (deals, customers, tasks, notes, stages, workspaces) — split out
+    // of analytics.* so a role can be given the CRM without also getting
+    // BI: the two have different audiences (whoever works the pipeline vs.
+    // whoever reads the numbers) and, for BI specifically, different risk
+    // (external DB connections, uploads) that shouldn't ride along with
+    // CRM access by default.
+    public const CRM_VIEW = 'crm.view';
+
+    public const CRM_MANAGE = 'crm.manage';
+
+    // Analytics (BI only, see above)
     public const ANALYTICS_VIEW = 'analytics.view';
 
     public const ANALYTICS_MANAGE = 'analytics.manage';
@@ -101,6 +111,7 @@ final class PermissionCatalog
             self::CATALOG_VIEW, self::CATALOG_MANAGE,
             self::CHANNELS_VIEW, self::CHANNELS_MANAGE,
             self::CONVERSATIONS_VIEW, self::CONVERSATIONS_REPLY, self::CONVERSATIONS_TAKEOVER,
+            self::CRM_VIEW, self::CRM_MANAGE,
             self::ANALYTICS_VIEW, self::ANALYTICS_MANAGE,
             self::PROJECTS_VIEW, self::PROJECTS_CREATE, self::PROJECTS_EDIT,
             self::PROJECTS_ASSIGN, self::PROJECTS_COMMENT, self::PROJECTS_MANAGE,
@@ -113,6 +124,27 @@ final class PermissionCatalog
         if (! in_array($permission, self::all(), true)) {
             throw new InvalidArgumentException("Unknown permission: {$permission}");
         }
+    }
+
+    /**
+     * A permission that is meaningless without another: `crm.manage` is a
+     * write ability over rows `crm.view` is what lets a role read in the
+     * first place, and the same relationship holds for `analytics.manage`.
+     * Enforced as a reject (`TeamRoleController`'s own validation), never
+     * an auto-add on the server — silently inserting a permission nobody
+     * selected is a worse surprise than telling the owner "manage" needs
+     * "view" too. The role editor UI auto-checks/unchecks the same pair for
+     * the same reason convenience belongs on the client: nobody should
+     * have to learn this rule by hitting the rejection first.
+     *
+     * @return array<string, list<string>> permission => the permissions it requires
+     */
+    public static function requires(): array
+    {
+        return [
+            self::CRM_MANAGE => [self::CRM_VIEW],
+            self::ANALYTICS_MANAGE => [self::ANALYTICS_VIEW],
+        ];
     }
 
     /** @return list<string> the 4 system role slugs, in seed order */
@@ -154,6 +186,7 @@ final class PermissionCatalog
                 self::CATALOG_VIEW, self::CATALOG_MANAGE,
                 self::CHANNELS_VIEW, self::CHANNELS_MANAGE,
                 self::CONVERSATIONS_VIEW, self::CONVERSATIONS_REPLY, self::CONVERSATIONS_TAKEOVER,
+                self::CRM_VIEW, self::CRM_MANAGE,
                 self::ANALYTICS_VIEW, self::ANALYTICS_MANAGE,
                 self::PROJECTS_VIEW, self::PROJECTS_CREATE, self::PROJECTS_EDIT,
                 self::PROJECTS_ASSIGN, self::PROJECTS_COMMENT, self::PROJECTS_MANAGE,
@@ -164,6 +197,7 @@ final class PermissionCatalog
                 self::CATALOG_VIEW,
                 self::CHANNELS_VIEW,
                 self::CONVERSATIONS_VIEW, self::CONVERSATIONS_REPLY, self::CONVERSATIONS_TAKEOVER,
+                self::CRM_VIEW,
                 self::ANALYTICS_VIEW,
                 self::PROJECTS_VIEW, self::PROJECTS_CREATE, self::PROJECTS_EDIT,
                 self::PROJECTS_ASSIGN, self::PROJECTS_COMMENT,
@@ -175,6 +209,7 @@ final class PermissionCatalog
                 self::CATALOG_VIEW,
                 self::CHANNELS_VIEW,
                 self::CONVERSATIONS_VIEW,
+                self::CRM_VIEW,
                 self::ANALYTICS_VIEW,
                 self::PROJECTS_VIEW,
             ],

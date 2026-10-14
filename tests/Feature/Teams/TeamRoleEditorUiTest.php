@@ -68,6 +68,34 @@ class TeamRoleEditorUiTest extends TestCase
             ->assertOk()->assertDontSee(route('teams.roles.index'));
     }
 
+    /**
+     * No JS runtime in this suite, so the client-side half of
+     * PermissionCatalog::requires() (ticking "manage" also ticks "view",
+     * unticking "view" also unticks "manage") is asserted on the rendered
+     * markup itself: the dependency map and the change handler must both
+     * be present and correct, or the behavior the UI promises silently
+     * stops matching what the server actually enforces.
+     */
+    public function test_the_permission_matrix_wires_up_client_side_dependency_auto_checking(): void
+    {
+        $owner = User::factory()->create();
+        app(CreatesTeam::class)->create($owner, 'Sales');
+
+        $response = $this->actingAs($owner)->get(route('teams.roles.index'));
+
+        $response->assertOk();
+        foreach (PermissionCatalog::requires() as $permission => $dependencies) {
+            $response->assertSee("onToggle('{$permission}'", false);
+            foreach ($dependencies as $dependency) {
+                // @js() emits JSON.parse('...') with \uXXXX-escaped quotes
+                // rather than literal ones — matched as the exact text Blade
+                // writes, not as JSON, so this breaks loudly if that
+                // escaping ever changes instead of silently passing.
+                $response->assertSee('\u0022'.$permission.'\u0022:[\u0022'.$dependency.'\u0022]', false);
+            }
+        }
+    }
+
     public function test_invalid_permission_payload_can_rerender_the_form_without_a_server_error(): void
     {
         $owner = User::factory()->create();
