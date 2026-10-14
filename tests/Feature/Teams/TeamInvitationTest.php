@@ -151,6 +151,36 @@ class TeamInvitationTest extends TestCase
         $this->assertSame(Invitation::STATUS_PENDING, $invitation->fresh()->status);
     }
 
+    /**
+     * A member holding only `team.members.invite` must not be able to
+     * cancel an invitation for a role carrying permissions they themselves
+     * lack — the same escalation-shaped gap TeamMemberController::destroy()
+     * closes for removing a live member, applied to a pending one instead.
+     */
+    public function test_an_invite_only_role_cannot_revoke_an_invitation_for_a_more_powerful_role(): void
+    {
+        $owner = $this->owner();
+        $inviterRole = Role::create(['team_id' => $owner->current_team_id, 'slug' => 'inviter', 'name' => 'Inviter']);
+        $inviterRole->syncPermissions([PermissionCatalog::TEAM_MEMBERS_INVITE]);
+        $actor = User::factory()->create();
+        TeamMembership::create([
+            'team_id' => $owner->current_team_id, 'user_id' => $actor->id,
+            'role_id' => $inviterRole->id, 'joined_at' => now(),
+        ]);
+        $actor->forceFill(['current_team_id' => $owner->current_team_id])->save();
+        $admin = $this->roleOn($owner, PermissionCatalog::ADMIN);
+        $invitation = Invitation::factory()->create([
+            'team_id' => $owner->current_team_id,
+            'role_id' => $admin->id,
+            'invited_by' => $owner->id,
+        ]);
+
+        $this->actingAs($actor)->delete(route('teams.invitations.destroy', $invitation))
+            ->assertForbidden();
+
+        $this->assertSame(Invitation::STATUS_PENDING, $invitation->fresh()->status);
+    }
+
     // --- accept() --------------------------------------------------------
 
     public function test_accepting_creates_a_membership_with_the_invited_role_on_the_right_team(): void

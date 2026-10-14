@@ -92,6 +92,12 @@ class TeamInvitationController extends Controller
     {
         $this->authorize('team.members.invite', $invitation);
 
+        // Same class of gap destroy() on a live membership has for removal:
+        // an actor who only holds team.members.invite, but not the
+        // permissions the invited role itself carries, must not be able to
+        // cancel a more privileged invitation someone else sent.
+        abort_unless(app(AuthorizesRoleGrants::class)->canGrant($request->user(), $invitation->role), 403);
+
         if ($invitation->status === Invitation::STATUS_PENDING) {
             $invitation->forceFill(['status' => Invitation::STATUS_REVOKED])->save();
         }

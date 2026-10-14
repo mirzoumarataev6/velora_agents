@@ -52,13 +52,19 @@ class TeamMemberController extends Controller
         $teamId = $this->permittedActiveTeamId($request, 'team.members.remove');
         abort_unless((int) $membership->team_id === $teamId, 404);
 
-        $member = DB::transaction(function () use ($membership, $teamId, $personalTeams): User {
+        $member = DB::transaction(function () use ($request, $membership, $teamId, $personalTeams): User {
             $locked = TeamMembership::whereKey($membership->id)->where('team_id', $teamId)
                 ->lockForUpdate()->firstOrFail();
 
             // The Owner role is the sole way to administer this team today;
             // removing or demoting it could leave the team unmanageable.
             abort_if($locked->role->is_owner, 403);
+
+            // Removing a member must demand the same authority granting
+            // their role would — otherwise a custom role holding only
+            // team.members.remove (and nothing else) could remove an Admin,
+            // the exact escalation update() already closes for role changes.
+            abort_unless(app(AuthorizesRoleGrants::class)->canGrant($request->user(), $locked->role), 403);
 
             $member = User::whereKey($locked->user_id)->lockForUpdate()->firstOrFail();
             $locked->delete();

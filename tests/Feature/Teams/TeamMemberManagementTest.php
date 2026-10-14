@@ -136,6 +136,45 @@ class TeamMemberManagementTest extends TestCase
         $this->assertSame($personalTeamId, $member->fresh()->activeTeamId());
     }
 
+    /**
+     * A custom role carrying ONLY `team.members.remove` must not be a
+     * backdoor around the escalation check `update()` already enforces for
+     * role changes: removing a member who outranks you is exactly as much
+     * of an escalation as promoting yourself into their role would be.
+     */
+    public function test_a_members_remove_only_custom_role_cannot_remove_an_admin_or_a_viewer(): void
+    {
+        $owner = User::factory()->create();
+        $actor = User::factory()->create();
+        $remover = Role::create(['team_id' => $owner->current_team_id, 'slug' => 'remover', 'name' => 'Remover']);
+        $remover->syncPermissions([PermissionCatalog::TEAM_MEMBERS_REMOVE]);
+        TeamMembership::create([
+            'team_id' => $owner->current_team_id, 'user_id' => $actor->id,
+            'role_id' => $remover->id, 'joined_at' => now(),
+        ]);
+        $actor->forceFill(['current_team_id' => $owner->current_team_id])->save();
+        $admin = $this->join(User::factory()->create(), $owner, PermissionCatalog::ADMIN);
+        $viewer = $this->join(User::factory()->create(), $owner, PermissionCatalog::VIEWER);
+
+        $this->actingAs($actor)->delete(route('teams.members.destroy', $admin))->assertForbidden();
+        $this->delete(route('teams.members.destroy', $viewer))->assertForbidden();
+
+        $this->assertDatabaseHas('team_user', ['id' => $admin->id]);
+        $this->assertDatabaseHas('team_user', ['id' => $viewer->id]);
+    }
+
+    public function test_admin_can_remove_an_operator(): void
+    {
+        $owner = User::factory()->create();
+        $admin = $this->join(User::factory()->create(), $owner, PermissionCatalog::ADMIN);
+        $admin->user->forceFill(['current_team_id' => $owner->current_team_id])->save();
+        $operator = $this->join(User::factory()->create(), $owner, PermissionCatalog::OPERATOR);
+
+        $this->actingAs($admin->user)->delete(route('teams.members.destroy', $operator))->assertRedirect();
+
+        $this->assertDatabaseMissing('team_user', ['id' => $operator->id]);
+    }
+
     private function join(User $member, User $owner, string $roleSlug): TeamMembership
     {
         return TeamMembership::create([
