@@ -64,6 +64,19 @@ final class PermissionCatalog
 
     public const ANALYTICS_MANAGE = 'analytics.manage';
 
+    // Project boards and shared task work
+    public const PROJECTS_VIEW = 'projects.view';
+
+    public const PROJECTS_CREATE = 'projects.create';
+
+    public const PROJECTS_EDIT = 'projects.edit';
+
+    public const PROJECTS_ASSIGN = 'projects.assign';
+
+    public const PROJECTS_COMMENT = 'projects.comment';
+
+    public const PROJECTS_MANAGE = 'projects.manage';
+
     // Billing — gates exist even though no billing UI is built yet.
     public const BILLING_VIEW = 'billing.view';
 
@@ -89,6 +102,8 @@ final class PermissionCatalog
             self::CHANNELS_VIEW, self::CHANNELS_MANAGE,
             self::CONVERSATIONS_VIEW, self::CONVERSATIONS_REPLY, self::CONVERSATIONS_TAKEOVER,
             self::ANALYTICS_VIEW, self::ANALYTICS_MANAGE,
+            self::PROJECTS_VIEW, self::PROJECTS_CREATE, self::PROJECTS_EDIT,
+            self::PROJECTS_ASSIGN, self::PROJECTS_COMMENT, self::PROJECTS_MANAGE,
             self::BILLING_VIEW, self::BILLING_MANAGE,
         ];
     }
@@ -140,6 +155,8 @@ final class PermissionCatalog
                 self::CHANNELS_VIEW, self::CHANNELS_MANAGE,
                 self::CONVERSATIONS_VIEW, self::CONVERSATIONS_REPLY, self::CONVERSATIONS_TAKEOVER,
                 self::ANALYTICS_VIEW, self::ANALYTICS_MANAGE,
+                self::PROJECTS_VIEW, self::PROJECTS_CREATE, self::PROJECTS_EDIT,
+                self::PROJECTS_ASSIGN, self::PROJECTS_COMMENT, self::PROJECTS_MANAGE,
                 self::BILLING_VIEW,
             ],
             self::OPERATOR => [
@@ -148,6 +165,8 @@ final class PermissionCatalog
                 self::CHANNELS_VIEW,
                 self::CONVERSATIONS_VIEW, self::CONVERSATIONS_REPLY, self::CONVERSATIONS_TAKEOVER,
                 self::ANALYTICS_VIEW,
+                self::PROJECTS_VIEW, self::PROJECTS_CREATE, self::PROJECTS_EDIT,
+                self::PROJECTS_ASSIGN, self::PROJECTS_COMMENT,
             ],
             self::VIEWER => [
                 self::TEAM_MEMBERS_VIEW,
@@ -157,6 +176,7 @@ final class PermissionCatalog
                 self::CHANNELS_VIEW,
                 self::CONVERSATIONS_VIEW,
                 self::ANALYTICS_VIEW,
+                self::PROJECTS_VIEW,
             ],
         ];
     }

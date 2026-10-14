@@ -6,6 +6,7 @@ return [
         'agents' => 'Агенты',
         'conversations' => 'Диалоги',
         'crm' => 'CRM',
+        'projects' => 'Задачи',
         'bi' => 'Анализ данных',
         'leads' => 'Заявки',
         'settings' => 'Настройки',

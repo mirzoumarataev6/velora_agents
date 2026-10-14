@@ -30,6 +30,8 @@ use App\Http\Controllers\PasswordResetController;
 use App\Http\Controllers\PersonaAssistantController;
 use App\Http\Controllers\PlaygroundController;
 use App\Http\Controllers\ProductImageController;
+use App\Http\Controllers\Projects\BoardController as ProjectBoardController;
+use App\Http\Controllers\Projects\ProjectTaskController;
 use App\Http\Controllers\RootRedirectController;
 use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\Teams\TeamController;
@@ -100,6 +102,34 @@ Route::middleware(['auth', 'auth.session'])->group(function () {
     Route::get('/teams/roles', [TeamRoleController::class, 'index'])->name('teams.roles.index');
     Route::post('/teams/roles', [TeamRoleController::class, 'store'])->name('teams.roles.store');
     Route::patch('/teams/roles/{role}', [TeamRoleController::class, 'update'])->name('teams.roles.update');
+
+    // A team's project boards reuse the existing CRM task rows, so a
+    // reminder linked to a customer stays the same task in both places.
+    Route::prefix('projects')->name('projects.')->group(function () {
+        Route::get('/', [ProjectBoardController::class, 'index'])->name('index');
+        Route::get('my-work', [ProjectBoardController::class, 'myWork'])->name('my');
+        Route::post('boards', [ProjectBoardController::class, 'store'])->name('boards.store');
+        Route::get('boards/{board}', [ProjectBoardController::class, 'show'])->name('boards.show');
+        Route::patch('boards/{board}', [ProjectBoardController::class, 'update'])->name('boards.update');
+        Route::patch('boards/{board}/archive', [ProjectBoardController::class, 'archive'])->name('boards.archive');
+        Route::post('boards/{board}/members', [ProjectBoardController::class, 'addMember'])->name('boards.members.store');
+        Route::delete('boards/{board}/members/{userId}', [ProjectBoardController::class, 'removeMember'])->name('boards.members.destroy');
+        Route::post('boards/{board}/columns', [ProjectBoardController::class, 'storeColumn'])->name('columns.store');
+        Route::patch('boards/{board}/columns/{column}', [ProjectBoardController::class, 'updateColumn'])->name('columns.update');
+        Route::patch('boards/{board}/columns/{column}/order', [ProjectBoardController::class, 'reorderColumn'])->name('columns.order');
+        Route::delete('boards/{board}/columns/{column}', [ProjectBoardController::class, 'destroyColumn'])->name('columns.destroy');
+        Route::post('boards/{board}/labels', [ProjectBoardController::class, 'storeLabel'])->name('labels.store');
+        Route::delete('boards/{board}/labels/{label}', [ProjectBoardController::class, 'destroyLabel'])->name('labels.destroy');
+        Route::post('boards/{board}/tasks', [ProjectTaskController::class, 'store'])->name('tasks.store');
+        Route::get('boards/{board}/tasks/{task}', [ProjectTaskController::class, 'show'])->name('tasks.show');
+        Route::patch('boards/{board}/tasks/{task}', [ProjectTaskController::class, 'update'])->name('tasks.update');
+        Route::patch('boards/{board}/tasks/{task}/move', [ProjectTaskController::class, 'move'])->name('tasks.move');
+        Route::patch('boards/{board}/tasks/{task}/archive', [ProjectTaskController::class, 'archive'])->name('tasks.archive');
+        Route::post('boards/{board}/tasks/{task}/checklist', [ProjectTaskController::class, 'storeChecklist'])->name('checklist.store');
+        Route::patch('boards/{board}/tasks/{task}/checklist/{item}', [ProjectTaskController::class, 'toggleChecklist'])->name('checklist.toggle');
+        Route::delete('boards/{board}/tasks/{task}/checklist/{item}', [ProjectTaskController::class, 'destroyChecklist'])->name('checklist.destroy');
+        Route::post('boards/{board}/tasks/{task}/comments', [ProjectTaskController::class, 'comment'])->name('comments.store');
+    });
 
     // The only onboarding endpoint. Step progress is derived from the account's
     // own data at render time, so there is nothing to report back — only the

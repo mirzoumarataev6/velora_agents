@@ -175,6 +175,7 @@ return [
             'channels' => 'Channels',
             'conversations' => 'Conversations',
             'analytics' => 'Analytics',
+            'projects' => 'Projects and tasks',
             'billing' => 'Billing',
         ],
         'permissions' => [
@@ -189,6 +190,7 @@ return [
             'channels' => ['view' => 'View channels', 'manage' => 'Manage channels'],
             'conversations' => ['view' => 'View conversations', 'reply' => 'Reply to conversations', 'takeover' => 'Take over conversations'],
             'analytics' => ['view' => 'View analytics', 'manage' => 'Manage analytics'],
+            'projects' => ['view' => 'View boards and tasks', 'create' => 'Create tasks', 'edit' => 'Edit and move tasks', 'assign' => 'Assign members', 'comment' => 'Comment on tasks', 'manage' => 'Manage boards and stages'],
             'billing' => ['view' => 'View billing', 'manage' => 'Manage billing'],
         ],
     ],

@@ -9,6 +9,7 @@ return [
         'agents' => 'Агентҳо',
         'conversations' => 'Мукотибаҳо',
         'crm' => 'CRM',
+        'projects' => 'Вазифаҳо',
         'bi' => 'Таҳлили маълумот',
         'leads' => 'Дархостҳо',
         'settings' => 'Танзимот',

@@ -44,18 +44,19 @@ class CrmNavigationTest extends TestCase
         $response->assertSee(__('agents.nav.leads'));
     }
 
-    /** CRM destinations are all first-class and the active section is clear. */
+    /** Project work has its own section; CRM keeps customer and deal context. */
     public function test_every_crm_sub_page_is_reachable_and_marks_itself_active(): void
     {
         $user = User::factory()->create();
 
-        foreach (['crm.board', 'crm.tasks.index'] as $route) {
+        foreach (['crm.board', 'crm.customers.index'] as $route) {
             $response = $this->actingAs($user)->get(route($route));
 
             $response->assertOk();
-            foreach (['board', 'tasks'] as $tab) {
+            foreach (['board', 'customers'] as $tab) {
                 $response->assertSee(__('crm.nav.'.$tab));
             }
+            $response->assertDontSee('href="'.route('crm.tasks.index').'"', false);
 
             $activeUrl = route($route);
             $response->assertSee($activeUrl);

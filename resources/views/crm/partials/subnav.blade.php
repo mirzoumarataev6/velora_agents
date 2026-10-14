@@ -2,7 +2,7 @@
     Navigation WITHIN the CRM section. The sidebar gets you into the CRM; this
     says which part of it you are in.
 
-    The three focused CRM work areas: pipeline, customer directory, and tasks.
+    Project tasks have their own section now; this nav stays about CRM data.
     A customer profile omits this navigation because its explicit return link
     is the relevant context there; repeating the full tabs in a detail view
     made the header feel like two competing back controls.
@@ -14,7 +14,6 @@
     @foreach ([
         'board' => ['crm.board', 'crm.board'],
         'customers' => ['crm.customers.index', 'crm.customers.*'],
-        'tasks' => ['crm.tasks.index', 'crm.tasks.*'],
         'trend' => ['crm.trend', 'crm.trend'],
     ] as $key => [$routeName, $activePattern])
         @continue (! Route::has($routeName))

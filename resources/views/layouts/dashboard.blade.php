@@ -168,6 +168,17 @@
             </a>
             @endcan
 
+            @can('projects.view')
+            <a href="{{ route('projects.index') }}" aria-label="{{ __('agents.nav.projects') }}" data-i18n-al="agents.nav.projects"
+                data-nav="projects"
+                @if (request()->routeIs('projects.*')) aria-current="page" @endif
+                :class="$store.shell.railCollapsed && 'lg:justify-center'"
+                class="nav-item {{ request()->routeIs('projects.*') ? 'nav-item-active' : '' }}">
+                <svg class="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path stroke-linecap="round" d="M9 4v16M13 9h5M13 13h5M5.5 9h1M5.5 13h1"/></svg>
+                <span data-i18n="agents.nav.projects" :class="$store.shell.railCollapsed && 'lg:hidden'">{{ __('agents.nav.projects') }}</span>
+            </a>
+            @endcan
+
             {{-- Данные sits after CRM and before Заявки: the analytics page at the
                  top reports on the ASSISTANTS, this section answers questions about
                  whatever the owner uploads. Both are reading rather than working,

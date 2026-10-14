@@ -2796,3 +2796,34 @@ html.dark {
     background: color-mix(in srgb, var(--color-night-card) 78%, transparent);
     border-color: color-mix(in srgb, var(--color-brand-light) 12%, transparent);
 }
+
+/* Board colors come from the shared chart palette. The accent stays inside
+   the board surface so cards retain the app's neutral reading contrast. */
+.project-accent-blue { --project-accent: var(--color-series-1); }
+.project-accent-violet { --project-accent: var(--color-series-3); }
+.project-accent-emerald { --project-accent: var(--color-series-4); }
+.project-accent-amber { --project-accent: var(--color-series-2); }
+.project-accent-rose { --project-accent: var(--color-series-5); }
+.project-board-icon {
+    color: var(--project-accent);
+    background: color-mix(in srgb, var(--project-accent) 12%, var(--color-surface));
+}
+.project-board-card-glow {
+    background: radial-gradient(circle at 100% 0%, color-mix(in srgb, var(--project-accent) 15%, transparent), transparent 70%);
+}
+.project-dot { background: var(--project-accent); }
+.project-label {
+    display: inline-flex;
+    align-items: center;
+    border-radius: .4rem;
+    padding: .15rem .5rem;
+    color: var(--project-accent);
+    background: color-mix(in srgb, var(--project-accent) 13%, var(--color-surface));
+    font-size: .7rem;
+    font-weight: 700;
+}
+.project-kanban-strip { scrollbar-width: thin; }
+.project-kanban-column { border: 1px solid color-mix(in srgb, var(--project-accent) 10%, var(--color-hairline)); }
+.project-task-card:active { cursor: grabbing; }
+.dark .project-board-icon,
+.dark .project-label { background: color-mix(in srgb, var(--project-accent) 18%, var(--color-night-card)); }

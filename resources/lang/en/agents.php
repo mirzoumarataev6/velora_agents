@@ -6,6 +6,7 @@ return [
         'agents' => 'Agents',
         'conversations' => 'Conversations',
         'crm' => 'CRM',
+        'projects' => 'Tasks',
         'bi' => 'Data analysis',
         'leads' => 'Leads',
         'settings' => 'Settings',
