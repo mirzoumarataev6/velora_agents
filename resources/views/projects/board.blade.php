@@ -10,7 +10,7 @@
             <a href="{{ route('projects.index') }}" class="text-sm font-medium text-brand hover:underline">← {{ __('projects.back_boards') }}</a>
             <div class="mt-3 flex items-center gap-3">
                 <div class="project-board-icon flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl font-semibold">{{ mb_strtoupper(mb_substr($board->name, 0, 1)) }}</div>
-                <div class="min-w-0"><h1 class="truncate font-display text-2xl font-semibold sm:text-3xl">{{ $board->name }}</h1><p class="text-sm text-muted dark:text-night-muted">{{ $board->description ?: __('projects.drag_hint') }}</p></div>
+                <div class="min-w-0"><h1 class="truncate font-display text-2xl font-semibold sm:text-3xl">{{ $board->name }}</h1><p class="text-sm text-muted dark:text-night-muted">{{ $board->description ?: ($canEdit ? ($dragEnabled ? __('projects.drag_hint') : __('projects.move_hint')) : __('projects.subtitle')) }}</p></div>
             </div>
         </div>
         <div class="flex flex-wrap items-center gap-2">
@@ -45,12 +45,12 @@
                 <div class="flex items-center gap-2 px-1 pb-3">
                     <span class="h-2.5 w-2.5 rounded-full {{ $column->is_done ? 'bg-success' : 'project-dot' }}" aria-hidden="true"></span>
                     <h2 class="min-w-0 flex-1 truncate text-sm font-bold">{{ $column->name }}</h2>
-                    <span data-column-count class="rounded-full bg-surface px-2 py-0.5 text-xs font-semibold text-muted dark:bg-night-card dark:text-night-muted">{{ $column->tasks->count() }}@if ($column->wip_limit) / {{ $column->wip_limit }}@endif</span>
+                    <span data-column-count class="rounded-full bg-surface px-2 py-0.5 text-xs font-semibold text-muted dark:bg-night-card dark:text-night-muted">{{ $pages[$column->id]->total() }}@if ($column->wip_limit) / {{ $column->wip_limit }}@endif</span>
                 </div>
                 <div data-project-cards class="min-h-20 flex-1 space-y-2">
                     @forelse ($column->tasks as $task)
                         <article data-project-task-id="{{ $task->id }}" data-move-url="{{ route('projects.tasks.move', [$board, $task]) }}"
-                            @if ($canEdit && ! $filterActive) draggable="true" @dragstart="start($event, {{ $task->id }})" @dragend="dragId = null" @endif
+                            @if ($canEdit && $dragEnabled) draggable="true" @dragstart="start($event, {{ $task->id }})" @dragend="dragId = null" @endif
                             class="project-task-card group card relative cursor-pointer p-4 transition-[transform,box-shadow] duration-150 hover:-translate-y-0.5 hover:shadow-lg">
                             <a href="{{ route('projects.boards.show', [$board, 'task' => $task->id]) }}" class="absolute inset-0 rounded-xl focus-visible:outline-2 focus-visible:outline-brand" aria-label="{{ $task->title }}"></a>
                             @if ($task->projectLabels->isNotEmpty())
@@ -79,6 +79,13 @@
                         <p class="py-6 text-center text-xs text-muted dark:text-night-muted">{{ __('projects.no_cards') }}</p>
                     @endforelse
                 </div>
+                @if ($pages[$column->id]->hasPages())
+                    <nav class="mt-3 flex items-center justify-between gap-2 border-t border-hairline pt-3 text-xs dark:border-white/10" aria-label="{{ $column->name }}">
+                        @if ($pages[$column->id]->previousPageUrl())<a class="font-medium text-brand hover:underline" href="{{ $pages[$column->id]->previousPageUrl() }}">← {{ __('projects.previous') }}</a>@else<span></span>@endif
+                        <span class="text-muted dark:text-night-muted">{{ __('projects.page_of', ['page' => $pages[$column->id]->currentPage(), 'total' => $pages[$column->id]->lastPage()]) }}</span>
+                        @if ($pages[$column->id]->nextPageUrl())<a class="font-medium text-brand hover:underline" href="{{ $pages[$column->id]->nextPageUrl() }}">{{ __('projects.next') }} →</a>@else<span></span>@endif
+                    </nav>
+                @endif
                 @if ($canCreate && ! $board->archived_at)
                     <form method="POST" action="{{ route('projects.tasks.store', $board) }}" class="mt-3 space-y-2 border-t border-hairline pt-3 dark:border-white/10">
                         @csrf

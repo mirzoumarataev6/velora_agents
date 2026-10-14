@@ -77,7 +77,7 @@ class DealBoard
                 'customer:id,name,phone,status,tags',
                 'conversation:id,channel_id,last_message_at',
                 'conversation.channel:id,type',
-                'tasks' => fn ($query) => $query->open()
+                'tasks' => fn ($query) => $query->visibleInCrm($user)->open()
                     ->orderByRaw('due_at is null')->orderBy('due_at')->orderBy('id')->limit(1),
             ])->get()->keyBy('id');
 
@@ -94,7 +94,7 @@ class DealBoard
         $customers = $customerIds === [] ? collect() : Customer::ownedBy($user)
             ->whereIn('id', $customerIds)->withCount('conversations')->get(['id'])->keyBy('id');
 
-        $groups->setCollection($rows->map(function ($row) use ($deals, $purchaseCounts, $customers, $representativeByCustomer) {
+        $groups->setCollection($rows->map(function ($row) use ($deals, $purchaseCounts, $customers, $representativeByCustomer, $user) {
             $deal = $deals->get($representativeByCustomer[$row->customer_id] ?? null);
             if (! $deal) {
                 return null;
@@ -109,6 +109,7 @@ class DealBoard
                 $conversationCount,
                 trans_choice('crm.board.customer_purchases_count', $purchaseCount, ['count' => $purchaseCount]),
                 trans_choice('crm.board.customer_conversations_count', $conversationCount, ['count' => $conversationCount]),
+                $user,
             );
         })->filter()->values());
 
@@ -176,6 +177,7 @@ class DealBoard
         int $customerConversationCount = 0,
         ?string $customerPurchaseCountLabel = null,
         ?string $customerConversationCountLabel = null,
+        ?User $viewer = null,
     ): array {
         // What last happened on this deal — the customer's own channel if
         // there is one, and the deal's own last edit otherwise (a manually
@@ -183,7 +185,9 @@ class DealBoard
         $lastActivity = $deal->conversation?->last_message_at ?? $deal->updated_at;
         $nextTask = $deal->relationLoaded('tasks')
             ? $deal->tasks->first()
-            : $deal->tasks()->open()->orderByRaw('due_at is null')->orderBy('due_at')->orderBy('id')->first();
+            : ($viewer?->activeTeamId() !== null
+                ? $deal->tasks()->visibleInCrm($viewer)->open()->orderByRaw('due_at is null')->orderBy('due_at')->orderBy('id')->first()
+                : null);
 
         return [
             'id' => $deal->id,

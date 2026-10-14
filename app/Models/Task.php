@@ -4,6 +4,8 @@ namespace App\Models;
 
 use App\Models\Concerns\StampsTeam;
 use App\Policies\TaskPolicy;
+use App\Services\Permissions\PermissionCatalog;
+use App\Services\Projects\ProjectAccess;
 use App\Services\Projects\ProjectBoards;
 use Database\Factories\TaskFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -15,6 +17,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Validation\ValidationException;
 
 #[Fillable(['customer_id', 'deal_id', 'title', 'due_at', 'done_at', 'priority', 'type'])]
 #[UsePolicy(TaskPolicy::class)]
@@ -48,6 +51,10 @@ class Task extends Model
                     ->orderBy('position')->value('id');
             }
 
+            static::assertColumnHasRoom($task);
+
+            // Read the next rank while the destination column is locked;
+            // simultaneous CRM reminders otherwise choose the same rank.
             if (! $task->position && $task->project_column_id !== null) {
                 $task->position = ((int) static::where('project_column_id', $task->project_column_id)->max('position')) + 1000;
             }
@@ -64,7 +71,42 @@ class Task extends Model
                     ->where('is_done', $task->done_at !== null)
                     ->orderBy('position')->value('id');
             }
+
+            if ($task->isDirty('project_column_id')
+                || ($task->isDirty('archived_at') && $task->archived_at === null)
+                || ($task->isDirty('deleted_at') && $task->deleted_at === null)) {
+                static::assertColumnHasRoom($task);
+            }
         });
+    }
+
+    private static function assertColumnHasRoom(Task $task): void
+    {
+        if ($task->project_column_id === null || $task->archived_at !== null) {
+            return;
+        }
+
+        // Every writer, including CRM reminders and archive restores, must
+        // lock the destination before counting. Checking only the Kanban
+        // controller let the old CRM route overfill a supposedly hard limit.
+        $column = ProjectColumn::whereKey($task->project_column_id)->lockForUpdate()->first();
+        // Leave invalid links to the composite FK so every database writer
+        // receives the same integrity error, including imports and raw inserts.
+        if ($column === null || (int) $column->team_id !== (int) $task->team_id
+            || (int) $column->board_id !== (int) $task->project_board_id) {
+            return;
+        }
+        if ($column->is_done || $column->wip_limit === null) {
+            return;
+        }
+
+        $occupants = static::where('project_column_id', $column->id)->whereNull('archived_at');
+        if ($task->exists) {
+            $occupants->whereKeyNot($task->id);
+        }
+        if ($occupants->count() >= $column->wip_limit) {
+            throw ValidationException::withMessages(['column_id' => __('projects.errors.wip_limit')]);
+        }
     }
 
     protected function casts(): array
@@ -91,6 +133,36 @@ class Task extends Model
         return $teamId !== null
             ? $query->where('tasks.team_id', $teamId)
             : $query->whereRaw('1 = 0');
+    }
+
+    /**
+     * CRM still has direct reminder URLs and deal/customer timelines. A team
+     * filter alone would reveal cards from private project boards there.
+     * CRM-only roles retain the shared inbox; other boards require project
+     * visibility as well as the caller's CRM permission.
+     *
+     * @param  Builder<Task>  $query
+     * @return Builder<Task>
+     */
+    public function scopeVisibleInCrm(Builder $query, User $user): Builder
+    {
+        $teamId = $user->activeTeamId();
+        if ($teamId === null) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        $inbox = ProjectBoard::query()->where('team_id', $teamId)
+            ->whereNull('archived_at')->where('slug', '_inbox')->where('visibility', 'team')
+            ->select('id');
+
+        return $query->where('tasks.team_id', $teamId)->whereNull('tasks.archived_at')
+            ->where(function (Builder $visible) use ($user, $inbox): void {
+                $visible->whereIn('tasks.project_board_id', $inbox);
+                if ($user->can(PermissionCatalog::PROJECTS_VIEW)) {
+                    $visible->orWhereIn('tasks.project_board_id',
+                        app(ProjectAccess::class)->visibleBoards($user)->select('project_boards.id'));
+                }
+            });
     }
 
     /**

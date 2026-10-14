@@ -288,7 +288,7 @@ class CustomerController extends Controller
             'deals.crmStage',
             // Open tasks first, soonest due first: a profile should answer
             // "what do I owe this person" before "what did I already do".
-            'tasks' => fn ($q) => $q->orderByRaw('done_at is not null')
+            'tasks' => fn ($q) => $q->visibleInCrm($request->user())->orderByRaw('done_at is not null')
                 ->orderByRaw('due_at is null')
                 ->orderBy('due_at'),
             'notes.user:id,name',

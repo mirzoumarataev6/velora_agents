@@ -64,8 +64,8 @@ is not a substitute for the team boundary.
   first named team promotes that same row so existing agent, CRM, and BI data
   stay attached; invited members see resources through their role permissions.
 - `DeletesAccount` blocks deletion when the user created an explicit team,
-  sent invitations, or has attributed rows in one. This prevents `user_id`
-  cascades from deleting collaborators' data. Ownership transfer and deleting
+  sent invitations, owns a board, or has attributed rows in one. This prevents
+  `user_id` cascades from deleting collaborators' data. Ownership transfer and deleting
   an explicit team remain separate future work; a member with no shared
   attribution can still delete their own account.
 
@@ -76,8 +76,9 @@ IDs and links, and legacy CRM writes land on the team's default `_inbox` board.
 The CRM task navigation tab is hidden, while the old endpoints remain for inline
 customer/deal actions and compatibility. A card belongs to one board and column;
 the composite task→column FK prevents cross-board or cross-team placement.
-`ProjectTaskWorkflow` handles ordered moves, completion time, work-in-progress
-limits, and activity. Board access combines `projects.*` role permissions with
+`ProjectTaskWorkflow` handles ordered moves, completion time, and activity;
+`Task` enforces work-in-progress limits for CRM writes and board writes alike.
+Board access combines `projects.*` role permissions with
 optional private-board membership; archived boards remain readable for recovery
 but reject edits. The default board cannot be archived because CRM inline task
 creation still needs it. The Archived filter finds cards across all columns

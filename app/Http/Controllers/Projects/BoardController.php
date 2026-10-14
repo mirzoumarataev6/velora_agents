@@ -22,6 +22,8 @@ use Illuminate\View\View;
 
 class BoardController extends Controller
 {
+    private const CARDS_PER_COLUMN = 50;
+
     private const ACCENTS = ['blue', 'violet', 'emerald', 'amber', 'rose'];
 
     private const FILTERS = ['all', 'mine', 'overdue', 'soon', 'archived'];
@@ -79,16 +81,24 @@ class BoardController extends Controller
         $search = trim((string) $request->query('q', ''));
         $search = mb_substr($search, 0, 100);
 
-        $columns = $board->columns()->with(['tasks' => function ($query) use ($board, $request, $filter, $search) {
-            $query->where('team_id', $board->team_id)
+        $columns = $board->columns()->get();
+        $pages = collect();
+        foreach ($columns as $column) {
+            // Each column has its own page cursor. A large board must never
+            // hydrate every card, assignee and checklist just to paint the
+            // first screen; a single global page would hide whole columns.
+            $page = $column->tasks()->where('team_id', $board->team_id)
                 ->when($filter === 'archived', fn ($q) => $q->whereNotNull('archived_at'), fn ($q) => $q->whereNull('archived_at'))
                 ->when($search !== '', fn ($q) => $q->where('title', 'like', '%'.addcslashes($search, '%_\\').'%'))
                 ->when($filter === 'mine', fn ($q) => $q->whereHas('assignees', fn ($members) => $members->where('users.id', $request->user()->id)))
                 ->when($filter === 'overdue', fn ($q) => $q->whereNull('done_at')->where('due_at', '<', now()))
                 ->when($filter === 'soon', fn ($q) => $q->whereNull('done_at')->whereBetween('due_at', [now(), now()->addDays(7)]))
                 ->with(['assignees:id,name', 'projectLabels:id,name,color', 'checklistItems:id,task_id,completed_at'])
-                ->orderBy('position')->orderBy('id');
-        }])->get();
+                ->orderBy('position')->orderBy('id')
+                ->paginate(self::CARDS_PER_COLUMN, ['*'], 'column_'.$column->id)->withQueryString();
+            $column->setRelation('tasks', $page->getCollection());
+            $pages->put($column->id, $page);
+        }
 
         $selectedId = $request->query('task');
         abort_if($selectedId !== null && (! is_scalar($selectedId) || ! ctype_digit((string) $selectedId)), 404);
@@ -134,6 +144,9 @@ class BoardController extends Controller
             'i18nExtraNamespaces' => ['projects'],
             'board' => $board,
             'columns' => $columns,
+            'pages' => $pages,
+            'dragEnabled' => $filter === 'all' && $search === ''
+                && $pages->every(fn ($page) => $page->total() <= self::CARDS_PER_COLUMN),
             'labels' => $board->labels()->orderBy('name')->get(),
             'members' => $members,
             'selectedTask' => $selectedTask,

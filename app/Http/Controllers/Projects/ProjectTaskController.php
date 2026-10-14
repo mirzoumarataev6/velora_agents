@@ -38,8 +38,6 @@ class ProjectTaskController extends Controller
         $this->checkAssignees($request->user(), $board, $data['assignee_ids'] ?? []);
 
         $task = DB::transaction(function () use ($request, $board, $column, $data, $workflow): Task {
-            $locked = ProjectColumn::whereKey($column->id)->lockForUpdate()->firstOrFail();
-            $this->checkWipLimit($locked);
             $task = Task::forceCreate([
                 'user_id' => $request->user()->id,
                 'team_id' => $board->team_id,
@@ -53,7 +51,6 @@ class ProjectTaskController extends Controller
                 'done_at' => $column->is_done ? now() : null,
                 'customer_id' => $data['customer_id'] ?? null,
                 'deal_id' => $data['deal_id'] ?? null,
-                'position' => ((int) Task::where('project_column_id', $column->id)->max('position')) + 1000,
             ]);
             $this->syncAssignees($task, $data['assignee_ids'] ?? []);
             $this->syncLabels($task, $data['label_ids'] ?? []);
@@ -126,7 +123,7 @@ class ProjectTaskController extends Controller
     public function archive(Request $request, ProjectBoard $board, Task $task, ProjectAccess $access, ProjectTaskWorkflow $workflow): RedirectResponse
     {
         $this->taskOnBoard($request, $board, $task, $access, PermissionCatalog::PROJECTS_EDIT, true);
-        $task->forceFill(['archived_at' => $task->archived_at ? null : now()])->save();
+        DB::transaction(fn () => $task->forceFill(['archived_at' => $task->archived_at ? null : now()])->save());
         $workflow->record($task, $request->user(), $task->archived_at ? 'archived' : 'restored');
 
         return redirect()->route('projects.boards.show', $board)->with('status', __('projects.messages.task_saved'));
@@ -224,14 +221,6 @@ class ProjectTaskController extends Controller
                     && ! DB::table('project_board_members')->where('board_id', $board->id)->where('user_id', $member->id)->exists())) {
                 throw ValidationException::withMessages(['assignee_ids' => __('projects.errors.assignee_cannot_view')]);
             }
-        }
-    }
-
-    private function checkWipLimit(ProjectColumn $column): void
-    {
-        if ($column->wip_limit !== null && ! $column->is_done
-            && Task::where('project_column_id', $column->id)->whereNull('archived_at')->count() >= $column->wip_limit) {
-            throw ValidationException::withMessages(['column_id' => __('projects.errors.wip_limit')]);
         }
     }
 

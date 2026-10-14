@@ -61,12 +61,15 @@ class DealController extends Controller
         $leadPage = $showLeads ? $this->board->leadsWithoutDeals($request->user(), $filters) : null;
         $leadsCount = $showLeads ? $leadPage->total() : ($hasLeadsBucket ? $this->board->leadsWithoutDealsCount($request->user(), $filters) : 0);
         $deepLinkedDeal = ctype_digit((string) $request->query('deal'))
-            ? Deal::ownedBy($request->user())->with(['customer', 'conversation.channel', 'tasks' => fn ($query) => $query->open()->orderBy('due_at')->limit(1)])->find($request->integer('deal'))
+            ? Deal::ownedBy($request->user())->with(['customer', 'conversation.channel', 'tasks' => fn ($query) => $query->visibleInCrm($request->user())->open()->orderBy('due_at')->limit(1)])->find($request->integer('deal'))
             : null;
         $initialDeal = $deepLinkedDeal ? $this->board->card(
             $deepLinkedDeal,
             $deepLinkedDeal->customer?->deals()->tap(fn ($q) => DealBoard::paidInWonStage()($q))->count() ?? 0,
             $deepLinkedDeal->customer?->conversations()->count() ?? 0,
+            null,
+            null,
+            $request->user(),
         ) : null;
 
         return view('crm.board', [
@@ -196,7 +199,7 @@ class DealController extends Controller
                 'label' => __('crm.board.timeline_activity'),
             ]);
 
-        $tasks = Task::where('team_id', $deal->team_id)->where('deal_id', $deal->id)->latest('created_at')->limit(30)->get()
+        $tasks = Task::visibleInCrm($request->user())->where('deal_id', $deal->id)->latest('created_at')->limit(30)->get()
             ->map(fn (Task $task) => [
                 'kind' => 'task',
                 'type' => $task->isDone() ? 'task_done' : 'task_created',
@@ -503,7 +506,7 @@ class DealController extends Controller
 
         $this->board->move($deal, $targetStage, $data['position'] ?? null, byOwner: true, cancelledReason: $data['cancelled_reason'] ?? null);
 
-        return response()->json(['deal' => $this->board->card($deal->fresh()->load('customer', 'conversation.channel'))]);
+        return response()->json(['deal' => $this->board->card($deal->fresh()->load('customer', 'conversation.channel'), viewer: $request->user())]);
     }
 
     /**
@@ -587,7 +590,7 @@ class DealController extends Controller
         }
 
         if ($request->wantsJson()) {
-            return response()->json(['deal' => $this->board->card($deal->fresh()->load('customer', 'conversation.channel'))]);
+            return response()->json(['deal' => $this->board->card($deal->fresh()->load('customer', 'conversation.channel'), viewer: $request->user())]);
         }
 
         return back()->with('status', __('crm.board.saved'));

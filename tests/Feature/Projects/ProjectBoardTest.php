@@ -10,10 +10,14 @@ use App\Models\Task;
 use App\Models\TeamMembership;
 use App\Models\User;
 use App\Services\Account\DeletesAccount;
+use App\Services\Account\SharedTeamAccountDeletionException;
 use App\Services\Permissions\PermissionCatalog;
 use App\Services\Projects\ProjectBoards;
 use App\Services\Projects\ProjectTaskWorkflow;
+use App\Services\Teams\CreatesTeam;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
 
 class ProjectBoardTest extends TestCase
@@ -106,6 +110,35 @@ class ProjectBoardTest extends TestCase
         $this->assertSame(1, Task::where('project_board_id', $first->id)->count());
     }
 
+    public function test_crm_reminders_and_restores_obey_the_same_wip_limit_as_board_cards(): void
+    {
+        $owner = User::factory()->create();
+        $board = app(ProjectBoards::class)->defaultForTeam($owner->current_team_id, $owner->id);
+        $column = $board->columns()->where('is_done', false)->firstOrFail();
+        $column->forceFill(['wip_limit' => 1])->save();
+
+        $this->actingAs($owner)->post(route('crm.tasks.store'), ['title' => 'First'])->assertRedirect();
+        $first = Task::where('title', 'First')->sole();
+        $this->post(route('crm.tasks.store'), ['title' => 'Second'])->assertSessionHasErrors('column_id');
+        $this->assertDatabaseMissing('tasks', ['title' => 'Second']);
+
+        $this->patch(route('crm.tasks.update', $first), ['done' => 1])->assertRedirect();
+        $this->post(route('crm.tasks.store'), ['title' => 'Second'])->assertRedirect();
+        $second = Task::where('title', 'Second')->sole();
+        $this->patch(route('crm.tasks.update', $first), ['done' => 0])->assertSessionHasErrors('column_id');
+        $this->assertNotNull($first->fresh()->done_at);
+
+        $this->patch(route('projects.tasks.archive', [$board, $second]))->assertRedirect();
+        $this->patch(route('crm.tasks.update', $first), ['done' => 0])->assertRedirect();
+        $this->patch(route('projects.tasks.archive', [$board, $second]))->assertSessionHasErrors('column_id');
+        $this->assertNotNull($second->fresh()->archived_at);
+
+        $first->delete();
+        $this->patch(route('projects.tasks.archive', [$board, $second]))->assertRedirect();
+        $this->expectException(ValidationException::class);
+        $first->restore();
+    }
+
     public function test_custom_role_without_project_permission_cannot_view_or_mutate(): void
     {
         $owner = User::factory()->create();
@@ -190,6 +223,40 @@ class ProjectBoardTest extends TestCase
         $this->patch(route('projects.tasks.move', [$board, $second]), [
             'column_id' => $column->id, 'before_task_id' => 987654,
         ])->assertSessionHasErrors('before_task_id');
+    }
+
+    public function test_a_large_board_loads_cards_in_bounded_pages_per_column(): void
+    {
+        $owner = User::factory()->create();
+        $board = app(ProjectBoards::class)->create($owner->current_team_id, $owner->id, 'Busy board');
+        $column = $board->columns()->first();
+        foreach (range(1, 55) as $number) {
+            Task::factory()->for($owner)->create([
+                'project_board_id' => $board->id,
+                'project_column_id' => $column->id,
+                'title' => sprintf('Card %02d', $number),
+            ]);
+        }
+
+        $this->actingAs($owner);
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+        $first = $this->get(route('projects.boards.show', $board))->assertOk();
+        $queryCount = count(DB::getQueryLog());
+        DB::disableQueryLog();
+        fwrite(STDERR, "[query-budget] projects busy board queries={$queryCount}\n");
+        // Pagination and eager loading must keep a busy board below a flat
+        // query budget; a query per card would be far above this threshold.
+        $this->assertLessThanOrEqual(25, $queryCount, "Busy board ran {$queryCount} queries.");
+        $this->assertStringContainsString('Card 01', $first->getContent());
+        $this->assertStringNotContainsString('Card 55', $first->getContent());
+        $this->assertSame(50, substr_count($first->getContent(), '<article data-project-task-id='));
+        $this->assertStringNotContainsString('draggable="true"', $first->getContent());
+        $this->assertStringContainsString(__('projects.move_hint'), $first->getContent());
+
+        $second = $this->get(route('projects.boards.show', [$board, 'column_'.$column->id => 2]))->assertOk();
+        $this->assertStringContainsString('Card 55', $second->getContent());
+        $this->assertStringNotContainsString('Card 01', $second->getContent());
     }
 
     public function test_manager_can_reorder_stages_without_changing_task_links(): void
@@ -282,5 +349,21 @@ class ProjectBoardTest extends TestCase
         $this->assertDatabaseMissing('project_boards', ['id' => $board->id]);
         $this->assertDatabaseMissing('tasks', ['id' => $task->id]);
         $this->assertDatabaseMissing('project_task_events', ['task_id' => $task->id]);
+    }
+
+    public function test_a_member_cannot_delete_an_account_that_owns_an_empty_private_shared_board(): void
+    {
+        $owner = User::factory()->create();
+        $team = app(CreatesTeam::class)->create($owner, 'Shared work');
+        $member = $this->member($owner, 'operator');
+        $board = app(ProjectBoards::class)->create($team->id, $member->id, 'Private draft', null, 'private');
+
+        try {
+            app(DeletesAccount::class)->delete($member);
+            $this->fail('The board needs an owner handoff before account deletion.');
+        } catch (SharedTeamAccountDeletionException) {
+            $this->assertDatabaseHas('users', ['id' => $member->id]);
+            $this->assertDatabaseHas('project_boards', ['id' => $board->id, 'created_by' => $member->id]);
+        }
     }
 }

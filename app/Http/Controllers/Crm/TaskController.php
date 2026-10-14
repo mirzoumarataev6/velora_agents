@@ -40,7 +40,7 @@ class TaskController extends Controller
             ? $request->query('filter')
             : self::FILTERS[0];
 
-        $tasks = Task::ownedBy($request->user())
+        $tasks = Task::visibleInCrm($request->user())
             ->when($filter === 'open', fn ($q) => $q->open())
             ->when($filter === 'today', fn ($q) => $q->dueToday())
             ->when($filter === 'overdue', fn ($q) => $q->overdue())
@@ -197,7 +197,9 @@ class TaskController extends Controller
             }
         }
 
-        $task->forceFill($changes)->save();
+        // The task model locks a destination column when a CRM completion
+        // toggle moves the card. Keep that lock through the UPDATE as well.
+        DB::transaction(fn () => $task->forceFill($changes)->save());
 
         if ($request->wantsJson()) {
             return response()->json(['message' => __('crm.tasks.saved'), 'done' => $task->isDone()]);
@@ -229,9 +231,9 @@ class TaskController extends Controller
     public static function counts(User $user): array
     {
         return [
-            'overdue' => Task::ownedBy($user)->overdue()->count(),
-            'today' => Task::ownedBy($user)->dueToday()->count(),
-            'open' => Task::ownedBy($user)->open()->count(),
+            'overdue' => Task::visibleInCrm($user)->overdue()->count(),
+            'today' => Task::visibleInCrm($user)->dueToday()->count(),
+            'open' => Task::visibleInCrm($user)->open()->count(),
         ];
     }
 }

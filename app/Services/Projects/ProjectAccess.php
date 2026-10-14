@@ -4,6 +4,7 @@ namespace App\Services\Projects;
 
 use App\Models\ProjectBoard;
 use App\Models\User;
+use App\Services\Permissions\PermissionCatalog;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Gate;
 
@@ -46,5 +47,16 @@ class ProjectAccess
             && ! $board->members()->where('users.id', $user->id)->exists()) {
             abort(404);
         }
+    }
+
+    public function canView(User $user, ProjectBoard $board): bool
+    {
+        if (! Gate::forUser($user)->allows(PermissionCatalog::PROJECTS_VIEW, [$board])) {
+            return false;
+        }
+
+        return $board->visibility !== 'private' || $board->created_by === $user->id
+            || Gate::forUser($user)->allows(PermissionCatalog::PROJECTS_MANAGE, [$board])
+            || $board->members()->where('users.id', $user->id)->exists();
     }
 }

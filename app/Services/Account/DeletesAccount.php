@@ -299,6 +299,15 @@ class DeletesAccount
             return true;
         }
 
+        // A board can be empty, so the attributed task inventory below would
+        // miss it. Letting its creator go would SET NULL created_by and make
+        // a private board ownerless before anyone arranges a handoff.
+        if (DB::table('project_boards')->join('teams', 'teams.id', '=', 'project_boards.team_id')
+            ->where('project_boards.created_by', $user->id)
+            ->where('teams.is_personal', false)->exists()) {
+            return true;
+        }
+
         foreach (self::ATTRIBUTED_TEAM_TABLES as $table) {
             if (DB::table($table)
                 ->join('teams', 'teams.id', '=', $table.'.team_id')

@@ -19,11 +19,6 @@ class ProjectTaskWorkflow
                 ->where('board_id', $locked->project_board_id)->lockForUpdate()->firstOrFail();
             $fromColumn = $locked->project_column_id;
 
-            if ($fromColumn !== $column->id && $column->wip_limit !== null && ! $column->is_done
-                && Task::where('project_column_id', $column->id)->whereNull('archived_at')->count() >= $column->wip_limit) {
-                throw ValidationException::withMessages(['column_id' => __('projects.errors.wip_limit')]);
-            }
-
             $siblings = Task::where('project_column_id', $column->id)->whereNull('archived_at')
                 ->whereKeyNot($locked->id)->orderBy('position')->orderBy('id')->lockForUpdate()->get();
             $index = $beforeTaskId === null ? $siblings->count() : $siblings->search(fn (Task $sibling) => $sibling->id === $beforeTaskId);
