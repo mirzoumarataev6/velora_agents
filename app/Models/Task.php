@@ -17,7 +17,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use LogicException;
 
 #[Fillable(['customer_id', 'deal_id', 'title', 'due_at', 'done_at', 'priority', 'type'])]
 #[UsePolicy(TaskPolicy::class)]
@@ -100,12 +102,35 @@ class Task extends Model
             return;
         }
 
+        static::assertLockIsLive($column);
+
         $occupants = static::where('project_column_id', $column->id)->whereNull('archived_at');
         if ($task->exists) {
             $occupants->whereKeyNot($task->id);
         }
         if ($occupants->count() >= $column->wip_limit) {
             throw ValidationException::withMessages(['column_id' => __('projects.errors.wip_limit')]);
+        }
+    }
+
+    /**
+     * `lockForUpdate()` above only holds a row lock for the life of an open
+     * transaction — outside one, the lock is released the instant that
+     * SELECT returns, so two concurrent writers could each pass the
+     * occupancy count below before either one's insert/update actually
+     * lands, silently turning a hard WIP limit into an advisory one. Every
+     * caller that reaches a limited column MUST already be inside
+     * DB::transaction() for the lock above to mean anything; this throws
+     * loudly the moment that stops being true rather than let the limit
+     * quietly become decorative again.
+     */
+    private static function assertLockIsLive(ProjectColumn $column): void
+    {
+        if ($column->wip_limit !== null && DB::transactionLevel() === 0) {
+            throw new LogicException(
+                'Task::assertColumnHasRoom() reached a wip_limit column outside an open transaction. '.
+                'Wrap whatever call created or moved this task in DB::transaction() so the row lock above holds.'
+            );
         }
     }
 

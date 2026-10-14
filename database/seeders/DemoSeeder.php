@@ -742,7 +742,11 @@ class DemoSeeder extends Seeder
             }
 
             if (! empty($profile['task'])) {
-                Task::forceCreate([
+                // Task::booted() locks the destination column to check its
+                // WIP limit before inserting; that lock only holds inside a
+                // transaction (see Task::assertLockIsLive()), so this write
+                // needs one exactly like every other task-creating path does.
+                DB::transaction(fn () => Task::forceCreate([
                     'user_id' => $owner->id,
                     'customer_id' => $customer->id,
                     'deal_id' => $deal->id,
@@ -752,7 +756,7 @@ class DemoSeeder extends Seeder
                         ->setTime(16, 0)->utc(),
                     'created_at' => $openedAt,
                     'updated_at' => $lastActivity,
-                ]);
+                ]));
             }
         }
 
