@@ -17,7 +17,7 @@ use Illuminate\Support\Str;
  * yet read by anything (Stage 1 is schema-only; a later stage wires
  * Policies to it).
  */
-#[Fillable(['name', 'slug', 'created_by'])]
+#[Fillable(['name', 'slug', 'created_by', 'is_personal'])]
 class Team extends Model
 {
     /** @use HasFactory<TeamFactory> */
@@ -25,7 +25,7 @@ class Team extends Model
 
     protected function casts(): array
     {
-        return ['trial_ends_at' => 'datetime'];
+        return ['trial_ends_at' => 'datetime', 'is_personal' => 'boolean'];
     }
 
     protected static function booted(): void

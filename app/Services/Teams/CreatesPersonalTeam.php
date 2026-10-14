@@ -21,6 +21,7 @@ class CreatesPersonalTeam
         $team = Team::create([
             'name' => $this->defaultName($user),
             'created_by' => $user->id,
+            'is_personal' => true,
         ]);
 
         $roles = Role::copyTemplatesFor($team);
