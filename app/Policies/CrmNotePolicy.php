@@ -13,17 +13,17 @@ class CrmNotePolicy
 
     public function view(User $user, CrmNote $note): bool
     {
-        return $this->permitted($user, PermissionCatalog::ANALYTICS_VIEW, $note);
+        return $this->permitted($user, PermissionCatalog::CRM_VIEW, $note);
     }
 
     public function create(User $user): bool
     {
-        return $this->permitted($user, PermissionCatalog::ANALYTICS_MANAGE);
+        return $this->permitted($user, PermissionCatalog::CRM_MANAGE);
     }
 
     /** Notes are shared CRM data; deletion requires the team's manage permission. */
     public function delete(User $user, CrmNote $note): bool
     {
-        return $this->permitted($user, PermissionCatalog::ANALYTICS_MANAGE, $note);
+        return $this->permitted($user, PermissionCatalog::CRM_MANAGE, $note);
     }
 }

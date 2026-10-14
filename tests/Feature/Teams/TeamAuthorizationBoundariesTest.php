@@ -46,7 +46,7 @@ class TeamAuthorizationBoundariesTest extends TestCase
     public function test_crm_view_does_not_bypass_a_revoked_conversation_permission(): void
     {
         $owner = User::factory()->create();
-        $member = $this->member($owner, ['analytics.view']);
+        $member = $this->member($owner, ['crm.view']);
         $customer = Customer::factory()->create(['user_id' => $owner->id]);
         $agent = Agent::factory()->create(['user_id' => $owner->id]);
         $conversation = Conversation::factory()->create(['agent_id' => $agent->id, 'customer_id' => $customer->id]);

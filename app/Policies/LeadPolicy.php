@@ -13,21 +13,21 @@ class LeadPolicy
 
     public function viewAny(User $user): bool
     {
-        return $this->permitted($user, PermissionCatalog::ANALYTICS_VIEW);
+        return $this->permitted($user, PermissionCatalog::CRM_VIEW);
     }
 
     public function view(User $user, Lead $lead): bool
     {
-        return $this->permitted($user, PermissionCatalog::ANALYTICS_VIEW, $lead);
+        return $this->permitted($user, PermissionCatalog::CRM_VIEW, $lead);
     }
 
     public function update(User $user, Lead $lead): bool
     {
-        return $this->permitted($user, PermissionCatalog::ANALYTICS_MANAGE, $lead);
+        return $this->permitted($user, PermissionCatalog::CRM_MANAGE, $lead);
     }
 
     public function delete(User $user, Lead $lead): bool
     {
-        return $this->permitted($user, PermissionCatalog::ANALYTICS_MANAGE, $lead);
+        return $this->permitted($user, PermissionCatalog::CRM_MANAGE, $lead);
     }
 }

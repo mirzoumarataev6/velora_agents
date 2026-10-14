@@ -115,7 +115,7 @@ class BoardController extends Controller
         $members = $memberships->filter(fn (TeamMembership $membership) => $membership->role->is_owner
             || in_array($membership->role_id, $viewRoleIds, true));
 
-        $canViewCrm = $request->user()->can(PermissionCatalog::ANALYTICS_VIEW);
+        $canViewCrm = $request->user()->can(PermissionCatalog::CRM_VIEW);
         $customers = collect();
         $deals = collect();
         if ($selectedTask !== null && $canViewCrm) {

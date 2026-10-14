@@ -156,8 +156,10 @@
             {{-- CRM sits between the inbox and Заявки on purpose: it is what
                  the conversations on the left turn INTO, and it is the section
                  the owner works in rather than reads. Kept distinct from
-                 Аналитика at the top, which stays a pure report. --}}
-            @can('analytics.view')
+                 Аналитика at the top, which stays a pure report. Its own
+                 crm.view, not analytics.view — Stage B's whole point is that
+                 CRM access is grantable without BI riding along. --}}
+            @can('crm.view')
             <a href="{{ route('crm.board') }}" aria-label="{{ __('agents.nav.crm') }}" data-i18n-al="agents.nav.crm"
                 data-nav="crm"
                 @if (request()->routeIs('crm.*')) aria-current="page" @endif
@@ -194,7 +196,11 @@
             </a>
             @endcan
 
-            @can('analytics.view')
+            {{-- Заявки feed straight into a deal (deals.lead_id) and are
+                 worked the same way a deal is — approve/decline a price,
+                 change status, delete — so this is crm.view/crm.manage
+                 territory, not analytics.*. See LeadPolicy's own docblock. --}}
+            @can('crm.view')
             <a href="{{ route('leads.index') }}" aria-label="{{ __('agents.nav.leads') }}" data-i18n-al="agents.nav.leads"
                 data-nav="leads"
                 @if (request()->routeIs('leads.*')) aria-current="page" @endif
@@ -355,7 +361,7 @@
     // script that defines `window.Alpine` and registers the store has had a
     // chance to execute, so there is nothing yet to call here.
     window.__shellConfig = {
-        pollUrl: @js(auth()->user()->can('analytics.view') ? route('leads.poll') : ''),
+        pollUrl: @js(auth()->user()->can('crm.view') ? route('leads.poll') : ''),
         seenUrl: '{{ route('leads.seen') }}',
         leadsUrl: '{{ route('leads.index') }}',
         needsHumanUrl: '{{ route('conversations.index', ['status' => 'needs_human']) }}',

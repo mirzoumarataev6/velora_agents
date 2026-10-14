@@ -13,26 +13,26 @@ class CrmWorkspacePolicy
 
     public function viewAny(User $user): bool
     {
-        return $this->permitted($user, PermissionCatalog::ANALYTICS_VIEW);
+        return $this->permitted($user, PermissionCatalog::CRM_VIEW);
     }
 
     public function create(User $user): bool
     {
-        return $this->permitted($user, PermissionCatalog::ANALYTICS_MANAGE);
+        return $this->permitted($user, PermissionCatalog::CRM_MANAGE);
     }
 
     public function view(User $user, CrmWorkspace $workspace): bool
     {
-        return $this->permitted($user, PermissionCatalog::ANALYTICS_VIEW, $workspace);
+        return $this->permitted($user, PermissionCatalog::CRM_VIEW, $workspace);
     }
 
     public function update(User $user, CrmWorkspace $workspace): bool
     {
-        return ! $workspace->is_default && $this->permitted($user, PermissionCatalog::ANALYTICS_MANAGE, $workspace);
+        return ! $workspace->is_default && $this->permitted($user, PermissionCatalog::CRM_MANAGE, $workspace);
     }
 
     public function delete(User $user, CrmWorkspace $workspace): bool
     {
-        return ! $workspace->is_default && $this->permitted($user, PermissionCatalog::ANALYTICS_MANAGE, $workspace);
+        return ! $workspace->is_default && $this->permitted($user, PermissionCatalog::CRM_MANAGE, $workspace);
     }
 }

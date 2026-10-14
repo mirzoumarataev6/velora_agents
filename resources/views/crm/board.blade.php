@@ -70,7 +70,7 @@
                  is simpler and more robust than anything a click handler
                  would have to reimplement for a file response. --}}
             <a :href="exportUrl()" data-turbo="false" class="btn btn-secondary btn-sm">{{ __('crm.board.export') }}</a>
-            @can('analytics.manage')
+            @can('crm.manage')
             <button type="button" @click="adding = true" class="btn btn-primary btn-sm">{{ __('crm.board.add') }}</button>
             @endcan
         </div>
@@ -100,7 +100,7 @@
                         <option value="{{ $workspace->id }}">{{ $workspace->displayName() }}</option>
                     @endforeach
                 </select>
-                @can('analytics.manage')
+                @can('crm.manage')
                 <button type="button" @click="createWorkspace()" class="btn btn-ghost btn-sm shrink-0">+ {{ __('crm.workspaces.create') }}</button>
                 @endcan
             </div>
@@ -126,7 +126,7 @@
                             <span class="truncate">{{ $workspace->displayName() }}</span>
                         </button>
                         @if (! $workspace->is_default)
-                            @can('analytics.manage')
+                            @can('crm.manage')
                             <button type="button" @click="manageWorkspace({{ $workspace->id }}, @js($workspace->name))"
                                 class="border-l border-hairline px-2 py-2 text-muted hover:text-brand dark:border-white/10 dark:text-night-muted"
                                 aria-label="{{ __('crm.workspaces.manage', ['name' => $workspace->name]) }}">···</button>
@@ -134,7 +134,7 @@
                         @endif
                     </div>
                 @endforeach
-                @can('analytics.manage')
+                @can('crm.manage')
                 <button type="button" @click="createWorkspace()"
                     class="inline-flex items-center gap-2 rounded-lg border border-dashed border-hairline px-3 py-2 text-sm text-muted transition-colors hover:border-brand hover:text-brand dark:border-white/15 dark:text-night-muted">
                     <span aria-hidden="true">+</span><span>{{ __('crm.workspaces.create') }}</span>
@@ -352,7 +352,7 @@
                             <td class="px-4 py-3.5 text-right">
                                 <button type="button" data-qa="open-deal" @click.stop="open(deal, $el)"
                                     class="btn btn-ghost btn-sm min-h-10">{{ __('crm.board.open_deal') }}</button>
-                                @can('analytics.manage')
+                                @can('crm.manage')
                                 <button type="button" @click.stop="destroy(deal)"
                                     class="btn btn-ghost btn-sm min-h-10 min-w-10 opacity-0 transition-opacity focus:opacity-100 group-hover:opacity-100" aria-label="{{ __('crm.board.delete') }}">
                                     <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 7h12M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m2 0-1 13a2 2 0 01-2 2H8a2 2 0 01-2-2L5 7h14z"/></svg>
@@ -381,7 +381,7 @@
                             </td>
                             <td class="px-4 py-3.5 text-xs text-muted dark:text-night-muted" x-text="lead.last_activity || '—'"></td>
                             <td class="px-4 py-3.5 text-right">
-                                @can('analytics.manage')
+                                @can('crm.manage')
                                 <button type="button" @click="openCreateFor(lead.id, lead.name)" class="btn btn-secondary btn-sm">
                                     {{ __('crm.board.create_deal_for') }}
                                 </button>
@@ -430,10 +430,10 @@
         </div>
 
     @include('crm.partials.deal-modal')
-    @can('analytics.manage')
+    @can('crm.manage')
     @include('crm.partials.deal-create', ['initialCustomer' => $initialCustomer])
     @endcan
-    @can('analytics.manage')
+    @can('crm.manage')
     @include('crm.partials.workspace-modal')
     @endcan
 

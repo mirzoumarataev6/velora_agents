@@ -23,7 +23,7 @@ class ProjectPrivacyRegressionTest extends TestCase
         $operator = User::factory()->create();
         $role = Role::where('team_id', $owner->current_team_id)->where('slug', 'operator')->sole();
         $role->syncPermissions([
-            PermissionCatalog::ANALYTICS_VIEW, PermissionCatalog::ANALYTICS_MANAGE,
+            PermissionCatalog::CRM_VIEW, PermissionCatalog::CRM_MANAGE,
             PermissionCatalog::PROJECTS_VIEW,
         ]);
         TeamMembership::create([
@@ -53,7 +53,7 @@ class ProjectPrivacyRegressionTest extends TestCase
         $operator = User::factory()->create();
         $role = Role::where('team_id', $owner->current_team_id)->where('slug', 'operator')->sole();
         $role->syncPermissions([
-            PermissionCatalog::ANALYTICS_VIEW, PermissionCatalog::ANALYTICS_MANAGE,
+            PermissionCatalog::CRM_VIEW, PermissionCatalog::CRM_MANAGE,
             PermissionCatalog::PROJECTS_VIEW, PermissionCatalog::PROJECTS_EDIT,
         ]);
         TeamMembership::create([

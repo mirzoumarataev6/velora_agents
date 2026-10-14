@@ -13,32 +13,32 @@ class CustomerPolicy
 
     public function viewAny(User $user): bool
     {
-        return $this->permitted($user, PermissionCatalog::ANALYTICS_VIEW);
+        return $this->permitted($user, PermissionCatalog::CRM_VIEW);
     }
 
     public function create(User $user): bool
     {
-        return $this->permitted($user, PermissionCatalog::ANALYTICS_MANAGE);
+        return $this->permitted($user, PermissionCatalog::CRM_MANAGE);
     }
 
     /** Downloading the directory as CSV — same question as viewAny, named for what it is. */
     public function export(User $user): bool
     {
-        return $this->permitted($user, PermissionCatalog::ANALYTICS_VIEW);
+        return $this->permitted($user, PermissionCatalog::CRM_VIEW);
     }
 
     public function view(User $user, Customer $customer): bool
     {
-        return $this->permitted($user, PermissionCatalog::ANALYTICS_VIEW, $customer);
+        return $this->permitted($user, PermissionCatalog::CRM_VIEW, $customer);
     }
 
     public function update(User $user, Customer $customer): bool
     {
-        return $this->permitted($user, PermissionCatalog::ANALYTICS_MANAGE, $customer);
+        return $this->permitted($user, PermissionCatalog::CRM_MANAGE, $customer);
     }
 
     public function delete(User $user, Customer $customer): bool
     {
-        return $this->permitted($user, PermissionCatalog::ANALYTICS_MANAGE, $customer);
+        return $this->permitted($user, PermissionCatalog::CRM_MANAGE, $customer);
     }
 }

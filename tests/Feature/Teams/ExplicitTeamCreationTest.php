@@ -66,7 +66,7 @@ class ExplicitTeamCreationTest extends TestCase
         // The same shared row must disappear from authorization as soon as
         // the assigned role loses that permission; team membership alone
         // never grants access to the owner's agents.
-        $role->syncPermissions([PermissionCatalog::ANALYTICS_VIEW]);
+        $role->syncPermissions([PermissionCatalog::CRM_VIEW]);
         $member->flushPermissionCache();
         $this->assertFalse($member->can('view', $agent));
         $this->assertTrue($member->can('view', $customer));

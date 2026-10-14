@@ -98,7 +98,7 @@ class ConversationController extends Controller
                 'started_at' => $conversation->created_at?->toIso8601String(),
             ]),
             'messages' => $messages->map(fn (Message $m) => $this->presentMessage($m))->all(),
-            'leads' => ($request->user()->can('analytics.view', $conversation) ? $conversation->leads : collect())->map(fn (Lead $lead) => [
+            'leads' => ($request->user()->can('crm.view', $conversation) ? $conversation->leads : collect())->map(fn (Lead $lead) => [
                 'id' => $lead->id,
                 'customer_name' => $lead->customer_name,
                 'contact' => $lead->contact,

@@ -14,29 +14,29 @@ class TaskPolicy
 
     public function viewAny(User $user): bool
     {
-        return $this->permitted($user, PermissionCatalog::ANALYTICS_VIEW);
+        return $this->permitted($user, PermissionCatalog::CRM_VIEW);
     }
 
     public function create(User $user): bool
     {
-        return $this->permitted($user, PermissionCatalog::ANALYTICS_MANAGE);
+        return $this->permitted($user, PermissionCatalog::CRM_MANAGE);
     }
 
     public function view(User $user, Task $task): bool
     {
-        return $this->permitted($user, PermissionCatalog::ANALYTICS_VIEW, $task)
+        return $this->permitted($user, PermissionCatalog::CRM_VIEW, $task)
             && $this->visibleFromCrm($user, $task);
     }
 
     public function update(User $user, Task $task): bool
     {
-        return $this->permitted($user, PermissionCatalog::ANALYTICS_MANAGE, $task)
+        return $this->permitted($user, PermissionCatalog::CRM_MANAGE, $task)
             && $this->visibleFromCrm($user, $task, true);
     }
 
     public function delete(User $user, Task $task): bool
     {
-        return $this->permitted($user, PermissionCatalog::ANALYTICS_MANAGE, $task)
+        return $this->permitted($user, PermissionCatalog::CRM_MANAGE, $task)
             && $this->visibleFromCrm($user, $task, true);
     }
 

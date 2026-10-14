@@ -198,7 +198,7 @@ class ProjectTaskController extends Controller
     private function checkCrmAccess(Request $request, array $data, ?Task $task = null): void
     {
         if (filled($data['customer_id'] ?? null) || filled($data['deal_id'] ?? null)) {
-            $this->authorize(PermissionCatalog::ANALYTICS_VIEW);
+            $this->authorize(PermissionCatalog::CRM_VIEW);
         }
         $customerId = array_key_exists('customer_id', $data) ? $data['customer_id'] : $task?->customer_id;
         $dealId = array_key_exists('deal_id', $data) ? $data['deal_id'] : $task?->deal_id;

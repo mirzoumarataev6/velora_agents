@@ -51,7 +51,7 @@
 
                 {{-- Reordering is for intermediates only — initial and won
                      always bracket the pipeline, see CrmStageController::reorder(). --}}
-                @can('analytics.manage')
+                @can('crm.manage')
                 @if ($stage->role === null)
                     @php $position = $intermediateIds->search($stage->id); @endphp
                     <div class="flex shrink-0 gap-1">
@@ -86,7 +86,7 @@
                 @endcan
             </div>
 
-            @can('analytics.manage')
+            @can('crm.manage')
             <div x-show="editing === {{ $stage->id }}" x-cloak class="border-t border-hairline bg-sunk/40 p-4 dark:border-white/10 dark:bg-night-raised/40">
                 <form method="POST" action="{{ route('crm.stages.update', $stage) }}" class="space-y-3">
                     @csrf
@@ -146,7 +146,7 @@
         @endforeach
     </div>
 
-    @can('analytics.manage')
+    @can('crm.manage')
     <div class="card mt-4 card-pad">
         <button type="button" x-show="!adding" @click="adding = true" class="btn btn-secondary btn-sm">{{ __('crm.stages.add') }}</button>
         <form x-show="adding" x-cloak method="POST" action="{{ route('crm.stages.store') }}" class="space-y-3">
