@@ -63,6 +63,14 @@ class ExplicitTeamCreationTest extends TestCase
         $this->assertFalse($member->can('update', $agent));
         $this->assertFalse($member->can('update', $customer));
 
+        // The same shared row must disappear from authorization as soon as
+        // the assigned role loses that permission; team membership alone
+        // never grants access to the owner's agents.
+        $role->syncPermissions([PermissionCatalog::ANALYTICS_VIEW]);
+        $member->flushPermissionCache();
+        $this->assertFalse($member->can('view', $agent));
+        $this->assertTrue($member->can('view', $customer));
+
         $this->actingAs($owner)->get(route('teams.index'))->assertOk()
             ->assertSee('Sales')
             ->assertSee('id="team-invite-email"', false)
