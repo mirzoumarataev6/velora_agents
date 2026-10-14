@@ -6,12 +6,17 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 
 /**
- * Switches which team the signed-in user is currently looking at — read-only
- * groundwork (Stage 3a). Nothing here changes what a user is ALLOWED to do
- * once switched; it only moves `current_team_id`, which `User::activeTeamId()`
- * (Stage 2d-4) and every CRM `scopeOwnedBy()` already read. Policies/Gates
- * are untouched and still reduce to `user_id === $model->user_id` — that is
- * a later stage's job.
+ * Switches which team the signed-in user is currently looking at. Nothing
+ * here changes what a user is ALLOWED to do once switched — only
+ * `current_team_id` moves, which `User::activeTeamId()` and every
+ * `scopeOwnedBy()` read for a LIST/CREATE check that has no bound resource
+ * yet (see `RegistersTeamPermissions::teamId()`). A check against an
+ * already-loaded model never consults this: every resource Policy resolves
+ * team membership and permissions from the row's own `team_id`
+ * (`TeamResolver::resolveTeamId()`), so switching the menu cannot change
+ * whether an already-bound resource is authorized — that invariant is what
+ * stops a stale or forged `current_team_id` from ever widening access to
+ * something the switcher itself didn't open.
  */
 class TeamSwitchController extends Controller
 {

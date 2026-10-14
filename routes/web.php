@@ -98,7 +98,13 @@ Route::middleware(['auth', 'auth.session'])->group(function () {
     Route::patch('/teams/members/{membership}', [TeamMemberController::class, 'update'])->name('teams.members.update');
     Route::delete('/teams/members/{membership}', [TeamMemberController::class, 'destroy'])->name('teams.members.destroy');
 
-    // Stage 3d keeps role management owner-only until the Policy/Gate rewrite.
+    // Gated by team.roles.view/team.roles.manage, not by an owner-only
+    // check — any role holding that permission (Admin by default, or a
+    // custom one) can read or edit roles. AuthorizesRoleGrants is the
+    // actual ceiling: a manager can never hand out, edit onto, or revoke a
+    // role carrying a permission they do not themselves hold, and the
+    // Owner role is immune to every one of these endpoints regardless of
+    // who is acting (TeamRoleController::update()'s own abort_if).
     Route::get('/teams/roles', [TeamRoleController::class, 'index'])->name('teams.roles.index');
     Route::post('/teams/roles', [TeamRoleController::class, 'store'])->name('teams.roles.store');
     Route::patch('/teams/roles/{role}', [TeamRoleController::class, 'update'])->name('teams.roles.update');
