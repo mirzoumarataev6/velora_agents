@@ -355,7 +355,7 @@
                                     class="hidden rounded-lg px-2.5 py-1.5 text-xs font-semibold text-muted transition-colors hover:border-danger/40 hover:text-danger dark:text-night-muted sm:block"
                                     data-i18n="conversations.thread.close">{{ __('conversations.thread.close') }}</button>
 
-                                <button type="button" x-show="thread?.status === 'closed'" x-cloak @click="setStatusFor('ai')"
+                                <button type="button" x-show="thread?.can_takeover && thread?.status === 'closed'" x-cloak @click="setStatusFor('ai')"
                                     class="rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors hover:border-brand/40 hover:text-brand-strong"
                                     data-i18n="conversations.thread.reopen">{{ __('conversations.thread.reopen') }}</button>
                             </div>

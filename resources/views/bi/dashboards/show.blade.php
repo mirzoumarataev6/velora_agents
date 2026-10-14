@@ -22,6 +22,7 @@
 --}}
 <div x-data="biBoard({
         layoutUrl: '{{ route('bi.dashboards.layout', $dashboard) }}',
+        canManage: @js(auth()->user()->can('update', $dashboard)),
         widgetDataUrlBase: '{{ route('bi.widgets.data', ['dashboard' => $dashboard, 'widget' => '__ID__']) }}',
         widgetDeleteUrlBase: '{{ route('bi.widgets.destroy', ['dashboard' => $dashboard, 'widget' => '__ID__']) }}',
         widgetUpdateUrlBase: '{{ route('bi.widgets.update', ['dashboard' => $dashboard, 'widget' => '__ID__']) }}',
@@ -110,10 +111,14 @@
                 <span x-show="refreshing" x-cloak>{{ __('bi.analysis.processing') }}</span>
             </button>
 
+            @can('update', $dashboard)
             <button type="button" class="btn btn-primary text-sm" @click="newWidget()">
                 {{ __('bi.widgets.add') }}
             </button>
+            @endcan
+            @can('update', $dashboard)
             <button type="button" x-ref="chatToggle" data-qa="chat-toggle" class="btn btn-ghost text-sm" @click="chatOpen=true; $nextTick(() => $refs.chatClose?.focus())" :aria-expanded="chatOpen">{{ __('bi.chat.title') }}</button>
+            @endcan
         </div>
     </div>
 
@@ -126,10 +131,12 @@
                 @if ($sheetBoard)
                     <a href="{{ route('bi.dashboards.show', $sheetBoard) }}" class="tab {{ $sheet->id === $dashboard->bi_dataset_id ? 'active' : '' }}">{{ $sheet->sheet_name ?: $sheet->name }}</a>
                 @else
+                    @can('update', $dashboard)
                     <form method="POST" action="{{ route('bi.sources.analyze', $dashboard->source) }}">@csrf
                         <input type="hidden" name="dataset_id" value="{{ $sheet->id }}">
                         <button type="submit" class="tab">{{ $sheet->sheet_name ?: $sheet->name }}</button>
                     </form>
+                    @endcan
                 @endif
             @endforeach
         </nav>
@@ -143,7 +150,9 @@
         <div class="card card-pad mt-6 flex flex-col items-center justify-center py-16 text-center">
             <h2 class="text-base font-medium text-ink dark:text-night-ink">{{ __('bi.dashboards.board_empty_title') }}</h2>
             <p class="mt-1 max-w-md text-sm text-muted dark:text-night-muted">{{ __('bi.dashboards.board_empty_body') }}</p>
+            @can('update', $dashboard)
             <button type="button" class="btn btn-primary mt-5" @click="newWidget()">{{ __('bi.widgets.add') }}</button>
+            @endcan
         </div>
     @endif
         <div class="grid-stack" x-ref="grid">
@@ -164,10 +173,14 @@
             @endforeach
         </div>
     </div>
+    @can('update', $dashboard)
     @include('bi.partials.analyst-chat')
+    @endcan
     </div>
 
+    @can('update', $dashboard)
     @include('bi.partials.widget-editor')
+    @endcan
 </div>
 @endsection
 

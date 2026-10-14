@@ -26,7 +26,7 @@ a skeleton, whatever an older version of this file said.
 | Local dev, backend only | `composer run dev:fast` |
 | Queue workers only | `composer run queue` |
 | **Run all tests** | `composer run test` |
-| One file / one test | `php artisan test tests/Feature/Bi/IngestionTest.php` · `php artisan test --filter=test_name` |
+| One file / one test | `composer run test -- tests/Feature/Bi/IngestionTest.php` · `composer run test -- --filter=test_name` |
 | Format PHP | `php vendor/bin/pint` |
 | Build / watch assets | `npm run build` · `npm run dev` |
 | Queue health | `php artisan queue:health` (add `--json`) |

@@ -50,6 +50,7 @@
             </div>
         </div>
 
+        @can('update', $widget)
         <div class="relative shrink-0" x-data="{open:false}" @click.outside="open=false">
             @if ($timeAxis)
                 <select class="field mr-1 !w-24 !py-1 text-xs" aria-label="{{ __('bi.widgets.dimension') }}"
@@ -67,6 +68,7 @@
                 <button type="button" class="block w-full rounded-lg px-3 py-2 text-left text-xs text-danger hover:bg-sunk dark:hover:bg-night-raised" @click="removeWidget({{ $widget->id }});open=false">{{ __('bi.data.delete') }}</button>
             </div>
         </div>
+        @endcan
     </div>
 
     <div class="widget-body px-4 pb-3">

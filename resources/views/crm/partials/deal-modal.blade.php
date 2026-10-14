@@ -37,7 +37,7 @@
                      page; tags stay read-only here and are edited on the
                      full profile, which is still one click away. --}}
                 <div class="flex flex-wrap items-center gap-1.5">
-                    <select @change="changeCustomerStatus(selected, $event.target.value)"
+                    <select @disabled(! auth()->user()->can('analytics.manage')) @change="changeCustomerStatus(selected, $event.target.value)"
                         class="field w-fit px-2 py-1 text-xs">
                         @foreach (\App\Models\Customer::STATUSES as $status)
                             <option value="{{ $status }}" :selected="selected.customer_status === @js($status)">
@@ -78,15 +78,18 @@
                                     <p class="mt-0.5 whitespace-pre-line break-words text-muted dark:text-night-muted" x-text="item.text"></p>
                                     <p class="mt-0.5 text-xs text-muted dark:text-night-muted" x-text="new Date(item.at).toLocaleString(document.documentElement.lang)"></p>
                                 </div>
+                                @can('analytics.manage')
                                 <button type="button" x-show="item.kind === 'crm_note' && item.can_delete" x-cloak
                                     @click="deleteNote(item)" class="mt-0.5 shrink-0 text-muted hover:text-danger dark:text-night-muted"
                                     aria-label="{{ __('crm.notes.delete') }}">✕</button>
+                                @endcan
                                 <span x-show="item.kind !== 'crm_note'" x-html="channelIcon(item.channel)" class="mt-0.5 shrink-0"></span>
                             </li>
                         </template>
                     </ol>
 
                     {{-- The "add entry" box: a note or a manually logged call/visit/meeting — posts via addNote() and prepends into the thread above. --}}
+                    @can('analytics.manage')
                     <div class="mt-3 space-y-2 border-t border-hairline pt-3 dark:border-white/10">
                         <div class="flex gap-2">
                             <select x-model="noteForm.kind" class="field w-32 shrink-0 px-2 py-1.5 text-xs">
@@ -103,10 +106,12 @@
                         <button type="button" @click="addNote()" :disabled="noteSaving || !noteForm.body.trim()"
                             class="btn btn-secondary btn-sm disabled:opacity-50">{{ __('crm.notes.add') }}</button>
                     </div>
+                    @endcan
                 </section>
 
                 <hr class="rule" />
 
+                <fieldset @disabled(! auth()->user()->can('analytics.manage'))>
                 <div>
                     <label class="mb-1 block text-sm font-medium" :for="'deal-title-' + selected.id">{{ __('crm.board.add_title') }}</label>
                     <input :id="'deal-title-' + selected.id" x-model="editForm.title" required maxlength="255"
@@ -238,10 +243,13 @@
 
                 <hr class="rule" />
 
+                @can('analytics.manage')
                 <div class="sticky bottom-0 z-10 flex gap-2 border-t border-hairline bg-surface py-3 dark:border-white/10 dark:bg-night-card">
                     <button type="submit" :disabled="editSaving" class="btn btn-primary btn-sm flex-1">{{ __('crm.board.save') }}</button>
                     <button type="button" @click="destroy(selected)" class="btn btn-danger-soft btn-sm">{{ __('crm.board.delete') }}</button>
                 </div>
+                @endcan
+                </fieldset>
             </form>
         </template>
     </div>

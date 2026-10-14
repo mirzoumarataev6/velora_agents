@@ -81,7 +81,7 @@ function biBoard(config) {
                        number out of. */
                     handle: '.widget-head',
                     resizable: { handles: 'se, sw' },
-                    staticGrid: window.matchMedia('(max-width: 767px)').matches,
+                    staticGrid: !this.canManage || window.matchMedia('(max-width: 767px)').matches,
                     animate: !window.matchMedia('(prefers-reduced-motion: reduce)').matches,
                 },
                 this.$refs.grid
