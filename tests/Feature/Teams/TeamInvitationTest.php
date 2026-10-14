@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Teams;
 
+use App\Http\Controllers\Teams\TeamInvitationController;
 use App\Mail\TeamInvitationMail;
 use App\Models\Invitation;
 use App\Models\Role;
@@ -10,13 +11,22 @@ use App\Models\User;
 use App\Services\Permissions\PermissionCatalog;
 use App\Services\Teams\CreatesTeam;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Mail;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Tests\TestCase;
 
 /**
- * Stage 3b: inviting someone by email to join a team, and accepting that
- * invitation. No Policy class — see TeamInvitationController's own
- * docblock for why its `isOwnerOf()` checks are inline and temporary.
+ * Inviting someone by email to join a team, and accepting that invitation.
+ * Still no dedicated Policy class for Invitation — authorization here is
+ * the catalog permission `team.members.invite` (`$this->authorize()` in
+ * the controller) plus `AuthorizesRoleGrants::canGrant()`, which keeps an
+ * inviter from handing out — or revoking someone else's invitation to — a
+ * role carrying permissions they do not themselves hold. That is deliberate
+ * and not a placeholder: `store()`/`destroy()` both need the SAME
+ * escalation check against a `Role` that is not yet (or no longer) a live
+ * membership, which is exactly what `canGrant()` already exists for, so a
+ * Policy class here would just wrap it a second time.
  */
 class TeamInvitationTest extends TestCase
 {
@@ -177,6 +187,48 @@ class TeamInvitationTest extends TestCase
 
         $this->actingAs($actor)->delete(route('teams.invitations.destroy', $invitation))
             ->assertForbidden();
+
+        $this->assertSame(Invitation::STATUS_PENDING, $invitation->fresh()->status);
+    }
+
+    /**
+     * role_id is a RESTRICT foreign key, so this never happens through any
+     * endpoint today — there is no role-delete route — and RefreshDatabase's
+     * own wrapping transaction means `Schema::disableForeignKeyConstraints()`
+     * cannot even construct the row here (SQLite's `PRAGMA foreign_keys` is a
+     * no-op mid-transaction). destroy() must not crash on this regardless of
+     * how unreachable it is today: canGrant() is typed to a non-nullable
+     * Role, and a bare `?->` would hand it null and turn into a 500. Tested
+     * by calling the action directly with the relation forced to null
+     * in memory (`setRelation`), rather than through the route — route-model
+     * binding would re-fetch a fresh Invitation and lose that override
+     * anyway, and there is no other way to get a real null role past the FK.
+     */
+    public function test_revoking_an_invitation_with_no_resolvable_role_404s_instead_of_crashing(): void
+    {
+        $owner = $this->owner();
+        $role = $this->roleOn($owner, PermissionCatalog::OPERATOR);
+        $invitation = Invitation::factory()->create([
+            'team_id' => $owner->current_team_id,
+            'role_id' => $role->id,
+            'invited_by' => $owner->id,
+        ]);
+        $invitation->setRelation('role', null);
+        $this->actingAs($owner);
+
+        // Calling the action directly skips the HTTP kernel/middleware that
+        // normally binds Request::user() to the auth guard — actingAs()
+        // alone does not make that resolution happen here, so it is set by
+        // hand to the same effect.
+        $request = app(Request::class);
+        $request->setUserResolver(fn () => $owner);
+
+        try {
+            app(TeamInvitationController::class)->destroy($request, $invitation);
+            $this->fail('Expected a 404.');
+        } catch (NotFoundHttpException $e) {
+            $this->assertSame(404, $e->getStatusCode());
+        }
 
         $this->assertSame(Invitation::STATUS_PENDING, $invitation->fresh()->status);
     }

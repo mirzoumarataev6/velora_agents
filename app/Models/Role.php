@@ -16,8 +16,18 @@ use Illuminate\Support\Facades\Lang;
  * system-role templates seeded once in a migration — never assigned to a
  * `team_user` row directly, only copied (see `copyTemplatesFor()`) into
  * real, per-team rows at team creation. `is_owner` marks the one role per
- * team that is immune to edit/delete. TeamRoleController protects it while
- * role management is owner-only; resource Policies are updated later.
+ * team that is immune to edit/delete — `TeamRoleController` refuses to
+ * touch it regardless of who is asking, Owner included.
+ *
+ * Role management itself is NOT owner-only: it is gated by the catalog
+ * permissions `team.roles.view`/`team.roles.manage` like any other
+ * resource, so an Admin (or a custom role holding `team.roles.manage`)
+ * can create and edit roles too. What stops that from being a path to
+ * self-escalation is `AuthorizesRoleGrants::canGrant()` — a manager can
+ * never save a role, or hand one out, carrying a permission they do not
+ * themselves already hold. Every resource Policy (`CrmWorkspacePolicy`,
+ * `DealPolicy`, the `Bi*Policy` classes, ...) already reads from this same
+ * catalog, not from an owner check.
  */
 #[Fillable(['team_id', 'name', 'slug'])]
 class Role extends Model

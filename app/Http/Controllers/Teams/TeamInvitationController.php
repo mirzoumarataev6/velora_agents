@@ -92,6 +92,15 @@ class TeamInvitationController extends Controller
     {
         $this->authorize('team.members.invite', $invitation);
 
+        // role_id is a RESTRICT foreign key, so this should never actually
+        // be null — but canGrant() is typed to a non-nullable Role, and a
+        // bare `?->` would silently pass null through to it and crash with
+        // a TypeError (reported as a 500) rather than this clean 404. An
+        // invitation with no resolvable role is data nothing can act on
+        // meaningfully; refusing outright is the honest response, not
+        // falling through to canGrant() either way.
+        abort_if($invitation->role === null, 404);
+
         // Same class of gap destroy() on a live membership has for removal:
         // an actor who only holds team.members.invite, but not the
         // permissions the invited role itself carries, must not be able to
