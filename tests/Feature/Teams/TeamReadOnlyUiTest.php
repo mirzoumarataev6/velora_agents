@@ -8,12 +8,53 @@ use App\Models\BiWidget;
 use App\Models\Role;
 use App\Models\TeamMembership;
 use App\Models\User;
+use App\Services\Permissions\PermissionCatalog;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 class TeamReadOnlyUiTest extends TestCase
 {
     use RefreshDatabase;
+
+    private function customRole(User $owner, array $permissions): User
+    {
+        $role = Role::create([
+            'team_id' => $owner->current_team_id,
+            'name' => 'Custom '.uniqid(),
+            'slug' => 'custom-'.uniqid(),
+        ]);
+        $role->syncPermissions($permissions);
+        $member = User::factory()->create();
+        TeamMembership::create([
+            'team_id' => $owner->current_team_id, 'user_id' => $member->id,
+            'role_id' => $role->id, 'joined_at' => now(),
+        ]);
+        $member->forceFill(['current_team_id' => $owner->current_team_id])->save();
+
+        return $member;
+    }
+
+    /**
+     * B4: crm.view and analytics.view must gate /crm and /bi independently
+     * of each other, both at the route and in the nav each page renders
+     * (both extend layouts.dashboard, so either page's own markup proves
+     * both nav items at once without needing /dashboard itself — which
+     * requires analytics.view and so isn't reachable by the crm-only actor).
+     */
+    public function test_crm_view_alone_opens_crm_not_bi_and_analytics_view_alone_is_the_mirror(): void
+    {
+        $owner = User::factory()->create();
+        $crmOnly = $this->customRole($owner, [PermissionCatalog::CRM_VIEW]);
+        $analyticsOnly = $this->customRole($owner, [PermissionCatalog::ANALYTICS_VIEW]);
+
+        $this->actingAs($crmOnly)->get(route('crm.board'))->assertOk()
+            ->assertSee('data-nav="crm"', false)->assertDontSee('data-nav="bi"', false);
+        $this->get(route('bi.dashboards.index'))->assertForbidden();
+
+        $this->actingAs($analyticsOnly)->get(route('bi.dashboards.index'))->assertOk()
+            ->assertDontSee('data-nav="crm"', false)->assertSee('data-nav="bi"', false);
+        $this->get(route('crm.board'))->assertForbidden();
+    }
 
     public function test_viewer_can_read_crm_and_bi_without_write_controls(): void
     {
