@@ -3,9 +3,11 @@
     // rendering this menu must not repeat the authorization lookup.
     $__teamMemberships = auth()->user()->cachedTeamMemberships();
     $__currentTeamId = auth()->user()->current_team_id;
-    $__currentTeamName = $__teamMemberships->first(fn ($m) => (int) $m->team_id === (int) $__currentTeamId)?->team_name
-        ?? $__teamMemberships->first()?->team_name
-        ?? '—';
+    $__currentMembership = $__teamMemberships->first(fn ($m) => (int) $m->team_id === (int) $__currentTeamId)
+        ?? $__teamMemberships->first();
+    $__currentTeamName = $__currentMembership?->team_is_personal
+        ? __('settings.team.personal_badge')
+        : ($__currentMembership?->team_name ?? __('settings.team.personal_badge'));
 @endphp
 {{--
     Same reasoning as dashboard-locale-switcher.blade.php's own docblock:
@@ -14,6 +16,13 @@
     teleported to <body> with viewport-fixed coordinates rather than relying
     on z-index to escape the sidebar.
 --}}
+@if ($__teamMemberships->count() === 1 && $__currentMembership?->team_is_personal)
+<a href="{{ route('teams.index') }}" class="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm font-medium hover:bg-sunk dark:hover:bg-night-raised">
+    <span class="icon-circle icon-circle-sm shrink-0" aria-hidden="true">●</span>
+    <span class="min-w-0 flex-1 truncate">{{ __('settings.team.personal_badge') }}</span>
+    <span class="text-xs text-brand">+</span>
+</a>
+@else
 <div x-data="teamSwitcher()" class="shrink-0">
     <button type="button" x-ref="trigger" @click.stop="toggle()" @keydown.down.prevent="open ? focusItem(0) : toggle()"
         :aria-expanded="open ? 'true' : 'false'" aria-haspopup="menu"
@@ -43,22 +52,27 @@
             x-transition:leave-end="opacity-0 scale-95"
             class="card fixed z-[110] w-64 overflow-hidden py-1">
             @foreach ($__teamMemberships as $loop_membership)
-                <form method="POST" action="{{ route('teams.switch') }}">
+                <form method="POST" action="{{ route('teams.switch') }}" data-turbo="false">
                     @csrf
                     <input type="hidden" name="team_id" value="{{ $loop_membership->team_id }}" />
                     <button type="submit" role="menuitem" x-ref="item{{ $loop->index }}"
                         aria-current="{{ (int) $loop_membership->team_id === (int) $__currentTeamId ? 'true' : 'false' }}"
                         class="flex w-full items-center gap-2 px-4 py-2 text-left text-sm transition-colors hover:bg-paper focus:bg-paper focus:outline-none dark:hover:bg-white/5 dark:focus:bg-white/5 {{ (int) $loop_membership->team_id === (int) $__currentTeamId ? 'font-semibold text-brand' : 'text-ink dark:text-white/80' }}">
-                        <span class="min-w-0 flex-1 truncate">{{ $loop_membership->team_name }}</span>
+                        <span class="min-w-0 flex-1 truncate">{{ $loop_membership->team_is_personal ? __('settings.team.personal_badge') : $loop_membership->team_name }}</span>
                         <span class="badge-neutral shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium">
                             {{ \App\Models\Role::displayNameFor($loop_membership->role_slug, $loop_membership->role_name) }}
                         </span>
                     </button>
                 </form>
             @endforeach
+            <a href="{{ route('teams.index') }}" role="menuitem" x-ref="item{{ $__teamMemberships->count() }}"
+                class="mt-1 block border-t border-hairline px-4 py-2 text-sm font-medium text-brand hover:bg-paper dark:border-white/10 dark:hover:bg-white/5">
+                {{ __('settings.team.create_button') }}
+            </a>
         </div>
     </template>
 </div>
+@endif
 
 @once
 @push('scripts')
@@ -68,7 +82,7 @@
             open: false,
             style: '',
             index: 0,
-            count: {{ $__teamMemberships->count() }},
+            count: {{ $__teamMemberships->count() + 1 }},
 
             toggle() {
                 this.open ? this.close(true) : this.show();

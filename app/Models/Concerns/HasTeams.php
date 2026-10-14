@@ -55,7 +55,7 @@ trait HasTeams
                 ->join('teams', 'teams.id', '=', 'team_user.team_id')
                 ->where('team_user.user_id', $this->id)
                 ->orderBy('team_user.joined_at')
-                ->select('team_user.*', 'teams.name as team_name', 'roles.name as role_name', 'roles.slug as role_slug', 'roles.is_owner as role_is_owner')
+                ->select('team_user.*', 'teams.name as team_name', 'teams.is_personal as team_is_personal', 'roles.name as role_name', 'roles.slug as role_slug', 'roles.is_owner as role_is_owner')
                 ->get();
 
             foreach ($memberships as $membership) {

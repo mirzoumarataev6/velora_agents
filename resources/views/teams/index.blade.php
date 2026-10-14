@@ -1,0 +1,48 @@
+@extends('layouts.dashboard')
+
+@section('title', __('settings.team.heading'))
+
+@section('content')
+<div class="mx-auto max-w-5xl space-y-6">
+    <div class="page-header">
+        <div>
+            <h1 class="page-title">{{ __('settings.team.heading') }}</h1>
+            <p class="page-sub">{{ __('settings.team.section_description') }}</p>
+        </div>
+    </div>
+
+    @if (! $activeTeam || $activeTeam->is_personal)
+        <div class="card card-pad">
+            <span class="badge badge-neutral">{{ __('settings.team.personal_badge') }}</span>
+            <h2 class="mt-4 font-display text-xl font-semibold">{{ __('settings.team.solo_heading') }}</h2>
+            <p class="mt-2 max-w-2xl text-sm text-muted dark:text-night-muted">{{ __('settings.team.solo_description') }}</p>
+        </div>
+
+        <div class="card card-pad">
+            <h2 class="font-display text-lg font-semibold">{{ __('settings.team.create_heading') }}</h2>
+            <p class="mt-1 text-sm text-muted dark:text-night-muted">{{ __('settings.team.create_description') }}</p>
+            @include('teams.partials.create-form')
+        </div>
+    @else
+        <div class="card card-pad">
+            <div class="flex flex-wrap items-center justify-between gap-4">
+                <div>
+                    <p class="text-xs font-semibold uppercase tracking-wide text-muted dark:text-night-muted">{{ __('settings.team.active_label') }}</p>
+                    <h2 class="mt-1 font-display text-xl font-semibold">{{ $activeTeam->name }}</h2>
+                </div>
+                @can('team.roles.view')
+                    <a href="{{ route('teams.roles.index') }}" class="btn btn-secondary">{{ __('settings.roles.manage_button') }}</a>
+                @endcan
+            </div>
+        </div>
+
+        @include('teams.partials.management')
+
+        <details class="card card-pad">
+            <summary class="cursor-pointer text-sm font-semibold">{{ __('settings.team.create_another') }}</summary>
+            <p class="mt-3 text-sm text-muted dark:text-night-muted">{{ __('settings.team.create_another_description') }}</p>
+            @include('teams.partials.create-form')
+        </details>
+    @endif
+</div>
+@endsection

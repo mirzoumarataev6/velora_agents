@@ -203,6 +203,15 @@
             </a>
             @endcan
 
+            <a href="{{ route('teams.index') }}" aria-label="{{ __('agents.nav.team_section') }}" data-i18n-al="agents.nav.team_section"
+                data-nav="teams"
+                @if (request()->routeIs('teams.*')) aria-current="page" @endif
+                :class="$store.shell.railCollapsed && 'lg:justify-center'"
+                class="nav-item {{ request()->routeIs('teams.*') ? 'nav-item-active' : '' }}">
+                <svg class="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3 19v-2a6 6 0 0 1 12 0v2H3zM17 6a3 3 0 0 1 0 6m1 2a5 5 0 0 1 3 5"/></svg>
+                <span data-i18n="agents.nav.team_section" :class="$store.shell.railCollapsed && 'lg:hidden'">{{ __('agents.nav.team_section') }}</span>
+            </a>
+
             <a href="{{ route('settings.index') }}" aria-label="{{ __('agents.nav.settings') }}" data-i18n-al="agents.nav.settings"
                 data-nav="settings"
                 @if (request()->routeIs('settings.*')) aria-current="page" @endif

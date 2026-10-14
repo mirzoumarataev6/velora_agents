@@ -13,7 +13,7 @@
 <div class="mx-auto max-w-6xl space-y-6">
     <div class="page-header">
         <div>
-            <a href="{{ route('settings.index').'#team' }}" class="text-sm text-brand hover:underline" data-i18n="settings.roles.back">{{ __('settings.roles.back') }}</a>
+            <a href="{{ route('teams.index') }}" class="text-sm text-brand hover:underline" data-i18n="settings.roles.back">{{ __('settings.roles.back') }}</a>
             <h1 class="page-title mt-2" data-i18n="settings.roles.heading">{{ __('settings.roles.heading') }}</h1>
             <p class="page-sub" data-i18n="settings.roles.description">{{ __('settings.roles.description') }}</p>
         </div>

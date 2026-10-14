@@ -8,6 +8,7 @@ use App\Models\Role;
 use App\Models\TeamMembership;
 use App\Models\User;
 use App\Services\Permissions\PermissionCatalog;
+use App\Services\Teams\CreatesTeam;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Mail;
 use Tests\TestCase;
@@ -16,9 +17,10 @@ class CustomRoleLabelsTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_custom_role_name_is_shown_in_settings_and_the_invitation_email(): void
+    public function test_custom_role_name_is_shown_in_the_team_section_and_the_invitation_email(): void
     {
         $owner = User::factory()->create();
+        app(CreatesTeam::class)->create($owner, 'Sales');
         $role = Role::create(['team_id' => $owner->current_team_id, 'name' => 'Sales coach', 'slug' => 'sales-coach-custom']);
         $invitation = Invitation::factory()->create([
             'team_id' => $owner->current_team_id,
@@ -27,7 +29,7 @@ class CustomRoleLabelsTest extends TestCase
             'email' => 'coach@example.com',
         ]);
 
-        $response = $this->actingAs($owner)->get(route('settings.index'));
+        $response = $this->actingAs($owner)->get(route('teams.index'));
 
         $response->assertOk();
         $response->assertSee('Sales coach');
@@ -59,6 +61,7 @@ class CustomRoleLabelsTest extends TestCase
     {
         Mail::fake();
         $owner = User::factory()->create();
+        app(CreatesTeam::class)->create($owner, 'Sales');
         $member = User::factory()->create();
         $operator = Role::where('team_id', $owner->current_team_id)->where('slug', PermissionCatalog::OPERATOR)->sole();
         $membership = TeamMembership::create([

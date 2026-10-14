@@ -8,6 +8,7 @@ use App\Models\Role;
 use App\Models\TeamMembership;
 use App\Models\User;
 use App\Services\Permissions\PermissionCatalog;
+use App\Services\Teams\CreatesTeam;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Mail;
 use Tests\TestCase;
@@ -21,6 +22,14 @@ class TeamInvitationTest extends TestCase
 {
     use RefreshDatabase;
 
+    private function owner(): User
+    {
+        $owner = User::factory()->create();
+        app(CreatesTeam::class)->create($owner, 'Sales');
+
+        return $owner;
+    }
+
     private function roleOn(User $owner, string $slug): Role
     {
         return Role::where('team_id', $owner->current_team_id)->where('slug', $slug)->firstOrFail();
@@ -31,7 +40,7 @@ class TeamInvitationTest extends TestCase
     public function test_the_owner_can_invite_someone_by_email(): void
     {
         Mail::fake();
-        $owner = User::factory()->create();
+        $owner = $this->owner();
         $role = $this->roleOn($owner, PermissionCatalog::OPERATOR);
 
         $this->actingAs($owner)->post(route('teams.invite'), [
@@ -52,7 +61,7 @@ class TeamInvitationTest extends TestCase
     public function test_a_non_owner_cannot_invite_anyone(): void
     {
         Mail::fake();
-        $owner = User::factory()->create();
+        $owner = $this->owner();
         $role = $this->roleOn($owner, PermissionCatalog::OPERATOR);
 
         $teammate = User::factory()->createQuietly();
@@ -76,7 +85,7 @@ class TeamInvitationTest extends TestCase
     public function test_inviting_an_email_with_an_already_pending_invite_is_rejected(): void
     {
         Mail::fake();
-        $owner = User::factory()->create();
+        $owner = $this->owner();
         $role = $this->roleOn($owner, PermissionCatalog::OPERATOR);
 
         $this->actingAs($owner)->post(route('teams.invite'), [
@@ -95,8 +104,8 @@ class TeamInvitationTest extends TestCase
     /** A role from another team must never be assignable, even with a valid id. */
     public function test_a_role_from_another_team_is_rejected(): void
     {
-        $owner = User::factory()->create();
-        $otherOwner = User::factory()->create();
+        $owner = $this->owner();
+        $otherOwner = $this->owner();
         $foreignRole = $this->roleOn($otherOwner, PermissionCatalog::OPERATOR);
 
         $this->actingAs($owner)->post(route('teams.invite'), [
@@ -111,7 +120,7 @@ class TeamInvitationTest extends TestCase
 
     public function test_the_owner_can_revoke_a_pending_invitation(): void
     {
-        $owner = User::factory()->create();
+        $owner = $this->owner();
         $role = $this->roleOn($owner, PermissionCatalog::OPERATOR);
         $invitation = Invitation::factory()->create([
             'team_id' => $owner->current_team_id,
@@ -127,7 +136,7 @@ class TeamInvitationTest extends TestCase
 
     public function test_a_non_owner_cannot_revoke_an_invitation(): void
     {
-        $owner = User::factory()->create();
+        $owner = $this->owner();
         $role = $this->roleOn($owner, PermissionCatalog::OPERATOR);
         $invitation = Invitation::factory()->create([
             'team_id' => $owner->current_team_id,
@@ -146,7 +155,7 @@ class TeamInvitationTest extends TestCase
 
     public function test_accepting_creates_a_membership_with_the_invited_role_on_the_right_team(): void
     {
-        $owner = User::factory()->create();
+        $owner = $this->owner();
         $role = $this->roleOn($owner, PermissionCatalog::OPERATOR);
         $invitation = Invitation::factory()->create([
             'team_id' => $owner->current_team_id,
@@ -170,7 +179,7 @@ class TeamInvitationTest extends TestCase
 
     public function test_an_unauthenticated_visitor_is_sent_to_log_in_and_returned_after(): void
     {
-        $owner = User::factory()->create();
+        $owner = $this->owner();
         $role = $this->roleOn($owner, PermissionCatalog::OPERATOR);
         $invitation = Invitation::factory()->create([
             'team_id' => $owner->current_team_id,
@@ -187,7 +196,7 @@ class TeamInvitationTest extends TestCase
 
     public function test_accepting_with_a_mismatched_logged_in_email_is_rejected(): void
     {
-        $owner = User::factory()->create();
+        $owner = $this->owner();
         $role = $this->roleOn($owner, PermissionCatalog::OPERATOR);
         $invitation = Invitation::factory()->create([
             'team_id' => $owner->current_team_id,
@@ -207,7 +216,7 @@ class TeamInvitationTest extends TestCase
 
     public function test_an_expired_invitation_is_rejected_cleanly(): void
     {
-        $owner = User::factory()->create();
+        $owner = $this->owner();
         $role = $this->roleOn($owner, PermissionCatalog::OPERATOR);
         $invitation = Invitation::factory()->create([
             'team_id' => $owner->current_team_id,
@@ -226,7 +235,7 @@ class TeamInvitationTest extends TestCase
 
     public function test_an_already_accepted_invitation_is_rejected_cleanly(): void
     {
-        $owner = User::factory()->create();
+        $owner = $this->owner();
         $role = $this->roleOn($owner, PermissionCatalog::OPERATOR);
         $invitation = Invitation::factory()->create([
             'team_id' => $owner->current_team_id,

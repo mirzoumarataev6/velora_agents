@@ -7,6 +7,7 @@ use App\Models\Role;
 use App\Models\TeamMembership;
 use App\Models\User;
 use App\Services\Permissions\PermissionCatalog as P;
+use App\Services\Teams\CreatesTeam;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Mail;
 use Tests\TestCase;
@@ -34,11 +35,12 @@ class TeamAdministrationAccessTest extends TestCase
     {
         Mail::fake();
         $owner = User::factory()->create();
+        app(CreatesTeam::class)->create($owner, 'Sales');
         $admin = $this->member($owner, 'admin');
         $member = $this->member($owner, 'operator');
         $membership = $member->membershipIn($owner->current_team_id);
         $viewer = $this->role($owner, 'viewer');
-        $this->actingAs($admin)->get(route('settings.index'))->assertOk()->assertSee(route('teams.roles.index'));
+        $this->actingAs($admin)->get(route('teams.index'))->assertOk()->assertSee(route('teams.roles.index'));
         $this->get(route('teams.roles.index'))->assertOk()->assertSee('id="team-role-form"', false);
         $this->post(route('teams.roles.store'), ['name' => 'Assistant', 'permissions' => [P::AGENTS_VIEW]])->assertRedirect();
         $custom = Role::where('name', 'Assistant')->sole();
@@ -57,6 +59,7 @@ class TeamAdministrationAccessTest extends TestCase
     {
         Mail::fake();
         $owner = User::factory()->create();
+        app(CreatesTeam::class)->create($owner, 'Sales');
         $admin = $this->member($owner, 'admin');
         $viewer = $this->member($owner, 'viewer');
         $ownerRole = $this->role($owner, 'owner');
@@ -80,8 +83,9 @@ class TeamAdministrationAccessTest extends TestCase
     public function test_viewer_can_read_members_and_roles_without_management_forms(): void
     {
         $owner = User::factory()->create();
+        app(CreatesTeam::class)->create($owner, 'Sales');
         $viewer = $this->member($owner, 'viewer');
-        $this->actingAs($viewer)->get(route('settings.index'))->assertOk()->assertSee($owner->email)
+        $this->actingAs($viewer)->get(route('teams.index'))->assertOk()->assertSee($owner->email)
             ->assertDontSee('id="team-invite-email"', false)->assertDontSee('name="role_id"', false);
         $this->get(route('teams.roles.index', ['edit' => $this->role($owner, 'admin')->id]))->assertOk()
             ->assertDontSee('id="team-role-form"', false)->assertSee('disabled', false);
@@ -90,6 +94,7 @@ class TeamAdministrationAccessTest extends TestCase
     public function test_self_role_change_invalidates_the_acting_users_cached_permissions(): void
     {
         $owner = User::factory()->create();
+        app(CreatesTeam::class)->create($owner, 'Sales');
         $admin = $this->member($owner, 'admin');
         $this->assertTrue($admin->hasPermissionOn($owner->current_team_id, P::TEAM_ROLES_MANAGE));
         $this->actingAs($admin)->patch(route('teams.members.update', $admin->membershipIn($owner->current_team_id)), ['role_id' => $this->role($owner, 'viewer')->id])->assertRedirect();

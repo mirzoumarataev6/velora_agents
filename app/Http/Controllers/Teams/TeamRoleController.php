@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Teams;
 
 use App\Http\Controllers\Controller;
 use App\Models\Role;
+use App\Models\Team;
 use App\Services\Permissions\AuthorizesRoleGrants;
 use App\Services\Permissions\PermissionCatalog;
 use Illuminate\Http\RedirectResponse;
@@ -117,6 +118,7 @@ class TeamRoleController extends Controller
 
         $this->authorize($permission);
         abort_if($teamId === null, 403);
+        abort_if(Team::whereKey($teamId)->value('is_personal'), 403);
 
         return $teamId;
     }

@@ -9,6 +9,7 @@ return [
         'bi' => 'Анализ данных',
         'leads' => 'Заявки',
         'settings' => 'Настройки',
+        'team_section' => 'Команда',
         'logout' => 'Выйти',
         'open_menu' => 'Открыть меню',
         'toggle_theme' => 'Переключить тему',

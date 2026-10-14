@@ -9,6 +9,7 @@ return [
         'bi' => 'Data analysis',
         'leads' => 'Leads',
         'settings' => 'Settings',
+        'team_section' => 'Team',
         'logout' => 'Log out',
         'open_menu' => 'Open menu',
         'toggle_theme' => 'Toggle theme',

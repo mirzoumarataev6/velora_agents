@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Mail\TeamInvitationMail;
 use App\Models\Invitation;
 use App\Models\Role;
+use App\Models\Team;
 use App\Models\TeamMembership;
 use App\Services\Permissions\AuthorizesRoleGrants;
 use Illuminate\Http\RedirectResponse;
@@ -34,6 +35,9 @@ class TeamInvitationController extends Controller
 
         $this->authorize('team.members.invite');
         abort_if($teamId === null, 403);
+        // A private workspace has no named team for the email to identify;
+        // the owner must choose that name before anyone can join its data.
+        abort_if(Team::whereKey($teamId)->value('is_personal'), 403);
 
         $data = $request->validateWithBag('team', [
             'email' => ['required', 'string', 'email', 'max:255'],

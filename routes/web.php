@@ -32,6 +32,7 @@ use App\Http\Controllers\PlaygroundController;
 use App\Http\Controllers\ProductImageController;
 use App\Http\Controllers\RootRedirectController;
 use App\Http\Controllers\SettingsController;
+use App\Http\Controllers\Teams\TeamController;
 use App\Http\Controllers\Teams\TeamInvitationController;
 use App\Http\Controllers\Teams\TeamMemberController;
 use App\Http\Controllers\Teams\TeamRoleController;
@@ -80,6 +81,9 @@ Route::middleware(['auth', 'auth.session'])->group(function () {
     // this is close to behaviour-neutral in practice; TeamSwitchController's
     // own membership check is what keeps it correct once that stops being true.
     Route::post('/teams/switch', [TeamSwitchController::class, 'update'])->name('teams.switch');
+
+    Route::get('/teams', [TeamController::class, 'index'])->name('teams.index');
+    Route::post('/teams', [TeamController::class, 'store'])->name('teams.store');
 
     // Stage 3b: inviting someone to join the active team. Owner-only — see
     // TeamInvitationController's own docblock for why that check is still
