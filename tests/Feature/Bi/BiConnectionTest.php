@@ -6,9 +6,12 @@ use App\Models\BiConnection;
 use App\Models\BiDataset;
 use App\Models\BiSource;
 use App\Models\DatabaseConnection;
+use App\Models\Role;
+use App\Models\TeamMembership;
 use App\Models\User;
 use App\Services\Database\DatabaseConnectionException;
 use App\Services\Database\DriverManager;
+use App\Services\Permissions\PermissionCatalog;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\Support\DropsAnalyticalTables;
 use Tests\Support\FakeDatabaseDriver;
@@ -286,6 +289,31 @@ class BiConnectionTest extends TestCase
             ->assertForbidden();
 
         $this->assertDatabaseHas('bi_connections', ['id' => $connection->id]);
+    }
+
+    /**
+     * test() now authorizes explicitly via BiConnectionPolicy::test() rather
+     * than only through SaveBiConnectionRequest's 'update' check — a member
+     * who only holds analytics.manage (not the Owner bypass $this->user
+     * gets) must still be able to retest a saved connection exactly as
+     * before.
+     */
+    public function test_a_member_with_analytics_manage_can_still_retest_a_saved_connection(): void
+    {
+        $connection = BiConnection::factory()->ready()->create(['user_id' => $this->user->id]);
+        $analyst = User::factory()->create();
+        $role = Role::create(['team_id' => $this->user->current_team_id, 'slug' => 'analyst', 'name' => 'Analyst']);
+        $role->syncPermissions([PermissionCatalog::ANALYTICS_MANAGE]);
+        TeamMembership::create([
+            'team_id' => $this->user->current_team_id, 'user_id' => $analyst->id,
+            'role_id' => $role->id, 'joined_at' => now(),
+        ]);
+        $analyst->forceFill(['current_team_id' => $this->user->current_team_id])->save();
+
+        $this->actingAs($analyst)
+            ->postJson(route('bi.connections.retest', $connection), $this->payload(['password' => '']))
+            ->assertOk()
+            ->assertJson(['ok' => true]);
     }
 
     public function test_a_guest_cannot_reach_any_connection_endpoint(): void

@@ -86,6 +86,18 @@ class ConnectionController extends Controller
      */
     public function test(SaveBiConnectionRequest $request, ?BiConnection $connection = null): JsonResponse
     {
+        // SaveBiConnectionRequest::authorize() already gates this request
+        // (the 'update' ability when $connection is bound, 'create'
+        // otherwise), so this is not the only check — it is here because
+        // dialling a saved connection's host is its own named ability,
+        // BiConnectionPolicy::test(), the same one tables() already uses
+        // for this identical $connection. Relying on 'update' meaning the
+        // same thing by coincidence is exactly the drift that bites later
+        // if the two abilities are ever allowed to diverge.
+        if ($connection !== null) {
+            $this->authorize('test', $connection);
+        }
+
         $config = $this->configFor($request, $connection);
 
         try {
