@@ -4,7 +4,10 @@ namespace App\Services\Teams;
 
 use App\Models\User;
 use App\Services\Permissions\PermissionCatalog;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route as RouteFacade;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 /**
  * Where a signed-in user should land when nothing more specific is already
@@ -86,5 +89,57 @@ class HomeDestination
         }
 
         return true;
+    }
+
+    /**
+     * What `AuthController::login()`/`register()`/`handleGoogleCallback()`
+     * all call instead of `redirect()->intended($this->url($user))`
+     * directly (D-04). `Redirector::intended()` prefers a session-stored
+     * `url.intended` over the default it is passed, and that key is set by
+     * Laravel's own `redirect()->guest()` for ANY unauthenticated GET to a
+     * protected route — most commonly `/dashboard`, stored before the user
+     * ever signed in. Honoring it unconditionally meant a role without
+     * `analytics.view` could sign in only to have `redirect()->intended()`
+     * send it straight back to the one page it just proved it cannot open,
+     * 403ing instead of landing on this class's own safe fallback.
+     *
+     * Only forgets the stored URL when it resolves to one of THIS class's
+     * known candidate routes and `stillOpen()` says no for this user —
+     * exactly the routes `url()`/`routeName()` themselves choose between.
+     * Any other stored URL (an invitation-accept link being the one that
+     * matters — see `TeamInvitationController::accept()`'s own comment) is
+     * left alone and still wins over the default, same as before this
+     * method existed.
+     */
+    public function redirectIntended(Request $request, User $user): RedirectResponse
+    {
+        $intended = $request->session()->get('url.intended');
+
+        if (is_string($intended)) {
+            $routeName = $this->routeNameForUrl($intended);
+
+            if ($routeName !== null && ! $this->stillOpen($user, $routeName)) {
+                $request->session()->forget('url.intended');
+            }
+        }
+
+        return redirect()->intended($this->url($user));
+    }
+
+    /**
+     * Best-effort: an intended URL that does not resolve to a named route
+     * at all (anything outside this app, or no match) is not one of
+     * `stillOpen()`'s known candidates either way, so it is treated the
+     * same as "not a candidate" — left alone, never forgotten.
+     */
+    private function routeNameForUrl(string $url): ?string
+    {
+        try {
+            $route = RouteFacade::getRoutes()->match(Request::create($url));
+        } catch (HttpException) {
+            return null;
+        }
+
+        return $route->getName();
     }
 }

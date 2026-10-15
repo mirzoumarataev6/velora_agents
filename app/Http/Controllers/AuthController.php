@@ -72,16 +72,18 @@ class AuthController extends Controller
         // construction rather than by agreement between two flags.
         $request->session()->put(self::GREETING_SESSION_KEY, self::GREETING_WELCOME);
 
-        // intended(), not a plain redirect: a guest who landed here because a
-        // protected page (Stage 3b's invitation accept link, say) sent them
-        // to sign in has `url.intended` already stored by Laravel's own
-        // redirect()->guest() — exactly what login() already honors below.
-        // Without this, registering from that link stranded a brand-new user
-        // on the dashboard with no invitation accepted. A no-op for every
-        // other registration: with nothing stored, intended() falls back to
-        // HomeDestination's own resolved url rather than a bare route('home')
-        // — a brand-new account's role may not even include analytics.view.
-        return redirect()->intended($destination->url($user));
+        // redirectIntended(), not a plain redirect: a guest who landed here
+        // because a protected page (Stage 3b's invitation accept link, say)
+        // sent them to sign in has `url.intended` already stored by
+        // Laravel's own redirect()->guest() — exactly what login() already
+        // honors below. Without this, registering from that link stranded a
+        // brand-new user on the dashboard with no invitation accepted. A
+        // no-op for every other registration: with nothing stored, it falls
+        // back to HomeDestination's own resolved url rather than a bare
+        // route('home') — a brand-new account's role may not even include
+        // analytics.view. See HomeDestination::redirectIntended() for why
+        // this is not simply redirect()->intended() (D-04).
+        return $destination->redirectIntended($request, $user);
     }
 
     public function login(Request $request, HomeDestination $destination): RedirectResponse
@@ -108,7 +110,7 @@ class AuthController extends Controller
 
         $request->session()->put(self::GREETING_SESSION_KEY, self::GREETING_BACK);
 
-        return redirect()->intended($destination->url(Auth::user()));
+        return $destination->redirectIntended($request, Auth::user());
     }
 
     private function syncLocale(User $user): void
@@ -180,6 +182,6 @@ class AuthController extends Controller
             $returning ? self::GREETING_BACK : self::GREETING_WELCOME,
         );
 
-        return redirect()->intended($destination->url($user));
+        return $destination->redirectIntended($request, $user);
     }
 }

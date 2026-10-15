@@ -97,6 +97,31 @@ class HomeDestinationTest extends TestCase
     }
 
     /**
+     * D-04: an unauthenticated GET to /dashboard (protected by the `auth`
+     * middleware) stores its own URL as `url.intended` via Laravel's own
+     * `redirect()->guest()` — before this role ever gets a chance to sign
+     * in. `redirect()->intended()` prefers that stored value over whatever
+     * default it is passed, so without HomeDestination::redirectIntended()
+     * stripping it, a crm.view-only role would log in only to be bounced
+     * straight back to the one page it cannot open.
+     */
+    public function test_a_stored_dashboard_intent_does_not_override_the_safe_landing_for_a_role_without_it(): void
+    {
+        $owner = User::factory()->create();
+        $role = $this->customRole($owner, [PermissionCatalog::CRM_VIEW]);
+        $member = User::factory()->create(['email' => 'crm-intended@example.test', 'password' => Hash::make('password123')]);
+        $this->addMember($owner, $member, $role);
+        $member->forceFill(['current_team_id' => $owner->current_team_id])->save();
+
+        // Triggers Laravel's own redirect()->guest(), which stores THIS
+        // URL as url.intended before sending the guest to /login.
+        $this->get(route('dashboard'));
+
+        $this->post('/login', ['email' => 'crm-intended@example.test', 'password' => 'password123'])
+            ->assertRedirect(route('crm.board'));
+    }
+
+    /**
      * The scenario back() alone cannot handle: the actor was on /dashboard
      * under team A (where their role has analytics.view) and switches into
      * team B, where their role only has crm.view. A plain back() would
