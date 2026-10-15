@@ -147,7 +147,7 @@ class TeamMemberManagementTest extends TestCase
         $owner = User::factory()->create();
         $actor = User::factory()->create();
         $remover = Role::create(['team_id' => $owner->current_team_id, 'slug' => 'remover', 'name' => 'Remover']);
-        $remover->syncPermissions([PermissionCatalog::TEAM_MEMBERS_REMOVE]);
+        $remover->syncPermissions([PermissionCatalog::TEAM_MEMBERS_VIEW, PermissionCatalog::TEAM_MEMBERS_REMOVE]);
         TeamMembership::create([
             'team_id' => $owner->current_team_id, 'user_id' => $actor->id,
             'role_id' => $remover->id, 'joined_at' => now(),

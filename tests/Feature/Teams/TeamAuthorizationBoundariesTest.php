@@ -60,9 +60,9 @@ class TeamAuthorizationBoundariesTest extends TestCase
     {
         $owner = User::factory()->create();
         $agent = Agent::factory()->create(['user_id' => $owner->id]);
-        $catalogMember = $this->member($owner, ['catalog.manage']);
+        $catalogMember = $this->member($owner, ['catalog.view', 'catalog.manage']);
         $this->actingAs($catalogMember)->postJson(route('agents.catalog.products.images.store', [$agent, 'product']), [])->assertUnprocessable();
-        $catalogMember->membershipIn($owner->current_team_id)->role->syncPermissions(['agents.update']);
+        $catalogMember->membershipIn($owner->current_team_id)->role->syncPermissions(['agents.view', 'agents.update']);
         $catalogMember->flushPermissionCache();
         $this->postJson(route('agents.catalog.products.images.store', [$agent, 'product']), [])->assertForbidden();
     }

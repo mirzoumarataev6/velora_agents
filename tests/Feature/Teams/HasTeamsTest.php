@@ -228,7 +228,7 @@ class HasTeamsTest extends TestCase
         $this->assertTrue($admin->hasPermissionOn($this->team, PermissionCatalog::BILLING_MANAGE) === false);
         $this->assertTrue($admin->hasPermissionOn($this->team, PermissionCatalog::AGENTS_VIEW));
 
-        $role->syncPermissions([PermissionCatalog::BILLING_MANAGE]);
+        $role->syncPermissions([PermissionCatalog::BILLING_VIEW, PermissionCatalog::BILLING_MANAGE]);
 
         // Stale answer: the cache from before the change still wins.
         $this->assertTrue($admin->hasPermissionOn($this->team, PermissionCatalog::AGENTS_VIEW));

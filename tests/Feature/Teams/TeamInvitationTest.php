@@ -171,7 +171,7 @@ class TeamInvitationTest extends TestCase
     {
         $owner = $this->owner();
         $inviterRole = Role::create(['team_id' => $owner->current_team_id, 'slug' => 'inviter', 'name' => 'Inviter']);
-        $inviterRole->syncPermissions([PermissionCatalog::TEAM_MEMBERS_INVITE]);
+        $inviterRole->syncPermissions([PermissionCatalog::TEAM_MEMBERS_VIEW, PermissionCatalog::TEAM_MEMBERS_INVITE]);
         $actor = User::factory()->create();
         TeamMembership::create([
             'team_id' => $owner->current_team_id, 'user_id' => $actor->id,

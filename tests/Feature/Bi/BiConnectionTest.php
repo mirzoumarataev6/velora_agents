@@ -303,7 +303,7 @@ class BiConnectionTest extends TestCase
         $connection = BiConnection::factory()->ready()->create(['user_id' => $this->user->id]);
         $analyst = User::factory()->create();
         $role = Role::create(['team_id' => $this->user->current_team_id, 'slug' => 'analyst', 'name' => 'Analyst']);
-        $role->syncPermissions([PermissionCatalog::ANALYTICS_MANAGE]);
+        $role->syncPermissions([PermissionCatalog::ANALYTICS_VIEW, PermissionCatalog::ANALYTICS_MANAGE]);
         TeamMembership::create([
             'team_id' => $this->user->current_team_id, 'user_id' => $analyst->id,
             'role_id' => $role->id, 'joined_at' => now(),

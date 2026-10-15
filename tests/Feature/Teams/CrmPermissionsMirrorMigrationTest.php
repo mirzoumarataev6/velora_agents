@@ -50,6 +50,30 @@ class CrmPermissionsMirrorMigrationTest extends TestCase
         return $role;
     }
 
+    /**
+     * Writes role_permission directly, bypassing Role::syncPermissions()'s
+     * dependency check (added in Stage D1.2) — used only for the one
+     * fixture below that deliberately builds the "invalid by that rule"
+     * shape pre-existing data could hold (and this migration must mirror
+     * as-is, not repair; repairing that shape is a separate migration,
+     * 2026_10_26_000001).
+     */
+    private function customRoleBypassingDependencyCheck(?int $teamId, array $permissions): Role
+    {
+        $role = Role::create([
+            'team_id' => $teamId,
+            'name' => 'Custom '.uniqid(),
+            'slug' => 'custom-'.uniqid(),
+        ]);
+        $now = now();
+        DB::table('role_permission')->insert(array_map(
+            fn (string $permission) => ['role_id' => $role->id, 'permission' => $permission, 'created_at' => $now, 'updated_at' => $now],
+            $permissions,
+        ));
+
+        return $role;
+    }
+
     public function test_a_role_with_only_analytics_view_gets_only_crm_view(): void
     {
         $owner = User::factory()->create();
@@ -67,9 +91,12 @@ class CrmPermissionsMirrorMigrationTest extends TestCase
     {
         // Deliberately the "invalid by the new dependency rule" shape —
         // data that could already exist from before that rule did, which
-        // the migration must still mirror exactly, not repair.
+        // the migration must still mirror exactly, not repair. Built via
+        // the bypass helper: Role::syncPermissions() itself now rejects
+        // this shape (Stage D1.2), so a raw insert is the only way left to
+        // construct it.
         $owner = User::factory()->create();
-        $role = $this->customRole($owner->current_team_id, [PermissionCatalog::ANALYTICS_MANAGE]);
+        $role = $this->customRoleBypassingDependencyCheck($owner->current_team_id, [PermissionCatalog::ANALYTICS_MANAGE]);
 
         $this->freshMigration()->up();
 

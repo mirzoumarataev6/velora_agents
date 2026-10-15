@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Lang;
+use InvalidArgumentException;
 
 /**
  * A named bundle of permissions. `team_id` NULL marks one of the 4 global
@@ -86,6 +87,8 @@ class Role extends Model
             PermissionCatalog::assertValid($permission);
         }
 
+        self::assertSatisfiesDependencies($permissions);
+
         DB::table('role_permission')->where('role_id', $this->id)->delete();
 
         if ($permissions === []) {
@@ -103,6 +106,37 @@ class Role extends Model
             ],
             $permissions,
         ));
+    }
+
+    /**
+     * `PermissionCatalog::requires()`'s own docblock ("enforced as a
+     * reject... never an auto-add on the server") was, until this method
+     * existed, honored only by `TeamRoleController::permissionRules()` — a
+     * validation closure on one HTTP endpoint. Every other write path to
+     * `role_permission` (tinker, a seeder, a future route, a queued job)
+     * could persist a role violating it; the real dev database held
+     * exactly that (`roles.id=62`, `billing.manage` without
+     * `billing.view` — see the `2026_10_26_000001` migration that repairs
+     * the data this check would otherwise have let back in). Moving the
+     * check here, below the controller, means every caller gets the same
+     * guarantee instead of relying on each one to remember it separately.
+     *
+     * @param  list<string>  $permissions
+     */
+    private static function assertSatisfiesDependencies(array $permissions): void
+    {
+        foreach (PermissionCatalog::requires() as $permission => $dependencies) {
+            if (! in_array($permission, $permissions, true)) {
+                continue;
+            }
+            foreach ($dependencies as $dependency) {
+                if (! in_array($dependency, $permissions, true)) {
+                    throw new InvalidArgumentException(
+                        "Permission set holds {$permission} without its required dependency {$dependency}."
+                    );
+                }
+            }
+        }
     }
 
     /**
@@ -156,6 +190,16 @@ class Role extends Model
             $permissions = $template !== null
                 ? ($templatePermissions->get($template->id) ?? [])
                 : PermissionCatalog::defaultMatrix()[$slug];
+
+            // Bulk-inserted below, bypassing syncPermissions() for the
+            // reasons in this method's own docblock — but that means its
+            // dependency check never runs either, so it is repeated here.
+            // Template rows are themselves written through syncPermissions()
+            // (or the seeded defaultMatrix(), proven valid by
+            // PermissionCatalogTest), so this should never actually throw;
+            // it exists so a future caller cannot copy a corrupted template
+            // forward into every new team silently.
+            self::assertSatisfiesDependencies($permissions);
 
             foreach ($permissions as $permission) {
                 $permissionRows[] = [
