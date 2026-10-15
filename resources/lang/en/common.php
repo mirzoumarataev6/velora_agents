@@ -20,6 +20,7 @@ return [
     'no_access' => [
         'title' => 'No access yet',
         'message' => 'Your role does not have access to any section yet. Ask a team Owner to grant your role access to what you need.',
+        'switch_heading' => 'Or switch to another team',
         'sign_out' => 'Sign out',
     ],
 ];
