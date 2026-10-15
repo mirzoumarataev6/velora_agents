@@ -28,7 +28,15 @@ use Illuminate\View\View;
  */
 class SettingsController extends Controller
 {
-    /** Themes the preference accepts. `system` is stored as null — see update(). */
+    /**
+     * Themes the preference accepts. All three are stored verbatim, including
+     * `system` — it has to be distinguishable from a NULL column (an account
+     * that never chose at all), because the two now mean different things to
+     * the boot script: no choice defaults to light, `system` keeps following
+     * the OS. Collapsing `system` into null, as this used to do, made every
+     * existing "I picked system" account indistinguishable from "never
+     * touched settings" the day that default changed.
+     */
     protected const THEMES = ['system', 'light', 'dark'];
 
     public function index(Request $request): View
@@ -168,9 +176,9 @@ class SettingsController extends Controller
 
         $user->forceFill([
             'locale' => $data['locale'],
-            // "Follow the system" is the absence of a preference, not a third
-            // value the front end has to special-case.
-            'theme' => $data['theme'] === 'system' ? null : $data['theme'],
+            // Stored as typed — see the THEMES docblock for why `system` is
+            // no longer folded into null.
+            'theme' => $data['theme'],
             'lead_notifications_enabled' => $request->boolean('lead_notifications_enabled'),
         ])->save();
 
@@ -196,7 +204,7 @@ class SettingsController extends Controller
         ]);
 
         $request->user()->forceFill([
-            'theme' => $data['theme'] === 'system' ? null : $data['theme'],
+            'theme' => $data['theme'],
         ])->save();
 
         return response()->json(['theme' => $data['theme']]);

@@ -30,10 +30,11 @@
 <head>
 <meta charset="UTF-8" />
 <script>
+    // No "system" option on this page's toggle, so nothing here should ever
+    // consult the OS — nothing stored means light, even on a dark OS.
     (function () {
         var stored = localStorage.getItem('theme');
-        var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-        document.documentElement.classList.toggle('dark', stored ? stored === 'dark' : prefersDark);
+        document.documentElement.classList.toggle('dark', stored === 'dark');
     })();
 </script>
 <meta name="viewport" content="width=device-width, initial-scale=1" />

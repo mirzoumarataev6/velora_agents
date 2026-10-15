@@ -447,22 +447,19 @@
             },
 
             /**
-             * Keep the pre-paint cache in step with what is being saved. This
-             * is the ONE place that clears it: the server stores "system" as a
-             * null column, which is indistinguishable from an account that
-             * simply never chose, so the layout can't safely clear it on
-             * render — doing so there discarded the choice a guest made with
-             * the toggle on the login page.
+             * Keep the pre-paint cache in step with what is being saved. The
+             * server now stores "system" verbatim rather than folding it into
+             * null (see SettingsController::THEMES), so this caches it
+             * verbatim too — the layout's boot script treats a cached
+             * "system" as "follow the OS" and treats the key's absence as
+             * "never chose, default light", and those two have to stay
+             * distinguishable here as much as they do server-side.
              */
             cacheTheme() {
                 const theme = document.querySelector('input[name="theme"]:checked')?.value;
                 if (!theme) return;
 
-                if (theme === 'system') {
-                    localStorage.removeItem('theme');
-                } else {
-                    localStorage.setItem('theme', theme);
-                }
+                localStorage.setItem('theme', theme);
             },
         };
     }

@@ -7,16 +7,20 @@
 <script>
     // Runs before first paint. The account's saved theme wins when there is one
     // (so the choice follows the owner between devices); localStorage is the
-    // local cache that keeps this synchronous, and the OS setting is the
-    // fallback that "system" deliberately falls back to.
+    // local cache that keeps this synchronous.
     //
     // A null column means "no account-level override" — which is also what a
-    // brand-new account has. It must NOT clear the cached choice: the theme
-    // toggle lives on the login and sign-up pages too, where a guest has no
-    // account to write to and localStorage is the only record of what they
-    // picked. Wiping it here is what made a light-theme owner land on dark
-    // (or the reverse) on the first page after signing in. Picking "system"
-    // in settings clears the cache at the point of choosing instead.
+    // brand-new account has, and that case must default to light rather than
+    // the OS: a dark-OS visitor who never touched the toggle used to get a
+    // dark app with no way to know they could change it. `system` is the one
+    // value that still means "follow the OS" — it is stored and cached
+    // verbatim precisely so it is distinguishable from "never chose".
+    //
+    // The null branch must NOT clear the cached choice: the theme toggle
+    // lives on the login and sign-up pages too, where a guest has no account
+    // to write to and localStorage is the only record of what they picked.
+    // Wiping it here is what made a light-theme owner land on dark (or the
+    // reverse) on the first page after signing in.
     (function () {
         var saved = @json(auth()->user()?->theme);
         if (saved) {
@@ -24,7 +28,7 @@
         }
         var stored = saved || localStorage.getItem('theme');
         var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-        var isDark = stored ? stored === 'dark' : prefersDark;
+        var isDark = stored === 'dark' || (stored === 'system' && prefersDark);
         document.documentElement.classList.toggle('dark', isDark);
 
         // Same trick for the sidebar: Alpine boots after first paint, so without

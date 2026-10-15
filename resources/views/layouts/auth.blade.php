@@ -3,10 +3,13 @@
 <head>
 <meta charset="UTF-8" />
 <script>
+    // Guests have no "system" option (that's a settings-page preference, not
+    // a toggle), so there is nothing here that should ever consult the OS: a
+    // guest who never touched the toggle gets light, full stop, regardless of
+    // a dark OS.
     (function () {
         var stored = localStorage.getItem('theme');
-        var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-        var isDark = stored ? stored === 'dark' : prefersDark;
+        var isDark = stored === 'dark';
         document.documentElement.classList.toggle('dark', isDark);
     })();
 </script>

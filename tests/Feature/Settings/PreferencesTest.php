@@ -52,16 +52,17 @@ class PreferencesTest extends TestCase
     }
 
     /**
-     * "Follow the system" is the absence of a preference, so it is stored as
-     * null rather than as a third value every reader would have to special-case.
+     * `system` is stored verbatim, not folded into null: null now means "no
+     * preference, default light" (see SettingsController::THEMES), which is a
+     * different thing from an account that explicitly asked to follow the OS.
      */
-    public function test_the_system_theme_is_stored_as_no_preference(): void
+    public function test_the_system_theme_is_stored_as_its_own_explicit_value(): void
     {
         $this->user->forceFill(['theme' => 'dark'])->save();
 
         $this->actingAs($this->user)->patch('/settings/preferences', $this->preferences());
 
-        $this->assertNull($this->user->refresh()->theme);
+        $this->assertSame('system', $this->user->refresh()->theme);
     }
 
     public function test_the_locale_choice_also_lands_in_the_session(): void
@@ -110,7 +111,7 @@ class PreferencesTest extends TestCase
             ->putJson('/settings/theme', ['theme' => 'system'])
             ->assertOk();
 
-        $this->assertNull($this->user->refresh()->theme);
+        $this->assertSame('system', $this->user->refresh()->theme);
     }
 
     public function test_the_theme_endpoint_rejects_an_unknown_theme(): void

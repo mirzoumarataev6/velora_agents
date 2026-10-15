@@ -261,33 +261,13 @@ html, body { margin: 0; padding: 0; }
     --sun-display: var(--l-sun);    --moon-display: var(--l-moon);
 }
 
-@media (prefers-color-scheme: dark) {
-    :root:not(.light) {
-        --bg: var(--d-bg);              --bg-alt: var(--d-bg-alt);
-        --fg: var(--d-fg);              --fg-2: var(--d-fg-2);
-        --fg-3: var(--d-fg-3);          --fg-4: var(--d-fg-4);
-        --line: var(--d-line);          --line-2: var(--d-line-2);
-        --accent: var(--d-accent);      --surf: var(--d-surf);
-        --surf-2: var(--d-surf-2);      --sunken: var(--d-sunken);
-        --dot-fill: var(--d-dot-fill);  --nav-bg: var(--d-nav);
-        --grain-blend: var(--d-grain-blend); --grain-op: var(--d-grain-op);
-        --glow-1: var(--d-glow-1);      --glow-2: var(--d-glow-2);
-        --glow-3: var(--d-glow-3);      --glow-op: var(--d-glow-op);
-        --grid-line: var(--d-grid);     --rule: var(--d-rule);
-        --num-grad: var(--d-num-grad);  --sheen: var(--d-sheen);
-        --shadow-sm: var(--d-shadow-sm); --shadow: var(--d-shadow);
-        --shadow-lg: var(--d-shadow-lg);
-        --bubble: var(--d-bubble);      --bubble-border: var(--d-bubble-border);
-        --ghost-bg: var(--d-ghost-bg);  --ghost-border: var(--d-ghost-border);
-        --ghost-hov: var(--d-ghost-hov); --ghost-hov-bd: var(--d-ghost-hov-bd);
-        --o-shadow: var(--d-o-shadow);  --o-shadow-hov: var(--d-o-shadow-hov);
-        --tint: var(--d-tint);          --tint-border: var(--d-tint-border);
-        --inv-bg: var(--d-inv-bg);      --inv-fg: var(--d-inv-fg);
-        --inv-fg2: var(--d-inv-fg2);
-        --sel-bg: var(--d-sel-bg);      --sel-fg: var(--d-sel-fg);
-        --sun-display: var(--d-sun);    --moon-display: var(--d-moon);
-    }
-}
+{{-- Deliberately NOT a `@media (prefers-color-scheme: dark) { :root:not(.light) {…} }`
+     block here any more. That OS-driven fallback is what put a visitor on a
+     dark OS into dark mode on their very first visit, before they had ever
+     touched the toggle below — the exact bug this re-skin had to fix: with
+     nothing stored, every surface defaults to the light mapping above
+     (`:root, :root.light`), full stop. `:root.dark` below is the only other
+     way into the dark mapping — the toggle's own explicit choice. --}}
 
 :root.dark {
     --bg: var(--d-bg);              --bg-alt: var(--d-bg-alt);
@@ -1572,12 +1552,15 @@ footer { border-top: 1px solid var(--line); padding: 3rem 0 2.2rem; background: 
     var root = document.documentElement;
 
     /* ── theme ───────────────────────────────────────────────────── */
-    var darkMq = window.matchMedia('(prefers-color-scheme: dark)');
     var toggle = document.getElementById('themeToggle');
+    // No OS fallback here on purpose: the boot script above only ever adds
+    // 'light' or 'dark' when localStorage has an explicit choice, so absent
+    // either class the page IS light (the `:root`/`:root.light` CSS mapping),
+    // and the toggle's notion of "current" has to agree with that render
+    // rather than asking the OS, or the button would offer to switch TO the
+    // theme already on screen.
     var currentTheme = function () {
-        if (root.classList.contains('dark')) return 'dark';
-        if (root.classList.contains('light')) return 'light';
-        return darkMq.matches ? 'dark' : 'light';
+        return root.classList.contains('dark') ? 'dark' : 'light';
     };
     var syncLabel = function () {
         var next = currentTheme() === 'dark' ? 'light' : 'dark';
@@ -1592,7 +1575,6 @@ footer { border-top: 1px solid var(--line); padding: 3rem 0 2.2rem; background: 
         try { localStorage.setItem('theme', next); } catch (e) {}
         syncLabel();
     });
-    if (darkMq.addEventListener) darkMq.addEventListener('change', syncLabel);
 
     /* ── language dropdown ────────────────────────────────────────
        The i18n engine intercepts [data-locale] clicks and swaps in place;

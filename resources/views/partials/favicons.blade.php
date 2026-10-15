@@ -31,6 +31,13 @@
      from config/palette.php, which scripts/build-palette.mjs generates from the
      same tailwind.config.js as every other token — so the address bar cannot
      drift away from the canvas the way it silently did under the last two
-     re-skins. --}}
+     re-skins.
+
+     Left keyed to `prefers-color-scheme` on purpose, unlike the page's own
+     "nothing stored means light" default: the page itself (the `dark` class
+     the boot script sets) is the source of truth for what actually renders,
+     and these two tags only tint chrome outside that page — the worst a
+     mismatch costs is an address bar one shade off from the content under it
+     on a dark OS, never a flash of the wrong theme in the content itself. --}}
 <meta name="theme-color" content="{{ config('palette.paper') }}" media="(prefers-color-scheme: light)" />
 <meta name="theme-color" content="{{ config('palette.night') }}" media="(prefers-color-scheme: dark)" />
