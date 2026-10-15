@@ -4,11 +4,13 @@ namespace App\Http\Controllers\Teams;
 
 use App\Http\Controllers\Controller;
 use App\Models\Role;
+use App\Models\Team;
 use App\Models\TeamMembership;
 use App\Models\User;
 use App\Services\Permissions\AuthorizesRoleGrants;
 use App\Services\Permissions\PermissionCatalog;
 use App\Services\Teams\CreatesPersonalTeam;
+use App\Services\Teams\HomeDestination;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -130,6 +132,53 @@ class TeamMemberController extends Controller
         $request->user()->flushPermissionCache();
 
         return back()->with('status', __('settings.team.member_removed'))->with('settings_tab', 'team');
+    }
+
+    /**
+     * G-01: the self-service counterpart to destroy(), which blocks every
+     * self-removal unconditionally (see its own comment — a leave action
+     * was always the intended way out, not a gap left in that guard).
+     * Deliberately ungated by any team.* permission: a member holding NONE
+     * of them is exactly who needs this most, and nothing here reads or
+     * writes another row — `$user->activeTeamId()` picks the team, there
+     * is no {membership} route parameter or request field that could name
+     * someone else's.
+     */
+    public function leave(Request $request, HomeDestination $destination, CreatesPersonalTeam $personalTeams): RedirectResponse
+    {
+        $user = $request->user();
+        $teamId = $user->activeTeamId();
+        abort_if($teamId === null, 403);
+
+        DB::transaction(function () use ($user, $teamId, $personalTeams): void {
+            $locked = TeamMembership::where('user_id', $user->id)->where('team_id', $teamId)
+                ->lockForUpdate()->first();
+            abort_if($locked === null, 404);
+
+            // Re-read inside the lock, same discipline as update()/destroy():
+            // a role granted Owner, or the team itself turning out to be the
+            // one namespace this account cannot leave, must still be
+            // honored by the time this commits, not just when the page
+            // that posted here was rendered.
+            abort_if($locked->role->is_owner, 403, __('settings.team.leave_owner_blocked'));
+            abort_if((bool) Team::whereKey($teamId)->value('is_personal'), 403, __('settings.team.leave_personal_blocked'));
+
+            $locked->delete();
+
+            // Mirrors destroy()'s own reassignment exactly (earliest
+            // membership by id, a fresh personal team only if truly none
+            // remain) — never a second mechanism for "what team does this
+            // user land on next." In practice this is always the personal
+            // team: it is created first and so holds the lowest id.
+            $nextTeamId = TeamMembership::where('user_id', $user->id)
+                ->orderBy('id')->value('team_id');
+            $nextTeamId ??= $personalTeams->create($user)->id;
+            $user->forceFill(['current_team_id' => $nextTeamId])->save();
+        });
+
+        $user->flushPermissionCache();
+
+        return redirect($destination->url($user))->with('status', __('settings.team.left'));
     }
 
     private function permittedActiveTeamId(Request $request, string $permission): int

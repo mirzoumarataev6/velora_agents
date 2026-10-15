@@ -132,4 +132,33 @@ class TeamSettingsUiTest extends TestCase
         $response->assertDontSee('data-i18n="settings.team.members_heading"', false);
         $response->assertDontSee(route('teams.members.destroy', $membership));
     }
+
+    /**
+     * G-01's UI half: the Owner never sees a way to leave their own team
+     * (leave() itself would 403 them anyway — the button mirrors that
+     * rather than relying on the backend alone to say no), while an
+     * ordinary member does.
+     */
+    public function test_the_leave_button_is_hidden_for_the_owner_but_shown_for_an_ordinary_member(): void
+    {
+        $owner = User::factory()->create();
+        app(CreatesTeam::class)->create($owner, 'Sales');
+        $member = User::factory()->create();
+        $operator = Role::where('team_id', $owner->current_team_id)->where('slug', PermissionCatalog::OPERATOR)->sole();
+        TeamMembership::create([
+            'team_id' => $owner->current_team_id,
+            'user_id' => $member->id,
+            'role_id' => $operator->id,
+            'joined_at' => now(),
+        ]);
+        $member->forceFill(['current_team_id' => $owner->current_team_id])->save();
+
+        $this->actingAs($owner)->get(route('teams.index'))
+            ->assertOk()
+            ->assertDontSee(route('teams.leave'));
+
+        $this->actingAs($member)->get(route('teams.index'))
+            ->assertOk()
+            ->assertSee(route('teams.leave'));
+    }
 }

@@ -30,9 +30,25 @@
                     <p class="text-xs font-semibold uppercase tracking-wide text-muted dark:text-night-muted">{{ __('settings.team.active_label') }}</p>
                     <h2 class="mt-1 font-display text-xl font-semibold">{{ $activeTeam->name }}</h2>
                 </div>
-                @can('team.roles.view')
-                    <a href="{{ route('teams.roles.index') }}" class="btn btn-secondary">{{ __('settings.roles.manage_button') }}</a>
-                @endcan
+                <div class="flex flex-wrap items-center gap-2">
+                    @can('team.roles.view')
+                        <a href="{{ route('teams.roles.index') }}" class="btn btn-secondary">{{ __('settings.roles.manage_button') }}</a>
+                    @endcan
+                    {{-- G-01: the Owner is immune (same rule leave() itself
+                         enforces, and the only one not already true in
+                         this branch — is_personal is already excluded by
+                         the outer @if above). Same lightweight confirm()
+                         the member-removal button uses; no new component. --}}
+                    @if (! auth()->user()->isOwnerOf($activeTeam->id))
+                        <form method="POST" action="{{ route('teams.leave') }}"
+                            x-on:submit="if (! window.confirm(window.__i18n.messages[window.__i18n.current].settings.team.leave_confirm)) $event.preventDefault()">
+                            @csrf
+                            <button type="submit" class="btn btn-ghost text-danger dark:text-danger-light" data-i18n="settings.team.leave_button">
+                                {{ __('settings.team.leave_button') }}
+                            </button>
+                        </form>
+                    @endif
+                </div>
             </div>
         </div>
 

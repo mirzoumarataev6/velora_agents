@@ -104,6 +104,14 @@ Route::middleware(['auth', 'auth.session'])->group(function () {
     Route::patch('/teams/members/{membership}', [TeamMemberController::class, 'update'])->name('teams.members.update');
     Route::delete('/teams/members/{membership}', [TeamMemberController::class, 'destroy'])->name('teams.members.destroy');
 
+    // G-01: no {membership} here on purpose — leave() acts on the caller's
+    // own membership in their active team, never a route-bound one, so
+    // there is no id for a request to tamper with. URI lives under
+    // /settings/team rather than beside the routes above because the
+    // team's own settings page (teams.index) is where the button for this
+    // lives; the route name still joins its teams.* siblings.
+    Route::post('/settings/team/leave', [TeamMemberController::class, 'leave'])->name('teams.leave');
+
     // Gated by team.roles.view/team.roles.manage, not by an owner-only
     // check — any role holding that permission (Admin by default, or a
     // custom one) can read or edit roles. AuthorizesRoleGrants is the
