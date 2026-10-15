@@ -137,6 +137,7 @@ return [
         'leave_confirm' => 'Leave this team?',
         'leave_owner_blocked' => 'The Owner cannot leave a team. Transfer ownership to another member first.',
         'leave_personal_blocked' => 'Your personal space cannot be left.',
+        'leave_stale' => 'The team changed in another tab. Reload the page and try again.',
         'left' => 'You left the team.',
         'pending_heading' => 'Pending invitations',
         'pending_empty' => 'No pending invitations.',

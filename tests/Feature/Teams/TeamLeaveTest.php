@@ -42,7 +42,11 @@ class TeamLeaveTest extends TestCase
         ]);
     }
 
-    /** Required case (a). */
+    /**
+     * Required case (a) from Stage D2.3, and required case (c) from
+     * D2.3b: a correct team_id — the one the page was actually rendered
+     * for — still leaves exactly as before.
+     */
     public function test_an_operator_can_leave_and_lands_on_their_own_personal_team(): void
     {
         $owner = $this->explicitTeamOwner();
@@ -51,7 +55,7 @@ class TeamLeaveTest extends TestCase
         $membership = $this->join($member, $owner->current_team_id, $this->role($owner->current_team_id, PermissionCatalog::OPERATOR));
         $member->forceFill(['current_team_id' => $owner->current_team_id])->save();
 
-        $response = $this->actingAs($member)->post(route('teams.leave'));
+        $response = $this->actingAs($member)->post(route('teams.leave'), ['team_id' => $owner->current_team_id]);
 
         $response->assertRedirect();
         $this->assertDatabaseMissing('team_user', ['id' => $membership->id]);
@@ -67,7 +71,7 @@ class TeamLeaveTest extends TestCase
         $membership = $this->join($member, $owner->current_team_id, $this->role($owner->current_team_id, PermissionCatalog::ADMIN));
         $member->forceFill(['current_team_id' => $owner->current_team_id])->save();
 
-        $response = $this->actingAs($member)->post(route('teams.leave'));
+        $response = $this->actingAs($member)->post(route('teams.leave'), ['team_id' => $owner->current_team_id]);
 
         $response->assertRedirect();
         $this->assertDatabaseMissing('team_user', ['id' => $membership->id]);
@@ -80,7 +84,7 @@ class TeamLeaveTest extends TestCase
         $owner = $this->explicitTeamOwner();
         $membership = $owner->membershipIn($owner->current_team_id);
 
-        $this->actingAs($owner)->post(route('teams.leave'))->assertForbidden();
+        $this->actingAs($owner)->post(route('teams.leave'), ['team_id' => $owner->current_team_id])->assertForbidden();
 
         $this->assertDatabaseHas('team_user', ['id' => $membership->id]);
         $this->assertSame($owner->current_team_id, $owner->fresh()->current_team_id);
@@ -100,7 +104,7 @@ class TeamLeaveTest extends TestCase
         $user = User::factory()->create();
         $membership = $user->membershipIn($user->current_team_id);
 
-        $this->actingAs($user)->post(route('teams.leave'))->assertForbidden();
+        $this->actingAs($user)->post(route('teams.leave'), ['team_id' => $user->current_team_id])->assertForbidden();
 
         $this->assertDatabaseHas('team_user', ['id' => $membership->id]);
     }
@@ -129,9 +133,14 @@ class TeamLeaveTest extends TestCase
     }
 
     /**
-     * Required case (e), second half: leave() reads no request body at
-     * all to decide whose membership to delete — these fields are exactly
-     * what a forged request pointing at someone else would try.
+     * Required case (e), second half: leave() reads no `user_id` or
+     * `membership_id` from the request at all to decide whose membership
+     * to delete — those two are exactly what a forged request pointing at
+     * someone else would try. `team_id` is legitimately required as of
+     * Stage D2.3b, so this sends the one both member and other actually
+     * share (the active team) — otherwise the request would 409 on the
+     * team-mismatch check before ever reaching the escalation this test
+     * is actually about.
      */
     public function test_extra_request_fields_cannot_redirect_the_leave_to_another_members_row(): void
     {
@@ -145,7 +154,7 @@ class TeamLeaveTest extends TestCase
         $this->actingAs($member)->post(route('teams.leave'), [
             'user_id' => $other->id,
             'membership_id' => $otherMembership->id,
-            'team_id' => $otherMembership->team_id,
+            'team_id' => $owner->current_team_id,
         ])->assertRedirect();
 
         $this->assertDatabaseMissing('team_user', ['id' => $membership->id]);
@@ -169,7 +178,7 @@ class TeamLeaveTest extends TestCase
         $board = app(ProjectBoards::class)->create($owner->current_team_id, $owner->id, 'Launch');
         $this->actingAs($member)->get(route('projects.boards.show', $board))->assertOk();
 
-        $this->actingAs($member)->post(route('teams.leave'))->assertRedirect();
+        $this->actingAs($member)->post(route('teams.leave'), ['team_id' => $owner->current_team_id])->assertRedirect();
 
         $this->actingAs($member)->get(route('projects.boards.show', $board))->assertNotFound();
         $this->assertDatabaseHas('team_user', ['id' => $otherMembership->id]);
@@ -177,6 +186,45 @@ class TeamLeaveTest extends TestCase
             PermissionCatalog::OPERATOR,
             $otherMember->fresh()->membershipIn($owner->current_team_id)->role->slug,
         );
+    }
+
+    /**
+     * Stage D2.3b, required case (a): the bug this stage closes. Team A's
+     * settings page posts team_id=A, but the tab's session has since
+     * switched its active team to B (e.g. switched in another tab) —
+     * leave() must not act on whichever team happens to be active now.
+     * Both memberships survive and current_team_id is untouched.
+     */
+    public function test_a_team_id_that_no_longer_matches_the_active_team_is_rejected(): void
+    {
+        $teamAOwner = $this->explicitTeamOwner();
+        $teamBOwner = $this->explicitTeamOwner();
+        $member = User::factory()->create();
+        $membershipA = $this->join($member, $teamAOwner->current_team_id, $this->role($teamAOwner->current_team_id, PermissionCatalog::OPERATOR));
+        $membershipB = $this->join($member, $teamBOwner->current_team_id, $this->role($teamBOwner->current_team_id, PermissionCatalog::OPERATOR));
+        $member->forceFill(['current_team_id' => $teamBOwner->current_team_id])->save();
+
+        $response = $this->actingAs($member)->post(route('teams.leave'), ['team_id' => $teamAOwner->current_team_id]);
+
+        $response->assertStatus(409);
+        $this->assertDatabaseHas('team_user', ['id' => $membershipA->id]);
+        $this->assertDatabaseHas('team_user', ['id' => $membershipB->id]);
+        $this->assertSame($teamBOwner->current_team_id, $member->fresh()->current_team_id);
+    }
+
+    /** Stage D2.3b, required case (b): no team_id at all is a validation error, not a guess at which team. */
+    public function test_a_missing_team_id_is_a_validation_error(): void
+    {
+        $owner = $this->explicitTeamOwner();
+        $member = User::factory()->create();
+        $membership = $this->join($member, $owner->current_team_id, $this->role($owner->current_team_id, PermissionCatalog::OPERATOR));
+        $member->forceFill(['current_team_id' => $owner->current_team_id])->save();
+
+        $response = $this->actingAs($member)->post(route('teams.leave'));
+
+        $response->assertInvalid(['team_id']);
+        $this->assertDatabaseHas('team_user', ['id' => $membership->id]);
+        $this->assertSame($owner->current_team_id, $member->fresh()->current_team_id);
     }
 
     /** Required case (g). */

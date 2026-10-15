@@ -150,6 +150,19 @@ class TeamMemberController extends Controller
         $teamId = $user->activeTeamId();
         abort_if($teamId === null, 403);
 
+        $data = $request->validate(['team_id' => ['required', 'integer']]);
+
+        // The form posts the team it was RENDERED for, not whatever is
+        // active now — a stale tab (team A's settings page open in one
+        // tab, switched to team B in another) would otherwise leave
+        // whichever team happens to be active when the click lands, not
+        // the one the button on screen actually said. Same shape as
+        // update()/destroy()'s own `abort_unless($membership->team_id ===
+        // $teamId, 404)` stale-resource check — a plain abort, not a
+        // redirect, since nothing was changed and there is nothing to flash
+        // a status onto.
+        abort_unless((int) $data['team_id'] === $teamId, 409, __('settings.team.leave_stale'));
+
         DB::transaction(function () use ($user, $teamId, $personalTeams): void {
             $locked = TeamMembership::where('user_id', $user->id)->where('team_id', $teamId)
                 ->lockForUpdate()->first();

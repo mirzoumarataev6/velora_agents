@@ -43,6 +43,12 @@
                         <form method="POST" action="{{ route('teams.leave') }}"
                             x-on:submit="if (! window.confirm(window.__i18n.messages[window.__i18n.current].settings.team.leave_confirm)) $event.preventDefault()">
                             @csrf
+                            {{-- The team THIS PAGE was rendered for, not whatever
+                                 is active by the time the click lands — a stale
+                                 tab left open while another tab switches teams
+                                 must not leave the wrong one. leave() 409s if
+                                 this no longer matches activeTeamId(). --}}
+                            <input type="hidden" name="team_id" value="{{ $activeTeam->id }}" />
                             <button type="submit" class="btn btn-ghost text-danger dark:text-danger-light" data-i18n="settings.team.leave_button">
                                 {{ __('settings.team.leave_button') }}
                             </button>
