@@ -52,7 +52,20 @@ class SettingsController extends Controller
             'user' => $user,
             // Drives the Telegram lead-alert cards: one per agent, because the
             // link is made through that agent's own bot.
+            //
+            // `channels` is eager-loaded because partials/lead-notify-card reads
+            // `$agent->channels` to decide whether the agent's Telegram channel
+            // is connected — one query per card otherwise, which grew with the
+            // number of agents on the page (measured: 5 agents, 5 queries).
+            //
+            // The column list is deliberate, not incidental tidiness: `channels`
+            // also holds `credentials` (the encrypted bot token) and a `settings`
+            // JSON blob, and the card needs neither. Loading the whole row to
+            // answer one boolean would pull every agent's bot token into memory
+            // to render a settings page. Anything added here that needs more of
+            // a channel than type+status has to widen this list.
             'agents' => $user->can('agents.update') ? Agent::ownedBy($user)
+                ->with(['channels' => fn ($query) => $query->select('id', 'agent_id', 'type', 'status')])
                 ->orderBy('name')
                 ->get(['id', 'name', 'slug', 'notify_telegram_username', 'notify_telegram_chat_id', 'notify_telegram_linked_at']) : collect(),
             'sessions' => $this->sessions($request),
