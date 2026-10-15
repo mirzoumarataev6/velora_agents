@@ -55,12 +55,12 @@
         ],
         "dev": [
             "Composer\\Config::disableProcessTimeout",
-            "npx concurrently -c \"#93c5fd,#c4b5fd,#fdba74,#86efac\" \"PHP_CLI_SERVER_WORKERS=4 php artisan serve --no-reload\" \"php artisan queue:supervise\" \"npm run dev\" \"bash instagram_service/start.sh\" --names='server,queue,vite,instagram'"
+            "npx concurrently -c \"#93c5fd,#c4b5fd,#fdba74,#86efac\" \"PHP_CLI_SERVER_WORKERS=12 php artisan serve --no-reload\" \"php artisan queue:supervise\" \"npm run dev\" \"bash instagram_service/start.sh\" --names='server,queue,vite,instagram'"
         ],
         "dev:fast": [
             "Composer\\Config::disableProcessTimeout",
             "@php artisan optimize",
-            "npx concurrently -c \"#93c5fd,#c4b5fd\" \"PHP_CLI_SERVER_WORKERS=4 php artisan serve --no-reload\" \"php artisan queue:supervise\" --names='server,queue'"
+            "npx concurrently -c \"#93c5fd,#c4b5fd\" \"PHP_CLI_SERVER_WORKERS=12 php artisan serve --no-reload\" \"php artisan queue:supervise\" --names='server,queue'"
         ],
         "queue": [
             "Composer\\Config::disableProcessTimeout",
@@ -100,6 +100,11 @@
         "pre-package-uninstall": [
             "Illuminate\\Foundation\\ComposerScripts::prePackageUninstall"
         ]
+    },
+    "scripts-descriptions": {
+        "dev": "Server + queue pool + Vite + Instagram service. PHP_CLI_SERVER_WORKERS matters because a click the owner abandons still runs to completion server-side — PHP does not notice the browser aborted until it writes output — so a burst of nav clicks leaves the dev server holding pages nobody is waiting for, and the page the owner actually wants queues behind them. The whole benefit is at the FIRST worker past one: 8 concurrent same-session requests, the last page took 1765ms at 1 worker, 198ms at 4, 176ms at 12. 12 is headroom to the core count, not a measured win over 4 — do not expect raising it further to help. REQUIRES --no-reload: ServeCommand silently ignores this variable without it and serves single-process (ServeCommand.php:105-111), which is the one way to lose the benefit by accident. A rapid click burst is unchanged by any of this (Turbo issues one navigation at a time); that needs php-fpm or Octane.",
+        "dev:fast": "Backend only (no Vite, no Instagram service), with the config/route/view caches warmed. Same PHP_CLI_SERVER_WORKERS as `dev`, for the same reason.",
+        "test": "Clears the config cache first, then runs PHPUnit. Always use this, never a bare `php artisan test` — a cached config can point the suite at the real MySQL database, and RefreshDatabase runs migrate:fresh."
     },
     "extra": {
         "laravel": {
