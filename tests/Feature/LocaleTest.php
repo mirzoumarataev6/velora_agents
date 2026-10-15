@@ -37,13 +37,13 @@ class LocaleTest extends TestCase
 
     public function test_unsupported_locale_redirects_to_default(): void
     {
-        $this->get('/fr')->assertRedirect('/ru');
-        $this->get('/fr/login')->assertRedirect('/ru/login');
+        $this->get('/fr')->assertRedirect('/tg');
+        $this->get('/fr/login')->assertRedirect('/tg/login');
     }
 
     public function test_root_redirects_to_default_locale(): void
     {
-        $this->get('/')->assertRedirect('/ru');
+        $this->get('/')->assertRedirect('/tg');
     }
 
     /**

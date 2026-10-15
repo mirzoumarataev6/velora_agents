@@ -89,7 +89,9 @@ class DealBoardTest extends TestCase
 
     public function test_repeat_customers_are_grouped_and_the_profile_keeps_every_order_and_conversation(): void
     {
-        $owner = User::factory()->create();
+        // Asserting on Russian pluralized labels ("3 покупки"), so the
+        // locale has to be pinned rather than left to the product default.
+        $owner = User::factory()->create(['locale' => 'ru']);
         $agent = Agent::factory()->for($owner)->create();
         $channel = Channel::factory()->for($agent)->whatsapp()->create();
         $customer = Customer::factory()->for($owner)->create(['name' => 'Фарид']);
@@ -553,7 +555,10 @@ class DealBoardTest extends TestCase
 
     public function test_deal_history_combines_customer_messages_tasks_and_stage_changes(): void
     {
-        $owner = User::factory()->create();
+        // Asserting on the Russian stage-change label ("Этап изменён: ..."),
+        // so the locale has to be pinned rather than left to the product
+        // default.
+        $owner = User::factory()->create(['locale' => 'ru']);
         $agent = Agent::factory()->for($owner)->create();
         $customer = Customer::factory()->for($owner)->create();
         $conversation = Conversation::factory()->for($agent)

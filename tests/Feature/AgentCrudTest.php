@@ -203,7 +203,9 @@ class AgentCrudTest extends TestCase
 
     public function test_agents_index_shows_empty_state_for_new_user(): void
     {
-        $user = User::factory()->create();
+        // Asserting on the Russian copy, so the locale has to be pinned
+        // rather than left to whatever the product's default happens to be.
+        $user = User::factory()->create(['locale' => 'ru']);
 
         $this->actingAs($user)
             ->get(route('agents.index'))
@@ -218,7 +220,9 @@ class AgentCrudTest extends TestCase
      */
     public function test_create_wizard_shows_personality_field_on_the_instructions_step(): void
     {
-        $user = User::factory()->create();
+        // Asserting on the Russian copy, so the locale has to be pinned
+        // rather than left to whatever the product's default happens to be.
+        $user = User::factory()->create(['locale' => 'ru']);
 
         $response = $this->actingAs($user)->get(route('agents.create'));
 

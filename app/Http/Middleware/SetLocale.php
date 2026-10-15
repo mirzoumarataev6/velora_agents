@@ -15,7 +15,11 @@ class SetLocale
      */
     public const SUPPORTED_LOCALES = ['ru', 'tg', 'en'];
 
-    public const DEFAULT_LOCALE = 'ru';
+    // Tajik, not Russian: this is what a visitor who has never chosen a
+    // language gets, everywhere that falls through to it (root redirect, an
+    // unsupported locale segment, a session with no recorded choice). Russian
+    // stays fully supported — it is simply no longer the fallback.
+    public const DEFAULT_LOCALE = 'tg';
 
     /**
      * Query parameter the switcher uses to carry a locale on pages that have no
