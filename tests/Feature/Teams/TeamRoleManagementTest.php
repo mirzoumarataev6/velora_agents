@@ -28,14 +28,14 @@ class TeamRoleManagementTest extends TestCase
 
         $this->actingAs($owner)->post(route('teams.roles.store'), [
             'name' => 'Sales coach',
-            'permissions' => [PermissionCatalog::AGENTS_VIEW, PermissionCatalog::CONVERSATIONS_REPLY],
+            'permissions' => [PermissionCatalog::AGENTS_VIEW, PermissionCatalog::CONVERSATIONS_VIEW, PermissionCatalog::CONVERSATIONS_REPLY],
             'team_id' => User::factory()->create()->current_team_id,
             'is_owner' => true,
         ])->assertRedirect();
 
         $role = Role::where('team_id', $owner->current_team_id)->where('name', 'Sales coach')->sole();
         $this->assertFalse($role->is_owner);
-        $this->assertSame([PermissionCatalog::AGENTS_VIEW, PermissionCatalog::CONVERSATIONS_REPLY], $role->permissionKeys());
+        $this->assertSame([PermissionCatalog::AGENTS_VIEW, PermissionCatalog::CONVERSATIONS_VIEW, PermissionCatalog::CONVERSATIONS_REPLY], $role->permissionKeys());
         $this->assertStringStartsWith('sales-coach-', $role->slug);
     }
 
@@ -85,6 +85,63 @@ class TeamRoleManagementTest extends TestCase
         $this->assertSame([PermissionCatalog::CRM_VIEW, PermissionCatalog::CRM_MANAGE], $role->permissionKeys());
     }
 
+    /**
+     * Stage C2 generalized requires() beyond crm/analytics. A specific,
+     * hardcoded pair rather than one already covered by the generic test
+     * below — agents.create had NO dependency before this stage, so this
+     * fails on a commit before it landed, where the generic loop test
+     * would not (it only ever checks whatever requires() already has).
+     */
+    public function test_agents_create_is_rejected_without_agents_view(): void
+    {
+        $owner = $this->owner();
+
+        $this->actingAs($owner)->post(route('teams.roles.store'), [
+            'name' => 'No view role',
+            'permissions' => [PermissionCatalog::AGENTS_CREATE],
+        ])->assertSessionHasErrors('permissions', null, 'roles');
+
+        $this->assertDatabaseMissing('roles', ['team_id' => $owner->current_team_id, 'name' => 'No view role']);
+
+        $this->post(route('teams.roles.store'), [
+            'name' => 'With view role',
+            'permissions' => [PermissionCatalog::AGENTS_VIEW, PermissionCatalog::AGENTS_CREATE],
+        ])->assertRedirect();
+
+        $role = Role::where('team_id', $owner->current_team_id)->where('name', 'With view role')->sole();
+        $this->assertSame([PermissionCatalog::AGENTS_VIEW, PermissionCatalog::AGENTS_CREATE], $role->permissionKeys());
+    }
+
+    /**
+     * The validation rule itself reads PermissionCatalog::requires()
+     * generically — this proves that genericity by walking the WHOLE map,
+     * not just the crm/analytics pair, so a future addition to requires()
+     * is covered by this test without anyone having to remember to extend
+     * it by hand.
+     */
+    public function test_every_entry_in_the_dependency_map_is_rejected_server_side_when_submitted_alone(): void
+    {
+        $owner = $this->owner();
+        $this->actingAs($owner);
+
+        foreach (PermissionCatalog::requires() as $permission => $dependencies) {
+            $this->post(route('teams.roles.store'), [
+                'name' => "Role for {$permission}",
+                'permissions' => [$permission],
+            ])->assertSessionHasErrors('permissions', null, 'roles');
+
+            $this->assertDatabaseMissing('roles', ['team_id' => $owner->current_team_id, 'name' => "Role for {$permission}"]);
+
+            $this->post(route('teams.roles.store'), [
+                'name' => "Role for {$permission}",
+                'permissions' => array_merge($dependencies, [$permission]),
+            ])->assertRedirect();
+
+            $role = Role::where('team_id', $owner->current_team_id)->where('name', "Role for {$permission}")->sole();
+            $this->assertEqualsCanonicalizing(array_merge($dependencies, [$permission]), $role->permissionKeys());
+        }
+    }
+
     public function test_same_name_is_allowed_in_another_team_but_not_twice_in_one_team(): void
     {
         $owner = $this->owner();
@@ -110,12 +167,12 @@ class TeamRoleManagementTest extends TestCase
 
         $this->patch(route('teams.roles.update', $role), [
             'name' => 'Senior coach',
-            'permissions' => [PermissionCatalog::CONVERSATIONS_REPLY],
+            'permissions' => [PermissionCatalog::CONVERSATIONS_VIEW, PermissionCatalog::CONVERSATIONS_REPLY],
         ])->assertRedirect();
 
         $this->assertSame('Senior coach', $role->fresh()->name);
         $this->assertSame($originalSlug, $role->fresh()->slug);
-        $this->assertSame([PermissionCatalog::CONVERSATIONS_REPLY], $role->permissionKeys());
+        $this->assertSame([PermissionCatalog::CONVERSATIONS_VIEW, PermissionCatalog::CONVERSATIONS_REPLY], $role->permissionKeys());
 
         $this->patch(route('teams.roles.update', $role), ['name' => 'Senior coach'])->assertRedirect();
         $this->assertSame([], $role->permissionKeys());

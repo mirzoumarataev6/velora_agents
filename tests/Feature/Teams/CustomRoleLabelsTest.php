@@ -73,7 +73,7 @@ class CustomRoleLabelsTest extends TestCase
 
         $this->actingAs($owner)->post(route('teams.roles.store'), [
             'name' => 'Billing specialist',
-            'permissions' => [PermissionCatalog::BILLING_MANAGE],
+            'permissions' => [PermissionCatalog::BILLING_VIEW, PermissionCatalog::BILLING_MANAGE],
         ])->assertRedirect();
         $custom = Role::where('team_id', $owner->current_team_id)->where('name', 'Billing specialist')->sole();
 

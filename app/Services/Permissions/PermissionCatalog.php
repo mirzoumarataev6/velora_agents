@@ -127,23 +127,47 @@ final class PermissionCatalog
     }
 
     /**
-     * A permission that is meaningless without another: `crm.manage` is a
-     * write ability over rows `crm.view` is what lets a role read in the
-     * first place, and the same relationship holds for `analytics.manage`.
-     * Enforced as a reject (`TeamRoleController`'s own validation), never
-     * an auto-add on the server — silently inserting a permission nobody
-     * selected is a worse surprise than telling the owner "manage" needs
-     * "view" too. The role editor UI auto-checks/unchecks the same pair for
-     * the same reason convenience belongs on the client: nobody should
-     * have to learn this rule by hitting the rejection first.
+     * A permission that is meaningless without another. The general rule,
+     * true of the whole catalog: every non-view permission is a write (or
+     * invite/remove/manage) ability over rows its own section's `*.view` is
+     * what lets a role read in the first place — a role that can
+     * `agents.create` but not `agents.view` could make an agent it could
+     * never afterward see. Enforced as a reject (`TeamRoleController`'s own
+     * validation), never an auto-add on the server — silently inserting a
+     * permission nobody selected is a worse surprise than telling the
+     * owner "manage" needs "view" too. The role editor UI auto-checks/
+     * unchecks driven by this exact map for the same reason convenience
+     * belongs on the client: nobody should have to learn this rule by
+     * hitting the rejection first.
+     *
+     * `team.delete` and `billing.view` carry no dependency: the former has
+     * no `*.view` sibling to require (team membership itself is the only
+     * "view" of a team), and the latter IS the view half of its own pair.
      *
      * @return array<string, list<string>> permission => the permissions it requires
      */
     public static function requires(): array
     {
         return [
+            self::TEAM_SETTINGS_UPDATE => [self::TEAM_SETTINGS_VIEW],
+            self::TEAM_MEMBERS_INVITE => [self::TEAM_MEMBERS_VIEW],
+            self::TEAM_MEMBERS_REMOVE => [self::TEAM_MEMBERS_VIEW],
+            self::TEAM_ROLES_MANAGE => [self::TEAM_ROLES_VIEW],
+            self::AGENTS_CREATE => [self::AGENTS_VIEW],
+            self::AGENTS_UPDATE => [self::AGENTS_VIEW],
+            self::AGENTS_DELETE => [self::AGENTS_VIEW],
+            self::CATALOG_MANAGE => [self::CATALOG_VIEW],
+            self::CHANNELS_MANAGE => [self::CHANNELS_VIEW],
+            self::CONVERSATIONS_REPLY => [self::CONVERSATIONS_VIEW],
+            self::CONVERSATIONS_TAKEOVER => [self::CONVERSATIONS_VIEW],
             self::CRM_MANAGE => [self::CRM_VIEW],
             self::ANALYTICS_MANAGE => [self::ANALYTICS_VIEW],
+            self::PROJECTS_CREATE => [self::PROJECTS_VIEW],
+            self::PROJECTS_EDIT => [self::PROJECTS_VIEW],
+            self::PROJECTS_ASSIGN => [self::PROJECTS_VIEW],
+            self::PROJECTS_COMMENT => [self::PROJECTS_VIEW],
+            self::PROJECTS_MANAGE => [self::PROJECTS_VIEW],
+            self::BILLING_MANAGE => [self::BILLING_VIEW],
         ];
     }
 

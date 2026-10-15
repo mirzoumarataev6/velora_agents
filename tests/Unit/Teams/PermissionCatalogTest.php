@@ -131,4 +131,64 @@ class PermissionCatalogTest extends TestCase
             $this->assertSame($expectedAddition, array_values(array_diff($current, $old)), "{$role}: gained something other than the new crm.* pair");
         }
     }
+
+    /**
+     * Stage C2: requires() generalizes from the two crm/analytics pairs to
+     * every non-view permission in the catalog. Hardcoded (not a loop over
+     * requires() itself) so this fails on a commit where the map is still
+     * the narrower, pre-generalization version — a loop over requires()
+     * would trivially pass against whatever the map happens to contain.
+     */
+    public function test_requires_covers_every_non_view_permission_in_the_catalog(): void
+    {
+        $requires = PermissionCatalog::requires();
+
+        $this->assertSame([PermissionCatalog::TEAM_SETTINGS_VIEW], $requires[PermissionCatalog::TEAM_SETTINGS_UPDATE]);
+        $this->assertSame([PermissionCatalog::TEAM_MEMBERS_VIEW], $requires[PermissionCatalog::TEAM_MEMBERS_INVITE]);
+        $this->assertSame([PermissionCatalog::TEAM_MEMBERS_VIEW], $requires[PermissionCatalog::TEAM_MEMBERS_REMOVE]);
+        $this->assertSame([PermissionCatalog::TEAM_ROLES_VIEW], $requires[PermissionCatalog::TEAM_ROLES_MANAGE]);
+        $this->assertSame([PermissionCatalog::AGENTS_VIEW], $requires[PermissionCatalog::AGENTS_CREATE]);
+        $this->assertSame([PermissionCatalog::AGENTS_VIEW], $requires[PermissionCatalog::AGENTS_UPDATE]);
+        $this->assertSame([PermissionCatalog::AGENTS_VIEW], $requires[PermissionCatalog::AGENTS_DELETE]);
+        $this->assertSame([PermissionCatalog::CATALOG_VIEW], $requires[PermissionCatalog::CATALOG_MANAGE]);
+        $this->assertSame([PermissionCatalog::CHANNELS_VIEW], $requires[PermissionCatalog::CHANNELS_MANAGE]);
+        $this->assertSame([PermissionCatalog::CONVERSATIONS_VIEW], $requires[PermissionCatalog::CONVERSATIONS_REPLY]);
+        $this->assertSame([PermissionCatalog::CONVERSATIONS_VIEW], $requires[PermissionCatalog::CONVERSATIONS_TAKEOVER]);
+        $this->assertSame([PermissionCatalog::PROJECTS_VIEW], $requires[PermissionCatalog::PROJECTS_CREATE]);
+        $this->assertSame([PermissionCatalog::PROJECTS_VIEW], $requires[PermissionCatalog::PROJECTS_EDIT]);
+        $this->assertSame([PermissionCatalog::PROJECTS_VIEW], $requires[PermissionCatalog::PROJECTS_ASSIGN]);
+        $this->assertSame([PermissionCatalog::PROJECTS_VIEW], $requires[PermissionCatalog::PROJECTS_COMMENT]);
+        $this->assertSame([PermissionCatalog::PROJECTS_VIEW], $requires[PermissionCatalog::PROJECTS_MANAGE]);
+        $this->assertSame([PermissionCatalog::BILLING_VIEW], $requires[PermissionCatalog::BILLING_MANAGE]);
+        // Unchanged from before this stage.
+        $this->assertSame([PermissionCatalog::CRM_VIEW], $requires[PermissionCatalog::CRM_MANAGE]);
+        $this->assertSame([PermissionCatalog::ANALYTICS_VIEW], $requires[PermissionCatalog::ANALYTICS_MANAGE]);
+        // No dependency for either: team.delete has no *.view sibling, and
+        // billing.view is the view half of its own pair.
+        $this->assertArrayNotHasKey(PermissionCatalog::TEAM_DELETE, $requires);
+        $this->assertArrayNotHasKey(PermissionCatalog::BILLING_VIEW, $requires);
+    }
+
+    /**
+     * requires() is pointless as a server-side rejection rule if the
+     * catalog's own seeded defaults could violate it — Owner, Admin,
+     * Operator and Viewer must each already satisfy every dependency the
+     * map declares, with no migration needed to bring them into line.
+     */
+    public function test_every_default_role_bundle_satisfies_the_dependency_map(): void
+    {
+        $requires = PermissionCatalog::requires();
+
+        foreach (PermissionCatalog::defaultMatrix() as $role => $permissions) {
+            foreach ($permissions as $permission) {
+                foreach ($requires[$permission] ?? [] as $dependency) {
+                    $this->assertContains(
+                        $dependency,
+                        $permissions,
+                        "{$role} has {$permission} without its required {$dependency}",
+                    );
+                }
+            }
+        }
+    }
 }

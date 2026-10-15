@@ -70,7 +70,7 @@ class TeamAdministrationAccessTest extends TestCase
             $this->post(route('teams.invite'), ['email' => 'escalation@example.com', 'role_id' => $role->id])->assertForbidden();
             $this->patch(route('teams.members.update', $viewer->membershipIn($owner->current_team_id)), ['role_id' => $role->id])->assertForbidden();
         }
-        $this->post(route('teams.roles.store'), ['name' => 'Escalated', 'permissions' => [P::BILLING_MANAGE]])->assertForbidden();
+        $this->post(route('teams.roles.store'), ['name' => 'Escalated', 'permissions' => [P::BILLING_VIEW, P::BILLING_MANAGE]])->assertForbidden();
         $this->patch(route('teams.roles.update', $this->role($owner, 'admin')), ['permissions' => [P::TEAM_DELETE]])->assertForbidden();
         $this->patch(route('teams.roles.update', $powerful), ['name' => 'Changed', 'permissions' => []])->assertForbidden();
         $this->delete(route('teams.members.destroy', $owner->membershipIn($owner->current_team_id)))->assertForbidden();
