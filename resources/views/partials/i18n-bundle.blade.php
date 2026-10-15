@@ -153,16 +153,31 @@
 
         // Intercept switcher activations. Elements opt in with [data-locale];
         // their href/form remains the no-JS fallback.
-        document.addEventListener('click', (event) => {
-            const trigger = event.target.closest('[data-locale]');
-            if (!trigger) return;
-            const locale = trigger.getAttribute('data-locale');
-            if (!i18n.locales.includes(locale)) return;
-            event.preventDefault();
-            window.switchLocale(locale);
-            // Close any open <details> switcher.
-            const details = trigger.closest('details');
-            if (details) details.removeAttribute('open');
-        });
+        //
+        // Guarded: on the dashboard this whole block is NOT behind
+        // data-turbo-permanent (window.__i18n has to be rebuilt with each
+        // page's own namespaces), so Turbo re-executes this inline script in
+        // full on every navigation — including this addEventListener, which
+        // has no element lifecycle to unbind it. Without the guard, every
+        // visit stacked one more document-wide click listener on top of the
+        // last, forever (measured: +1 per navigation, never released). The
+        // flag survives exactly as long as the listener needs to: it lives on
+        // `window`, which Turbo keeps alive across visits and a real page
+        // load (auth/landing, where this script only ever runs once anyway)
+        // starts fresh.
+        if (!window.__i18nSwitcherBound) {
+            window.__i18nSwitcherBound = true;
+            document.addEventListener('click', (event) => {
+                const trigger = event.target.closest('[data-locale]');
+                if (!trigger) return;
+                const locale = trigger.getAttribute('data-locale');
+                if (!window.__i18n.locales.includes(locale)) return;
+                event.preventDefault();
+                window.switchLocale(locale);
+                // Close any open <details> switcher.
+                const details = trigger.closest('details');
+                if (details) details.removeAttribute('open');
+            });
+        }
     })();
 </script>
