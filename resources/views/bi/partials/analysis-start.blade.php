@@ -6,7 +6,11 @@
     csrf: @js(csrf_token()),
     pending: {{ $sources->contains(fn ($s) => ! in_array($s->status, ['ready', 'failed'], true) || $s->datasets->contains(fn ($d) => ! in_array($d->status, ['ready', 'failed'], true))) ? 'true' : 'false' }},
     errorLabel: @js(__('bi.errors.internal_error')),
-})" x-init="init()">
+{{-- Alpine calls this object's own init() itself; see the note in
+     conversations/partials/inbox.blade.php. Spelling it out in x-init
+     ran init() twice against a single destroy() — here that meant
+     two self-rescheduling 2.5s poll chains, neither of which anything can cancel. --}}
+})">
     <div class="grid gap-5 lg:grid-cols-2 {{ $sources->isNotEmpty() ? 'order-2 mt-6' : '' }}">
         <div class="card card-lift rounded-2xl {{ $sources->isNotEmpty() ? 'p-5' : 'p-6 sm:p-8' }}" @dragover.prevent="dragging = true"
             @dragleave.prevent="dragging = false" @drop.prevent="dragging = false; upload($event.dataTransfer.files[0])"

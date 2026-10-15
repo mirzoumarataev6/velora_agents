@@ -26,7 +26,11 @@
             'product_count' => $s->meta['product_count'] ?? null,
             'created_at' => $s->created_at->diffForHumans(),
         ])) }},
-    })" x-init="init()" class="space-y-6">
+    {{-- Alpine calls this object's own init() itself; see the note in
+         conversations/partials/inbox.blade.php. Spelling it out in x-init
+         ran init() twice against a single destroy() — here that meant
+         a second maybePoll() (idempotent only by luck of its `if (this.polling)` guard). --}}
+    })" class="space-y-6">
 
     {{-- Upload zone --}}
     <div>

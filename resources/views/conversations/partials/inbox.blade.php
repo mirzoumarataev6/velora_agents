@@ -43,7 +43,24 @@
             'ratingUpHint' => __('conversations.thread.rating_up_hint'),
             'ratingDownHint' => __('conversations.thread.rating_down_hint'),
         ]) }},
-    })" x-init="init()" @keydown.escape.window="openId && close()">
+    {{-- NO `x-init="init()"` here, and that is load-bearing. Alpine already
+         calls a data object's own `init()` for us (x-data.js: `reactiveData
+         ['init'] && evaluate(el, reactiveData['init'])`), so spelling it out
+         in x-init ran it a SECOND time — while `destroy()`, which Alpine calls
+         on the same object, still ran once.
+
+         The cost was not a harmless duplicate. Each init() opened its own 15s
+         `setInterval` and overwrote `this._pollTimer` with the second id, so
+         destroy() cleared the second poller and ORPHANED the first. Measured:
+         two `/conversations/list` requests per inbox paint, and one immortal
+         poller left behind per visit — still hitting /conversations/list every
+         15s from /projects, /crm, anywhere. Those strays land on the same
+         single PHP worker the owner's next click needs, which is what made
+         rapid navigation look like it was replaying work after the fact.
+
+         Same reason the five other `x-init="init()"` sites were removed, and
+         AlpineInitIsNotDoubledTest now keeps the pattern out. --}}
+    })" @keydown.escape.window="openId && close()">
 
     {{-- Filters: chips, search and both dates on a SINGLE line.
 

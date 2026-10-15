@@ -58,7 +58,11 @@
             'yes' => __('bi.schema.yes'),
             'no' => __('bi.schema.no'),
         ]) }},
-    })" x-init="init()">
+    {{-- Alpine calls this object's own init() itself; see the note in
+         conversations/partials/inbox.blade.php. Spelling it out in x-init
+         ran init() twice against a single destroy() — here that meant
+         openConnect() firing twice and a second status-poll chain. --}}
+    })">
 
     <div class="page-header">
         <div>

@@ -71,7 +71,11 @@
             'invalidRange' => __('bi.dashboards.invalid_date_range'),
         ]) }},
         dateFormat: @js(app()->getLocale() === 'en' ? 'YYYY-MM-DD' : 'DD.MM.YYYY'),
-    })" x-init="init()">
+    {{-- Alpine calls this object's own init() itself; see the note in
+         conversations/partials/inbox.blade.php. Spelling it out in x-init
+         ran init() twice against a single destroy() — here that meant
+         the board mounting Gridstack and its charts twice. --}}
+    })">
 
     <div class="page-header">
         <div class="min-w-0">

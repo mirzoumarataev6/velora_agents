@@ -31,7 +31,11 @@
         initialTab: {{ Js::from($initialTab) }},
         deleteOpen: {{ Js::from($errors->getBag('account')->any()) }},
         flash: {{ Js::from(session('status')) }},
-    })" x-init="init()">
+    {{-- Alpine calls this object's own init() itself; see the note in
+         conversations/partials/inbox.blade.php. Spelling it out in x-init
+         ran init() twice against a single destroy() — here that meant
+         a duplicate success toast and a double scrollIntoView on every visit. --}}
+    })">
 
     <div class="page-header">
         <div>
