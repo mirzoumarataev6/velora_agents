@@ -151,12 +151,34 @@
 
             /* --------------------------------------------------------------- polling */
 
+            /**
+             * Set once Alpine tears this component down. Checked by schedule()
+             * as well as cleared via `timer`, because a fetch already in flight
+             * when the owner navigates away still resolves afterwards and asks
+             * for the next tick — a handle cannot cancel a link in the chain
+             * that has not been created yet.
+             */
+            stopped: false,
+
             schedule() {
+                if (this.stopped) return;
                 clearTimeout(this.timer);
                 this.timer = setTimeout(() => this.poll(), 2500);
             },
 
+            /**
+             * Alpine calls this when Turbo swaps the page away. Without it the
+             * 2.5s chain outlived the page that started it and kept polling
+             * from wherever the owner went next — see the measurement in the
+             * commit that added these teardowns.
+             */
+            destroy() {
+                this.stopped = true;
+                clearTimeout(this.timer);
+            },
+
             async poll() {
+                if (this.stopped) return;
                 try {
                     const response = await fetch(config.statusUrl, {
                         headers: { Accept: 'application/json' },

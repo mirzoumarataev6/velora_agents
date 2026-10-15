@@ -192,6 +192,17 @@
             init() {
                 this.maybePoll();
             },
+            /**
+             * Stops the 3s status poll when the tab (or the whole page, under
+             * Turbo) goes away. maybePoll() only ever starts a poll while a
+             * source is still processing, so without this an owner who opened
+             * knowledge, started an upload and navigated on left a timer
+             * hitting the status endpoint for as long as the tab stayed open.
+             */
+            destroy() {
+                clearInterval(this.polling);
+                this.polling = null;
+            },
             csrfHeaders(extra = {}) {
                 return {
                     Accept: 'application/json',

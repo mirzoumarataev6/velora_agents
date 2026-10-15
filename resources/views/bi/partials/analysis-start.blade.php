@@ -50,7 +50,35 @@
 function analysisHome(config) {
     return {
         uploading: false, dragging: false, progress: 0, error: '',
+
+        /**
+         * The status chain below reschedules itself with a bare setTimeout, so
+         * it needs both a handle to cancel the pending tick and a flag for the
+         * fetch that is already in flight when the owner navigates away — that
+         * one resolves afterwards and would start the chain up again.
+         *
+         * This used to have neither. Measured on the BI empty state with one
+         * import still processing: leaving for /projects left the chain
+         * running, 6 requests to /bi/data/status in 15 seconds, from a page
+         * with no BI on it and no way to stop it short of a full reload. Worse
+         * than the wasted requests, poll() writes into `this.$el`, which Turbo
+         * has already detached by then, so the work was pure loss.
+         */
+        timer: null,
+        stopped: false,
+
         init() { if (config.pending) this.poll(); },
+
+        destroy() {
+            this.stopped = true;
+            clearTimeout(this.timer);
+        },
+
+        schedule(ms) {
+            if (this.stopped) return;
+            clearTimeout(this.timer);
+            this.timer = setTimeout(() => this.poll(), ms);
+        },
         upload(file) {
             if (!file || this.uploading) return;
             this.uploading = true; this.progress = 0; this.error = '';
@@ -68,6 +96,7 @@ function analysisHome(config) {
             xhr.send(form);
         },
         async poll() {
+            if (this.stopped) return;
             try {
                 const response = await fetch(config.statusUrl, {headers: {Accept: 'application/json'}});
                 if (!response.ok) throw new Error('status');
@@ -81,8 +110,8 @@ function analysisHome(config) {
                     card.querySelector('[data-analysis-pending]').hidden = !!ready || source.status === 'failed';
                     pending ||= !['ready', 'failed'].includes(source.status) || source.datasets.some(d => !['ready', 'failed'].includes(d.status));
                 }
-                if (pending) setTimeout(() => this.poll(), 2500);
-            } catch (_) { setTimeout(() => this.poll(), 5000); }
+                if (pending) this.schedule(2500);
+            } catch (_) { this.schedule(5000); }
         },
     };
 }
