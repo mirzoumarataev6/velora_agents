@@ -64,7 +64,14 @@ class TeamAdministrationAccessTest extends TestCase
         $viewer = $this->member($owner, 'viewer');
         $ownerRole = $this->role($owner, 'owner');
         $powerful = Role::create(['team_id' => $owner->current_team_id, 'slug' => 'billing-specialist', 'name' => 'Billing specialist']);
-        $powerful->syncPermissions([P::BILLING_MANAGE]);
+        // Includes BILLING_VIEW: Stage D1's data-repair migration exists
+        // precisely because a role holding BILLING_MANAGE alone is an
+        // invalid, repaired-on-sight shape (see roles.id=62 in
+        // 2026_10_26_000001_repair_roles_missing_permission_dependencies).
+        // The point of this fixture is that the admin lacks BILLING_MANAGE
+        // itself, not that the target role is malformed — it stays
+        // forbidden below with or without BILLING_VIEW alongside it.
+        $powerful->syncPermissions([P::BILLING_VIEW, P::BILLING_MANAGE]);
         $this->actingAs($admin);
         foreach ([$ownerRole, $powerful] as $role) {
             $this->post(route('teams.invite'), ['email' => 'escalation@example.com', 'role_id' => $role->id])->assertForbidden();
@@ -75,7 +82,7 @@ class TeamAdministrationAccessTest extends TestCase
         $this->patch(route('teams.roles.update', $powerful), ['name' => 'Changed', 'permissions' => []])->assertForbidden();
         $this->delete(route('teams.members.destroy', $owner->membershipIn($owner->current_team_id)))->assertForbidden();
         $this->assertDatabaseCount('invitations', 0);
-        $this->assertSame([P::BILLING_MANAGE], $powerful->permissionKeys());
+        $this->assertSame([P::BILLING_VIEW, P::BILLING_MANAGE], $powerful->permissionKeys());
         $this->assertFalse($admin->fresh()->hasPermissionOn($owner->current_team_id, P::TEAM_DELETE));
         Mail::assertNothingSent();
     }
