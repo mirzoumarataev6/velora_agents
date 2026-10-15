@@ -175,6 +175,106 @@ class TeamMemberManagementTest extends TestCase
         $this->assertDatabaseMissing('team_user', ['id' => $operator->id]);
     }
 
+    public function test_admin_can_remove_a_viewer(): void
+    {
+        $owner = User::factory()->create();
+        $admin = $this->join(User::factory()->create(), $owner, PermissionCatalog::ADMIN);
+        $admin->user->forceFill(['current_team_id' => $owner->current_team_id])->save();
+        $viewer = $this->join(User::factory()->create(), $owner, PermissionCatalog::VIEWER);
+
+        $this->actingAs($admin->user)->delete(route('teams.members.destroy', $viewer))->assertRedirect();
+
+        $this->assertDatabaseMissing('team_user', ['id' => $viewer->id]);
+    }
+
+    /**
+     * H6: canGrant() alone passed here before this fix, because an Admin
+     * removing another Admin trivially already holds every permission the
+     * target role holds (it is the same bundle) — the exact shape of
+     * escalation `update()`'s own canGrant() checks are meant to prevent.
+     */
+    public function test_admin_cannot_remove_another_admin(): void
+    {
+        $owner = User::factory()->create();
+        $actor = $this->join(User::factory()->create(), $owner, PermissionCatalog::ADMIN);
+        $actor->user->forceFill(['current_team_id' => $owner->current_team_id])->save();
+        $targetAdmin = $this->join(User::factory()->create(), $owner, PermissionCatalog::ADMIN);
+
+        $this->actingAs($actor->user)->delete(route('teams.members.destroy', $targetAdmin))->assertForbidden();
+
+        $this->assertDatabaseHas('team_user', ['id' => $targetAdmin->id]);
+    }
+
+    /**
+     * H6: destroy() is a removal endpoint, not a self-service leave-team
+     * one (that is separate future work, G-01/Stage D2) — in this stage
+     * self-removal through it is forbidden for every role, Owner included
+     * (whose self-removal is already blocked by the is_owner check).
+     */
+    public function test_admin_cannot_remove_self(): void
+    {
+        $owner = User::factory()->create();
+        $actor = $this->join(User::factory()->create(), $owner, PermissionCatalog::ADMIN);
+        $actor->user->forceFill(['current_team_id' => $owner->current_team_id])->save();
+
+        $this->actingAs($actor->user)->delete(route('teams.members.destroy', $actor))->assertForbidden();
+
+        $this->assertDatabaseHas('team_user', ['id' => $actor->id]);
+    }
+
+    /** The Owner is exempt from the new peer-manager restriction — only the Owner may remove another manager. */
+    public function test_owner_can_remove_an_admin(): void
+    {
+        $owner = User::factory()->create();
+        $targetAdmin = $this->join(User::factory()->create(), $owner, PermissionCatalog::ADMIN);
+
+        $this->actingAs($owner)->delete(route('teams.members.destroy', $targetAdmin))->assertRedirect();
+
+        $this->assertDatabaseMissing('team_user', ['id' => $targetAdmin->id]);
+    }
+
+    /**
+     * The same peer-manager hole, on the role-CHANGE path: canGrant() on
+     * the admin's own CURRENT role passes trivially against another Admin
+     * actor for the same reason it does in destroy() — demoting a peer
+     * manager without the Owner's involvement is the same escalation shape
+     * as removing them.
+     */
+    public function test_admin_cannot_change_another_admins_role(): void
+    {
+        $owner = User::factory()->create();
+        $actor = $this->join(User::factory()->create(), $owner, PermissionCatalog::ADMIN);
+        $actor->user->forceFill(['current_team_id' => $owner->current_team_id])->save();
+        $targetAdmin = $this->join(User::factory()->create(), $owner, PermissionCatalog::ADMIN);
+        $viewerRole = $this->role($owner, PermissionCatalog::VIEWER);
+
+        $this->actingAs($actor->user)->patch(route('teams.members.update', $targetAdmin), [
+            'role_id' => $viewerRole->id,
+        ])->assertForbidden();
+
+        $this->assertSame($this->role($owner, PermissionCatalog::ADMIN)->id, $targetAdmin->fresh()->role_id);
+    }
+
+    /**
+     * Self-targeting stays exempt from the peer-manager check above: an
+     * Admin stepping themselves down is not the escalation the check
+     * exists to stop (canGrant() on the NEW role already stops a self
+     * UPGRADE, since it can never hold a permission the actor lacks).
+     */
+    public function test_admin_can_still_change_their_own_role(): void
+    {
+        $owner = User::factory()->create();
+        $actor = $this->join(User::factory()->create(), $owner, PermissionCatalog::ADMIN);
+        $actor->user->forceFill(['current_team_id' => $owner->current_team_id])->save();
+        $viewerRole = $this->role($owner, PermissionCatalog::VIEWER);
+
+        $this->actingAs($actor->user)->patch(route('teams.members.update', $actor), [
+            'role_id' => $viewerRole->id,
+        ])->assertRedirect();
+
+        $this->assertSame($viewerRole->id, $actor->fresh()->role_id);
+    }
+
     private function join(User $member, User $owner, string $roleSlug): TeamMembership
     {
         return TeamMembership::create([

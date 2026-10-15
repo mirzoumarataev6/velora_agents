@@ -7,6 +7,7 @@ use App\Models\Role;
 use App\Models\TeamMembership;
 use App\Models\User;
 use App\Services\Permissions\AuthorizesRoleGrants;
+use App\Services\Permissions\PermissionCatalog;
 use App\Services\Teams\CreatesPersonalTeam;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -32,10 +33,28 @@ class TeamMemberController extends Controller
             // loaded must remain immune to a stale role-change submission.
             abort_if($locked->role->is_owner, 403);
 
+            $actor = $request->user();
+
+            // H6, the same peer/manager hole destroy() has: canGrant() on
+            // the CURRENT role passes trivially whenever the actor's own
+            // bundle already matches it (an Admin targeting another Admin,
+            // say), so without this a non-Owner could demote a fellow
+            // manager — re-roling them is as much an escalation-shaped move
+            // as removing them outright. Self-targeting is exempt on
+            // purpose: self_role_change (see HasTeamsTest/this file's own
+            // "self role change" test) legitimately lets a manager step
+            // themselves down, and canGrant() on the NEW role already
+            // blocks self-escalation (it can never hold a permission the
+            // actor does not already have).
+            if (! $actor->isOwnerOf($teamId) && (int) $locked->user_id !== (int) $actor->id) {
+                $managerPermissions = [PermissionCatalog::TEAM_MEMBERS_REMOVE, PermissionCatalog::TEAM_ROLES_MANAGE];
+                abort_if(array_intersect($managerPermissions, $locked->role->permissionKeys()) !== [], 403);
+            }
+
             $role = Role::where('team_id', $teamId)->whereKey($data['role_id'])->lockForUpdate()->firstOrFail();
             $grants = app(AuthorizesRoleGrants::class);
-            abort_unless($grants->canGrant($request->user(), $locked->role)
-                && $grants->canGrant($request->user(), $role), 403);
+            abort_unless($grants->canGrant($actor, $locked->role)
+                && $grants->canGrant($actor, $role), 403);
             $locked->forceFill(['role_id' => $role->id])->save();
 
             return $locked->user;
@@ -60,11 +79,35 @@ class TeamMemberController extends Controller
             // removing or demoting it could leave the team unmanageable.
             abort_if($locked->role->is_owner, 403);
 
+            $actor = $request->user();
+
+            // H6, self: destroy() is a removal endpoint, not a leave-team
+            // one — a member who wants out needs a self-service `leave`
+            // action (G-01), not this. An Owner removing themselves already
+            // hits the is_owner check above; this closes the same door for
+            // every other role until that action exists (Stage D2).
+            abort_if((int) $locked->user_id === (int) $actor->id, 403);
+
+            // H6, peer/manager: canGrant() alone is not the escalation guard
+            // it looks like here. It passes trivially whenever the actor's
+            // own role already holds every permission the TARGET role
+            // holds — which is exactly true when an Admin targets another
+            // Admin (same bundle), so an Admin could remove a peer Admin
+            // today. Only the Owner may remove a member whose role carries
+            // team.members.remove or team.roles.manage — the same authority
+            // that would let THAT member remove or re-role others — so a
+            // non-Owner can never use this endpoint to take out a fellow
+            // manager.
+            if (! $actor->isOwnerOf($teamId)) {
+                $managerPermissions = [PermissionCatalog::TEAM_MEMBERS_REMOVE, PermissionCatalog::TEAM_ROLES_MANAGE];
+                abort_if(array_intersect($managerPermissions, $locked->role->permissionKeys()) !== [], 403);
+            }
+
             // Removing a member must demand the same authority granting
             // their role would — otherwise a custom role holding only
             // team.members.remove (and nothing else) could remove an Admin,
             // the exact escalation update() already closes for role changes.
-            abort_unless(app(AuthorizesRoleGrants::class)->canGrant($request->user(), $locked->role), 403);
+            abort_unless(app(AuthorizesRoleGrants::class)->canGrant($actor, $locked->role), 403);
 
             $member = User::whereKey($locked->user_id)->lockForUpdate()->firstOrFail();
             $locked->delete();

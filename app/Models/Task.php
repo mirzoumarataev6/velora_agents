@@ -104,7 +104,17 @@ class Task extends Model
 
         static::assertLockIsLive($column);
 
-        $occupants = static::where('project_column_id', $column->id)->whereNull('archived_at');
+        // U-01: a plain COUNT is a consistent (non-locking) read. InnoDB's
+        // REPEATABLE READ takes its snapshot at a transaction's FIRST
+        // consistent read — if some earlier plain SELECT in this same
+        // transaction (e.g. CRM task creation's own lookups before the
+        // column lock above) already took that snapshot, this count could
+        // still see pre-commit state and undercount occupants a concurrent
+        // transaction already committed. lockForUpdate() here forces a
+        // locking read instead, which MySQL always resolves against the
+        // latest committed data regardless of when the snapshot was taken —
+        // the same reason the column lock above means anything.
+        $occupants = static::where('project_column_id', $column->id)->whereNull('archived_at')->lockForUpdate();
         if ($task->exists) {
             $occupants->whereKeyNot($task->id);
         }
