@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
+use App\Services\Teams\HomeDestination;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -37,7 +38,7 @@ class AuthController extends Controller
 
     public const GREETING_BACK = 'back';
 
-    public function register(Request $request): RedirectResponse
+    public function register(Request $request, HomeDestination $destination): RedirectResponse
     {
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
@@ -78,11 +79,12 @@ class AuthController extends Controller
         // Without this, registering from that link stranded a brand-new user
         // on the dashboard with no invitation accepted. A no-op for every
         // other registration: with nothing stored, intended() falls back to
-        // the same route('home') this always redirected to.
-        return redirect()->intended(route('home'));
+        // HomeDestination's own resolved url rather than a bare route('home')
+        // — a brand-new account's role may not even include analytics.view.
+        return redirect()->intended($destination->url($user));
     }
 
-    public function login(Request $request): RedirectResponse
+    public function login(Request $request, HomeDestination $destination): RedirectResponse
     {
         $credentials = $request->validate([
             'email' => ['required', 'email'],
@@ -106,7 +108,7 @@ class AuthController extends Controller
 
         $request->session()->put(self::GREETING_SESSION_KEY, self::GREETING_BACK);
 
-        return redirect()->intended(route('home'));
+        return redirect()->intended($destination->url(Auth::user()));
     }
 
     private function syncLocale(User $user): void
@@ -133,7 +135,7 @@ class AuthController extends Controller
         return Socialite::driver('google')->redirect();
     }
 
-    public function handleGoogleCallback(Request $request): RedirectResponse
+    public function handleGoogleCallback(Request $request, HomeDestination $destination): RedirectResponse
     {
         $googleUser = Socialite::driver('google')->user();
 
@@ -178,6 +180,6 @@ class AuthController extends Controller
             $returning ? self::GREETING_BACK : self::GREETING_WELCOME,
         );
 
-        return redirect()->intended(route('home'));
+        return redirect()->intended($destination->url($user));
     }
 }

@@ -20,6 +20,7 @@ use App\Http\Controllers\Crm\TaskController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DatabaseConnectionController;
 use App\Http\Controllers\DatasetController;
+use App\Http\Controllers\HomeRedirectController;
 use App\Http\Controllers\KnowledgeMediaController;
 use App\Http\Controllers\KnowledgeSourceController;
 use App\Http\Controllers\LeadController;
@@ -71,11 +72,16 @@ Route::middleware('guest')->group(function () {
 // password hash each session carries against the current one, so cycling the
 // hash actually ejects the other browsers instead of merely intending to.
 Route::middleware(['auth', 'auth.session'])->group(function () {
-    // The panel's front page. `/home` is where every post-login redirect lands,
-    // so pointing it here is what makes the dashboard the landing surface
-    // without touching the handful of places that name that route.
-    Route::redirect('/home', '/dashboard')->name('home');
+    // The panel's front page. `/home` is where every post-login redirect
+    // lands; HomeDestination decides where that actually is per-role (see
+    // its own docblock for why a static redirect to /dashboard stopped
+    // being safe once a role could hold crm.view without analytics.view).
+    Route::get('/home', HomeRedirectController::class)->name('home');
     Route::get('/dashboard', DashboardController::class)->name('dashboard');
+    // Where HomeDestination sends a role holding none of the sections it
+    // knows how to land on — a friendly, 200 dead end rather than a 403,
+    // reachable only by a signed-in user (this sits inside the auth group).
+    Route::view('/no-access', 'no-access')->name('home.no-access');
     Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
 
     // Stage 3a: read-only groundwork for multi-team accounts — the header's

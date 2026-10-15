@@ -2,8 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\User;
+use App\Services\Teams\HomeDestination;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Routing\Router;
+use Throwable;
 
 /**
  * Switches which team the signed-in user is currently looking at. Nothing
@@ -29,17 +33,52 @@ class TeamSwitchController extends Controller
      * reaching here with one is either a stale page or a forged request,
      * neither of which should succeed quietly.
      */
-    public function update(Request $request): RedirectResponse
+    public function update(Request $request, HomeDestination $destination): RedirectResponse
     {
         $data = $request->validate(['team_id' => ['required', 'integer']]);
+        $user = $request->user();
 
-        abort_unless($request->user()->membershipIn($data['team_id']) !== null, 403);
+        abort_unless($user->membershipIn($data['team_id']) !== null, 403);
 
         // forceFill: current_team_id is deliberately not mass-assignable on
         // User (see its #[Fillable] list) — no request payload should be
         // able to set it through anything but this one validated path.
-        $request->user()->forceFill(['current_team_id' => $data['team_id']])->save();
+        $user->forceFill(['current_team_id' => $data['team_id']])->save();
+        $user->flushPermissionCache();
+
+        // back() alone would happily return the user to the exact page they
+        // switched FROM — fine when the new team's role can still open it,
+        // a 403 the instant they arrive when it can't (a BI analyst role in
+        // the old team switching into a CRM-only role in the new one, say).
+        // Resolved through HomeDestination instead whenever that page is
+        // one of the sections it knows how to gate and the new role can't
+        // open it; every other page (nothing it recognizes) is assumed fine
+        // to return to, same as today.
+        if (! $this->previousPageStillOpen($request, $user, $destination)) {
+            return redirect($destination->url($user))->with('status', __('agents.nav.teams.switched'));
+        }
 
         return back()->with('status', __('agents.nav.teams.switched'));
+    }
+
+    private function previousPageStillOpen(Request $request, User $user, HomeDestination $destination): bool
+    {
+        $previous = $request->headers->get('referer');
+
+        if ($previous === null) {
+            return true;
+        }
+
+        try {
+            $route = app(Router::class)->getRoutes()->match(Request::create($previous, 'GET'));
+        } catch (Throwable) {
+            // Not one of this app's own routes (or not a GET one) — nothing
+            // this class knows how to re-check, so assumed fine.
+            return true;
+        }
+
+        $name = $route->getName();
+
+        return $name === null || $destination->stillOpen($user, $name);
     }
 }

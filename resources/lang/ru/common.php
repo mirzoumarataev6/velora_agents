@@ -14,4 +14,12 @@ return [
     // (ModelNotFoundException) — see bootstrap/app.php's exception
     // renderer. Never the raw "No query results for model [...]" text.
     'error_not_found' => 'Запрошенная запись не найдена.',
+
+    // Тупик HomeDestination: роль не имеет доступа ни к одному из разделов,
+    // которые он умеет открывать.
+    'no_access' => [
+        'title' => 'Пока нет доступа',
+        'message' => 'У вашей роли пока нет доступа ни к одному разделу. Попросите владельца команды выдать роли доступ к нужным разделам.',
+        'sign_out' => 'Выйти',
+    ],
 ];

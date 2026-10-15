@@ -120,7 +120,7 @@ class OnboardingTest extends TestCase
             'password_confirmation' => 'secret-password',
         ]);
 
-        $response->assertRedirect(route('home'));
+        $response->assertRedirect(route('dashboard'));
         $response->assertSessionHasNoErrors();
         $this->assertNotSame(
             AuthController::GREETING_BACK,
@@ -521,7 +521,7 @@ class OnboardingTest extends TestCase
             'email' => 'nadia@example.test',
             'password' => 'secret-password',
             'password_confirmation' => 'secret-password',
-        ])->assertRedirect(route('home'));
+        ])->assertRedirect(route('dashboard'));
 
         $this->assertTrue(session(AuthController::ONBOARDING_SESSION_KEY));
 
@@ -544,7 +544,7 @@ class OnboardingTest extends TestCase
         $user = User::factory()->create(['email' => 'ada@example.test', 'name' => 'Ada']);
 
         $this->post('/login', ['email' => 'ada@example.test', 'password' => 'password'])
-            ->assertRedirect(route('home'));
+            ->assertRedirect(route('dashboard'));
 
         $this->assertFalse(session()->has(AuthController::ONBOARDING_SESSION_KEY));
 
@@ -586,14 +586,14 @@ class OnboardingTest extends TestCase
             'email' => 'nadia@example.test',
             'password' => 'secret-password',
             'password_confirmation' => 'secret-password',
-        ])->assertRedirect(route('home'));
+        ])->assertRedirect(route('dashboard'));
 
         $this->get(route('agents.index'))->assertSee(__('onboarding.checklist.title'), false);
 
         $this->post(route('logout'))->assertRedirect('/');
 
         $this->post('/login', ['email' => 'nadia@example.test', 'password' => 'secret-password'])
-            ->assertRedirect(route('home'));
+            ->assertRedirect(route('dashboard'));
 
         $this->get(route('agents.index'))
             ->assertOk()

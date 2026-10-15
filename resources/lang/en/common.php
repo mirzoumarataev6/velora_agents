@@ -14,4 +14,12 @@ return [
     // (ModelNotFoundException) — see bootstrap/app.php's exception
     // renderer. Never the raw "No query results for model [...]" text.
     'error_not_found' => 'The requested record was not found.',
+
+    // HomeDestination's dead end: a role holding none of the sections it
+    // knows how to land on.
+    'no_access' => [
+        'title' => 'No access yet',
+        'message' => 'Your role does not have access to any section yet. Ask a team Owner to grant your role access to what you need.',
+        'sign_out' => 'Sign out',
+    ],
 ];

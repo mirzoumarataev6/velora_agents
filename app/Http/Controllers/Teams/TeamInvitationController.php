@@ -9,6 +9,7 @@ use App\Models\Role;
 use App\Models\Team;
 use App\Models\TeamMembership;
 use App\Services\Permissions\AuthorizesRoleGrants;
+use App\Services\Teams\HomeDestination;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -124,7 +125,7 @@ class TeamInvitationController extends Controller
      * dead is kinder than making them sign in first to find out. Only once
      * it is confirmed live does this ask who is looking at all.
      */
-    public function accept(Request $request, string $token): Response|RedirectResponse
+    public function accept(Request $request, string $token, HomeDestination $destination): Response|RedirectResponse
     {
         $invitation = Invitation::where('token', $token)->first();
 
@@ -181,7 +182,11 @@ class TeamInvitationController extends Controller
         // looking at whatever team happened to be current before.
         $user->forceFill(['current_team_id' => $invitation->team_id])->save();
 
-        return redirect()->route('dashboard')->with('status', __('settings.team.accept_success', ['team' => $invitation->team->name]));
+        // Not route('dashboard') directly: that requires analytics.view,
+        // which the invited role may not carry (crm.view-only, say) — the
+        // whole point of accepting is to land somewhere the new role can
+        // actually open, same resolver `/home` itself uses.
+        return redirect()->to($destination->url($user))->with('status', __('settings.team.accept_success', ['team' => $invitation->team->name]));
     }
 
     private function errorPage(string $key, int $status, array $replace = []): Response

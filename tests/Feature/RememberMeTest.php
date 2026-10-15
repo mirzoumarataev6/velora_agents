@@ -43,7 +43,7 @@ class RememberMeTest extends TestCase
             'remember' => '1',
         ]);
 
-        $response->assertRedirect(route('home'));
+        $response->assertRedirect(route('dashboard'));
         $this->assertAuthenticatedAs($user);
 
         $recaller = collect($response->headers->getCookies())
@@ -75,7 +75,7 @@ class RememberMeTest extends TestCase
             'remember' => '0',
         ]);
 
-        $response->assertRedirect(route('home'));
+        $response->assertRedirect(route('dashboard'));
         $this->assertAuthenticatedAs($user);
 
         $recaller = collect($response->headers->getCookies())
