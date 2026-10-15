@@ -44,7 +44,10 @@ class DashboardController extends Controller
         $metrics = new DashboardMetrics($request->user(), $request->user()->can(PermissionCatalog::CRM_VIEW));
 
         return view('dashboard.index', [
-            'metrics' => $metrics->forRange($range, $agentId),
+            // $agents is handed in rather than re-fetched inside
+            // agentComparison(): it is the exact same ownedBy() query,
+            // columns and order, so a second copy was a pure duplicate.
+            'metrics' => $metrics->forRange($range, $agentId, $agents),
             'agents' => $agents,
             'i18nExtraNamespaces' => ['dashboard'],
         ]);

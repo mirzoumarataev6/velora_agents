@@ -33,34 +33,55 @@ class DashboardMetrics
      */
     public function __construct(protected User $user, protected bool $canViewCrm) {}
 
-    // Собирает все метрики дашборда за указанный период, опционально по одному агенту
-    public function forRange(int $days, ?int $agentId = null): array
+    /**
+     * Собирает все метрики дашборда за указанный период, опционально по
+     * одному агенту.
+     *
+     * $agents, when the caller already has the owner's agent list (the page
+     * does, for its own selector), is threaded into agentComparison() rather
+     * than let it fetch the identical ownedBy() list a second time.
+     */
+    public function forRange(int $days, ?int $agentId = null, ?Collection $agents = null): array
     {
         $days = in_array($days, self::RANGES, true) ? $days : self::RANGES[0];
         $since = CarbonImmutable::now()->subDays($days - 1)->startOfDay();
         $this->agentId = $agentId;
 
         $timeline = $this->messageTimeline($since);
+        $conversationStats = $this->conversationStats();
+
+        // Both grouped by the one status column, so funnel()'s "leads" and
+        // "confirmed" stages are sums over these counts rather than two more
+        // round trips against a table leadsByStatus() just finished reading.
+        $leadStatusCounts = $this->canViewCrm ? $this->leadStatusCounts() : collect();
+
+        // Same WHERE (created_at >= $since, this owner's leads), read once and
+        // shared: daily() groups it by day, afterHours() filters it by hour.
+        $leadsCreatedAt = $this->canViewCrm
+            ? $this->leads()->where('leads.created_at', '>=', $since)->pluck('leads.created_at')
+            : collect();
+
+        $pending = $this->pending();
 
         return [
             'range' => $days,
             'agent_id' => $this->agentId,
             'has_history' => $this->hasAnyHistory(),
-            'summary' => $this->summary(),
+            'summary' => $this->summary($conversationStats),
             'series' => $this->series($timeline, $since, $days),
             'channels' => $timeline->pluck('channel')->unique()->filter()->sort()->values()->all(),
             'heatmap' => $this->heatmap($timeline),
-            'after_hours' => $this->afterHours($timeline, $since),
-            'funnel' => $this->funnel(),
-            'pending' => $this->pending(),
+            'after_hours' => $this->afterHours($timeline, $leadsCreatedAt),
+            'funnel' => $this->funnel($conversationStats, $leadStatusCounts),
+            'pending' => $pending,
             'unanswered' => $unanswered = $this->unanswered($since),
             'products' => $products = $this->askedProducts($since),
             'ratings' => $ratings = $this->ratings($since, $days),
             'response_trend' => $this->responseTrend($since, $days),
-            'leads_by_status' => $this->leadsByStatus(),
-            'daily' => $this->daily($since, $days),
-            'agent_comparison' => $this->agentComparison($since),
-            'highlight' => $this->highlight($unanswered, $products, $ratings),
+            'leads_by_status' => $this->leadsByStatus($leadStatusCounts),
+            'daily' => $this->daily($since, $days, $leadsCreatedAt),
+            'agent_comparison' => $this->agentComparison($since, $agents),
+            'highlight' => $this->highlight($unanswered, $products, $ratings, $pending),
         ];
     }
 
@@ -70,23 +91,29 @@ class DashboardMetrics
         return $this->conversations()->exists();
     }
 
-    // Собирает верхнеуровневые сводные показатели: активные диалоги, лиды, конверсия
-    protected function summary(): array
+    /**
+     * Собирает верхнеуровневые сводные показатели: активные диалоги, лиды, конверсия
+     *
+     * @param  array{total: int, active: int}  $conversationStats
+     */
+    protected function summary(array $conversationStats): array
     {
         $now = CarbonImmutable::now();
 
-        $activeConversations = $this->conversations()
-            ->where('conversations.status', '!=', 'closed')
-            ->where('conversations.last_message_at', '>=', $now->subHours(self::ACTIVE_WITHIN_HOURS))
-            ->count();
+        // H4: leads_today/leads_week/conversion_rate are crm.view's data, not
+        // analytics.view's — a role holding only the latter gets 0/null here
+        // rather than a query against the leads table at all. One query with
+        // two conditional sums rather than two: both read the same rows,
+        // scoped to the same agent(s), just bucketed by a different cutoff.
+        $leadCounters = $this->canViewCrm
+            ? $this->leads()->selectRaw(
+                'sum(case when leads.created_at >= ? then 1 else 0 end) as today, '.
+                'sum(case when leads.created_at >= ? then 1 else 0 end) as week',
+                [$now->startOfDay(), $now->startOfWeek()]
+            )->first()
+            : null;
 
-        // H4: leads_today/leads_week/conversion_rate are crm.view's data,
-        // not analytics.view's — a role holding only the latter gets 0/null
-        // here rather than a query against the leads table at all.
-        $leadsToday = $this->canViewCrm ? $this->leads()->where('leads.created_at', '>=', $now->startOfDay())->count() : 0;
-        $leadsWeek = $this->canViewCrm ? $this->leads()->where('leads.created_at', '>=', $now->startOfWeek())->count() : 0;
-
-        $totalConversations = $this->conversations()->count();
+        $totalConversations = $conversationStats['total'];
         $convertedConversations = $this->canViewCrm
             ? $this->conversations()
                 ->whereIn('conversations.id', Lead::query()->select('conversation_id')->whereNotNull('conversation_id'))
@@ -94,14 +121,36 @@ class DashboardMetrics
             : 0;
 
         return [
-            'active_conversations' => $activeConversations,
-            'leads_today' => $leadsToday,
-            'leads_week' => $leadsWeek,
+            'active_conversations' => $conversationStats['active'],
+            'leads_today' => (int) ($leadCounters->today ?? 0),
+            'leads_week' => (int) ($leadCounters->week ?? 0),
             'conversations_total' => $totalConversations,
             'conversion_rate' => $this->canViewCrm && $totalConversations > 0
                 ? round($convertedConversations / $totalConversations * 100, 1)
                 : null,
             'avg_response_ms' => $this->averageResponseMs(),
+        ];
+    }
+
+    /**
+     * Общее и «активное» число диалогов за один проход — funnel() reuses the
+     * total instead of counting the same rows again.
+     *
+     * @return array{total: int, active: int}
+     */
+    protected function conversationStats(): array
+    {
+        $row = $this->conversations()
+            ->selectRaw(
+                'count(*) as total, '.
+                'sum(case when status != ? and last_message_at >= ? then 1 else 0 end) as active',
+                ['closed', CarbonImmutable::now()->subHours(self::ACTIVE_WITHIN_HOURS)]
+            )
+            ->first();
+
+        return [
+            'total' => (int) $row->total,
+            'active' => (int) ($row->active ?? 0),
         ];
     }
 
@@ -161,25 +210,25 @@ class DashboardMetrics
      * набрались: без этого три из пяти карточек остались бы без линии, а
      * рисовать её из выдуманных чисел нельзя.
      *
-     * Два запроса на весь блок: даты достаются одним столбцом и
-     * раскладываются по дням в PHP. Группировка по дате в SQL потребовала бы
-     * диалекто-зависимой функции (date() против DATE_FORMAT()), а этот проект
-     * ходит и в SQLite (тесты), и в MySQL (прод) — так что день считается там,
-     * где часовой пояс аналитики уже известен.
+     * Даты достаются одним столбцом и раскладываются по дням в PHP.
+     * Группировка по дате в SQL потребовала бы диалекто-зависимой функции
+     * (date() против DATE_FORMAT()), а этот проект ходит и в SQLite (тесты),
+     * и в MySQL (прод) — так что день считается там, где часовой пояс
+     * аналитики уже известен.
+     *
+     * The leads column is a parameter, not a query here: afterHours() reads
+     * the exact same `created_at >= $since` rows for its own purpose, so
+     * forRange() fetches them once and hands the result to both.
      *
      * Ряд конверсии — производный, не третий запрос: доля диалогов за день,
      * из которых вышла заявка. Дни без диалогов дают null, а не ноль: день без
      * трафика — это не день с нулевой конверсией.
      */
-    protected function daily(CarbonImmutable $since, int $days): array
+    protected function daily(CarbonImmutable $since, int $days, Collection $leadsCreatedAt): array
     {
-        $leadsByDay = $this->canViewCrm
-            ? $this->leads()
-                ->where('leads.created_at', '>=', $since)
-                ->pluck('leads.created_at')
-                ->groupBy(fn ($at) => $this->local(CarbonImmutable::parse($at))->toDateString())
-                ->map->count()
-            : collect();
+        $leadsByDay = $leadsCreatedAt
+            ->groupBy(fn ($at) => $this->local(CarbonImmutable::parse($at))->toDateString())
+            ->map->count();
 
         $conversationsByDay = $this->conversations()
             ->where('conversations.created_at', '>=', $since)
@@ -228,18 +277,14 @@ class DashboardMetrics
     }
 
     // Считает долю сообщений и лидов, пришедших в нерабочее время
-    protected function afterHours(Collection $timeline, CarbonImmutable $since): array
+    protected function afterHours(Collection $timeline, Collection $leadsCreatedAt): array
     {
         $messages = $timeline->filter(fn ($row) => $this->isAfterHours($row->at))->count();
         $total = $timeline->count();
 
-        $leads = $this->canViewCrm
-            ? $this->leads()
-                ->where('leads.created_at', '>=', $since)
-                ->pluck('leads.created_at')
-                ->filter(fn ($at) => $this->isAfterHours(CarbonImmutable::parse($at)))
-                ->count()
-            : 0;
+        $leads = $leadsCreatedAt
+            ->filter(fn ($at) => $this->isAfterHours(CarbonImmutable::parse($at)))
+            ->count();
 
         return [
             'messages' => $messages,
@@ -271,12 +316,22 @@ class DashboardMetrics
         return $at->setTimezone(config('agent.analytics.timezone') ?: config('app.timezone'));
     }
 
-    // Строит воронку от диалогов к лидам и подтверждённым сделкам
-    protected function funnel(): array
+    /**
+     * Строит воронку от диалогов к лидам и подтверждённым сделкам.
+     *
+     * Takes the conversation total and the per-status lead counts rather than
+     * counting again: both are already a full pass over exactly these rows,
+     * done once in forRange() for the summary card and the status breakdown.
+     *
+     * @param  array{total: int, active: int}  $conversationStats
+     */
+    protected function funnel(array $conversationStats, Collection $leadStatusCounts): array
     {
-        $conversations = $this->conversations()->count();
-        $leads = $this->canViewCrm ? $this->leads()->count() : 0;
-        $confirmed = $this->canViewCrm ? $this->leads()->whereIn('leads.status', ['in_progress', 'done'])->count() : 0;
+        $conversations = $conversationStats['total'];
+        $leads = $this->canViewCrm ? (int) $leadStatusCounts->sum() : 0;
+        $confirmed = $this->canViewCrm
+            ? (int) ($leadStatusCounts['in_progress'] ?? 0) + (int) ($leadStatusCounts['done'] ?? 0)
+            : 0;
 
         $stages = [
             ['key' => 'conversations', 'value' => $conversations],
@@ -468,23 +523,19 @@ class DashboardMetrics
         ];
     }
 
-    // Считает количество и долю лидов по каждому статусу
-    protected function leadsByStatus(): array
+    // Считает количество лидов по каждому статусу — один сгруппированный запрос
+    protected function leadStatusCounts(): Collection
     {
-        $statuses = ['new', 'in_progress', HagglingService::STATUS_PENDING, 'done'];
-
-        if (! $this->canViewCrm) {
-            return [
-                'rows' => array_map(fn (string $status) => ['status' => $status, 'count' => 0, 'share' => 0.0], $statuses),
-                'total' => 0,
-            ];
-        }
-
-        $counts = $this->leads()
+        return $this->leads()
             ->select('leads.status', DB::raw('count(*) as aggregate'))
             ->groupBy('leads.status')
             ->pluck('aggregate', 'leads.status');
+    }
 
+    // Раскладывает уже посчитанные по статусам лиды на строки с долями
+    protected function leadsByStatus(Collection $counts): array
+    {
+        $statuses = ['new', 'in_progress', HagglingService::STATUS_PENDING, 'done'];
         $total = (int) $counts->sum();
 
         return [
@@ -497,14 +548,20 @@ class DashboardMetrics
         ];
     }
 
-    // Сравнивает агентов пользователя по числу сообщений и лидов (если агентов больше одного)
-    protected function agentComparison(CarbonImmutable $since): array
+    /**
+     * Сравнивает агентов пользователя по числу сообщений и лидов (если агентов больше одного)
+     *
+     * $agents, when given, is the controller's own ownedBy() list for its
+     * agent selector — the identical query, so reusing it skips a second
+     * round trip for the same rows.
+     */
+    protected function agentComparison(CarbonImmutable $since, ?Collection $agents = null): array
     {
         if ($this->agentId !== null) {
             return [];
         }
 
-        $agents = Agent::ownedBy($this->user)->orderBy('name')->get(['id', 'name']);
+        $agents ??= Agent::ownedBy($this->user)->orderBy('name')->get(['id', 'name']);
 
         if ($agents->count() < 2) {
             return [];
@@ -542,11 +599,15 @@ class DashboardMetrics
             ->all();
     }
 
-    // Выбирает самый важный сигнал для баннера дашборда по приоритету
-    protected function highlight(array $unanswered, array $products, array $ratings): ?array
+    /**
+     * Выбирает самый важный сигнал для баннера дашборда по приоритету.
+     *
+     * $pending is a parameter, not a call: forRange() already computes it
+     * for the 'pending' key, and this used to call pending() again — a
+     * second pair of lead queries for a value already sitting in a local.
+     */
+    protected function highlight(array $unanswered, array $products, array $ratings, array $pending): ?array
     {
-        $pending = $this->pending();
-
         if ($pending['price_approvals'] > 0) {
             return ['kind' => 'price_approvals', 'count' => $pending['price_approvals'], 'subject' => null, 'route' => 'leads.index'];
         }
