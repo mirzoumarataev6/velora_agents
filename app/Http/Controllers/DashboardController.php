@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Agent;
 use App\Services\Analytics\DashboardMetrics;
+use App\Services\Permissions\PermissionCatalog;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 
@@ -35,7 +36,12 @@ class DashboardController extends Controller
         // Constructed here rather than injected: these metrics are scoped to the
         // signed-in owner, and a container-resolved instance would have no user
         // to scope them to.
-        $metrics = new DashboardMetrics($request->user());
+        //
+        // H4: /dashboard itself stays gated by analytics.view alone (not
+        // widened to require crm.view too) — the permission check that
+        // matters for lead figures happens inside DashboardMetrics, which
+        // is handed the answer here rather than calling Gate itself.
+        $metrics = new DashboardMetrics($request->user(), $request->user()->can(PermissionCatalog::CRM_VIEW));
 
         return view('dashboard.index', [
             'metrics' => $metrics->forRange($range, $agentId),

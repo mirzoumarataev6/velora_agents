@@ -156,14 +156,21 @@
                     'count' => number_format($summary['conversations_total'], 0, '.', ' '),
                 ]),
             ])
-            @include('dashboard.partials.stat', [
-                'label' => __('dashboard.summary.leads_week'),
-                'value' => $summary['leads_week'],
-                'icon' => 'leads',
-                'hint' => __('dashboard.summary.leads_week_hint'),
-                'series' => $daily['leads'],
-                'trend' => velora_trend($daily['leads']),
-            ])
+            {{-- H4: leads_week is crm.view's figure, not analytics.view's —
+                 DashboardMetrics already skips the query behind it for a
+                 role lacking crm.view, but the card itself must not render
+                 a bare 0 that reads as "no leads" to someone who simply
+                 cannot see leads at all. --}}
+            @can(\App\Services\Permissions\PermissionCatalog::CRM_VIEW)
+                @include('dashboard.partials.stat', [
+                    'label' => __('dashboard.summary.leads_week'),
+                    'value' => $summary['leads_week'],
+                    'icon' => 'leads',
+                    'hint' => __('dashboard.summary.leads_week_hint'),
+                    'series' => $daily['leads'],
+                    'trend' => velora_trend($daily['leads']),
+                ])
+            @endcan
             @include('dashboard.partials.stat', [
                 'label' => __('dashboard.summary.conversion'),
                 'value' => $summary['conversion_rate'] === null ? '—' : $summary['conversion_rate'].'%',
@@ -197,12 +204,18 @@
         </div>
         </div>
 
-        {{-- Row 3 · volume over time (2/3) beside what needs the owner (1/3) --}}
+        {{-- Row 3 · volume over time (2/3) beside what needs the owner (1/3).
+             The "needs the owner" card is lead queues end to end (price
+             approvals, open orders, leads in progress) — H4: hidden for a
+             role without crm.view, with the chart taking the full row
+             rather than leaving a blank third column behind it. --}}
         <div class="reveal mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
-            <div class="lg:col-span-2">
+            <div class="{{ auth()->user()->can(\App\Services\Permissions\PermissionCatalog::CRM_VIEW) ? 'lg:col-span-2' : 'lg:col-span-3' }}">
                 @include('dashboard.partials.messages-chart')
             </div>
-            @include('dashboard.partials.pending')
+            @can(\App\Services\Permissions\PermissionCatalog::CRM_VIEW)
+                @include('dashboard.partials.pending')
+            @endcan
         </div>
 
         {{-- Row 4 · answer quality, full width and on its own.
@@ -216,10 +229,15 @@
         {{-- Keep diagnostics visible as part of analytics; only the extra
              disclosure row was removed because it hid useful reports behind
              an ambiguous control. --}}
-        <div class="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-2">
-            @include('dashboard.partials.funnel')
-            @include('dashboard.partials.leads-status')
-        </div>
+        {{-- H4: both cards are lead figures end to end (funnel's own middle
+             and last stage, leads-status entirely) — hidden for a role
+             without crm.view rather than shown with zeroed-out numbers. --}}
+        @can(\App\Services\Permissions\PermissionCatalog::CRM_VIEW)
+            <div class="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-2">
+                @include('dashboard.partials.funnel')
+                @include('dashboard.partials.leads-status')
+            </div>
+        @endcan
 
         <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
             @include('dashboard.partials.response-trend')

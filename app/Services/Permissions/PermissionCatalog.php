@@ -59,12 +59,13 @@ final class PermissionCatalog
 
     public const CONVERSATIONS_TAKEOVER = 'conversations.takeover';
 
-    // CRM (deals, customers, tasks, notes, stages, workspaces) — split out
-    // of analytics.* so a role can be given the CRM without also getting
-    // BI: the two have different audiences (whoever works the pipeline vs.
-    // whoever reads the numbers) and, for BI specifically, different risk
-    // (external DB connections, uploads) that shouldn't ride along with
-    // CRM access by default.
+    // CRM (deals, customers, tasks, notes, stages, workspaces, leads —
+    // LeadPolicy and DashboardMetrics both key off crm.view/crm.manage, not
+    // analytics.*) — split out of analytics.* so a role can be given the
+    // CRM without also getting BI: the two have different audiences
+    // (whoever works the pipeline vs. whoever reads the numbers) and, for
+    // BI specifically, different risk (external DB connections, uploads)
+    // that shouldn't ride along with CRM access by default.
     public const CRM_VIEW = 'crm.view';
 
     public const CRM_MANAGE = 'crm.manage';

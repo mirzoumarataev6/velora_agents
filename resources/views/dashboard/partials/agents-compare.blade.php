@@ -24,7 +24,12 @@
                     <span class="min-w-0 truncate text-sm font-medium">{{ $agent['name'] }}</span>
                     <span class="shrink-0 text-xs text-muted dark:text-night-muted">
                         <span class="tnum font-medium text-ink dark:text-night-ink">{{ __('dashboard.agents_compare.messages', ['count' => $agent['messages']]) }}</span>
-                        · {{ __('dashboard.agents_compare.leads', ['count' => $agent['leads']]) }}
+                        {{-- H4: $agent['leads'] is already 0 for a role without crm.view
+                             (DashboardMetrics skips the query), but the chip itself must
+                             not print a bare "0 заявок" to someone who cannot see leads. --}}
+                        @can(\App\Services\Permissions\PermissionCatalog::CRM_VIEW)
+                            · {{ __('dashboard.agents_compare.leads', ['count' => $agent['leads']]) }}
+                        @endcan
                         · <span class="tnum font-semibold text-brand-strong">{{ __('dashboard.agents_compare.share', ['percent' => $agent['share']]) }}</span>
                     </span>
                 </div>

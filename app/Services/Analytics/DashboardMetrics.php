@@ -21,8 +21,17 @@ class DashboardMetrics
 
     protected ?int $agentId = null;
 
-    // Создаёт сборщик метрик дашборда для конкретного владельца
-    public function __construct(protected User $user) {}
+    /**
+     * $canViewCrm is passed in, never resolved here via Gate/can(): this
+     * class has no Request to authorize against and no business deciding
+     * who gets to see what — DashboardController already knows (crm.view),
+     * and threading the answer through the constructor is what lets every
+     * method below skip a Lead query outright instead of running it and
+     * discarding the result. H4: /dashboard itself stays gated by
+     * analytics.view alone (unchanged) — this is what stops a role holding
+     * ONLY analytics.view from seeing lead figures that belong to crm.view.
+     */
+    public function __construct(protected User $user, protected bool $canViewCrm) {}
 
     // Собирает все метрики дашборда за указанный период, опционально по одному агенту
     public function forRange(int $days, ?int $agentId = null): array
@@ -71,20 +80,25 @@ class DashboardMetrics
             ->where('conversations.last_message_at', '>=', $now->subHours(self::ACTIVE_WITHIN_HOURS))
             ->count();
 
-        $leadsToday = $this->leads()->where('leads.created_at', '>=', $now->startOfDay())->count();
-        $leadsWeek = $this->leads()->where('leads.created_at', '>=', $now->startOfWeek())->count();
+        // H4: leads_today/leads_week/conversion_rate are crm.view's data,
+        // not analytics.view's — a role holding only the latter gets 0/null
+        // here rather than a query against the leads table at all.
+        $leadsToday = $this->canViewCrm ? $this->leads()->where('leads.created_at', '>=', $now->startOfDay())->count() : 0;
+        $leadsWeek = $this->canViewCrm ? $this->leads()->where('leads.created_at', '>=', $now->startOfWeek())->count() : 0;
 
         $totalConversations = $this->conversations()->count();
-        $convertedConversations = $this->conversations()
-            ->whereIn('conversations.id', Lead::query()->select('conversation_id')->whereNotNull('conversation_id'))
-            ->count();
+        $convertedConversations = $this->canViewCrm
+            ? $this->conversations()
+                ->whereIn('conversations.id', Lead::query()->select('conversation_id')->whereNotNull('conversation_id'))
+                ->count()
+            : 0;
 
         return [
             'active_conversations' => $activeConversations,
             'leads_today' => $leadsToday,
             'leads_week' => $leadsWeek,
             'conversations_total' => $totalConversations,
-            'conversion_rate' => $totalConversations > 0
+            'conversion_rate' => $this->canViewCrm && $totalConversations > 0
                 ? round($convertedConversations / $totalConversations * 100, 1)
                 : null,
             'avg_response_ms' => $this->averageResponseMs(),
@@ -159,11 +173,13 @@ class DashboardMetrics
      */
     protected function daily(CarbonImmutable $since, int $days): array
     {
-        $leadsByDay = $this->leads()
-            ->where('leads.created_at', '>=', $since)
-            ->pluck('leads.created_at')
-            ->groupBy(fn ($at) => $this->local(CarbonImmutable::parse($at))->toDateString())
-            ->map->count();
+        $leadsByDay = $this->canViewCrm
+            ? $this->leads()
+                ->where('leads.created_at', '>=', $since)
+                ->pluck('leads.created_at')
+                ->groupBy(fn ($at) => $this->local(CarbonImmutable::parse($at))->toDateString())
+                ->map->count()
+            : collect();
 
         $conversationsByDay = $this->conversations()
             ->where('conversations.created_at', '>=', $since)
@@ -183,7 +199,7 @@ class DashboardMetrics
 
             $leads[] = $leadCount;
             $conversations[] = $conversationCount;
-            $conversion[] = $conversationCount > 0
+            $conversion[] = $this->canViewCrm && $conversationCount > 0
                 ? round($leadCount / $conversationCount * 100, 1)
                 : null;
         }
@@ -217,11 +233,13 @@ class DashboardMetrics
         $messages = $timeline->filter(fn ($row) => $this->isAfterHours($row->at))->count();
         $total = $timeline->count();
 
-        $leads = $this->leads()
-            ->where('leads.created_at', '>=', $since)
-            ->pluck('leads.created_at')
-            ->filter(fn ($at) => $this->isAfterHours(CarbonImmutable::parse($at)))
-            ->count();
+        $leads = $this->canViewCrm
+            ? $this->leads()
+                ->where('leads.created_at', '>=', $since)
+                ->pluck('leads.created_at')
+                ->filter(fn ($at) => $this->isAfterHours(CarbonImmutable::parse($at)))
+                ->count()
+            : 0;
 
         return [
             'messages' => $messages,
@@ -257,8 +275,8 @@ class DashboardMetrics
     protected function funnel(): array
     {
         $conversations = $this->conversations()->count();
-        $leads = $this->leads()->count();
-        $confirmed = $this->leads()->whereIn('leads.status', ['in_progress', 'done'])->count();
+        $leads = $this->canViewCrm ? $this->leads()->count() : 0;
+        $confirmed = $this->canViewCrm ? $this->leads()->whereIn('leads.status', ['in_progress', 'done'])->count() : 0;
 
         $stages = [
             ['key' => 'conversations', 'value' => $conversations],
@@ -281,6 +299,10 @@ class DashboardMetrics
     // Считает открытые заказы и заявки на согласование цены, ожидающие владельца
     protected function pending(): array
     {
+        if (! $this->canViewCrm) {
+            return ['open_orders' => 0, 'price_approvals' => 0];
+        }
+
         return [
             'open_orders' => $this->leads()
                 ->where('leads.type', 'order')
@@ -449,12 +471,20 @@ class DashboardMetrics
     // Считает количество и долю лидов по каждому статусу
     protected function leadsByStatus(): array
     {
+        $statuses = ['new', 'in_progress', HagglingService::STATUS_PENDING, 'done'];
+
+        if (! $this->canViewCrm) {
+            return [
+                'rows' => array_map(fn (string $status) => ['status' => $status, 'count' => 0, 'share' => 0.0], $statuses),
+                'total' => 0,
+            ];
+        }
+
         $counts = $this->leads()
             ->select('leads.status', DB::raw('count(*) as aggregate'))
             ->groupBy('leads.status')
             ->pluck('aggregate', 'leads.status');
 
-        $statuses = ['new', 'in_progress', HagglingService::STATUS_PENDING, 'done'];
         $total = (int) $counts->sum();
 
         return [
@@ -488,12 +518,14 @@ class DashboardMetrics
             ->groupBy('conversations.agent_id')
             ->pluck('aggregate', 'conversations.agent_id');
 
-        $leads = Lead::query()
-            ->whereIn('leads.agent_id', $agents->pluck('id'))
-            ->where('leads.created_at', '>=', $since)
-            ->select('leads.agent_id', DB::raw('count(*) as aggregate'))
-            ->groupBy('leads.agent_id')
-            ->pluck('aggregate', 'leads.agent_id');
+        $leads = $this->canViewCrm
+            ? Lead::query()
+                ->whereIn('leads.agent_id', $agents->pluck('id'))
+                ->where('leads.created_at', '>=', $since)
+                ->select('leads.agent_id', DB::raw('count(*) as aggregate'))
+                ->groupBy('leads.agent_id')
+                ->pluck('aggregate', 'leads.agent_id')
+            : collect();
 
         $totalMessages = (int) $messages->sum();
 

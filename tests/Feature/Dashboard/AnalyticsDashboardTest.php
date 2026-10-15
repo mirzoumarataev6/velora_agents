@@ -41,7 +41,7 @@ class AnalyticsDashboardTest extends TestCase
 
     protected function metrics(int $days = 7, ?int $agentId = null): array
     {
-        return (new DashboardMetrics($this->owner->fresh()))->forRange($days, $agentId);
+        return (new DashboardMetrics($this->owner->fresh(), true))->forRange($days, $agentId);
     }
 
     /**
@@ -127,7 +127,7 @@ class AnalyticsDashboardTest extends TestCase
         $this->assertSame(30, $this->metrics(30)['range']);
         $this->assertCount(30, $this->metrics(30)['series']);
         // Not one of the offered ranges — falls back rather than 500ing.
-        $this->assertSame(7, (new DashboardMetrics($this->owner))->forRange(365)['range']);
+        $this->assertSame(7, (new DashboardMetrics($this->owner, true))->forRange(365)['range']);
 
         $this->actingAs($this->owner)->get(route('dashboard', ['range' => 30]))->assertOk();
     }
@@ -363,7 +363,7 @@ class AnalyticsDashboardTest extends TestCase
 
     public function test_the_after_hours_window_is_configurable(): void
     {
-        $metrics = new DashboardMetrics($this->owner);
+        $metrics = new DashboardMetrics($this->owner, true);
 
         config()->set('agent.analytics.after_hours', ['from_hour' => 22, 'to_hour' => 8, 'weekends' => false]);
         $this->assertFalse($metrics->isAfterHours(CarbonImmutable::parse('2026-08-30 14:00:00')));
@@ -611,7 +611,7 @@ class AnalyticsDashboardTest extends TestCase
     /** 18:00 UTC is 23:00 in Khujand — the customer wrote at night. */
     public function test_after_hours_is_judged_on_the_shop_clock(): void
     {
-        $metrics = new DashboardMetrics($this->owner);
+        $metrics = new DashboardMetrics($this->owner, true);
 
         $this->assertTrue($metrics->isAfterHours(CarbonImmutable::parse('2026-09-02 18:00:00')));
         $this->assertFalse($metrics->isAfterHours(CarbonImmutable::parse('2026-09-02 05:00:00')));

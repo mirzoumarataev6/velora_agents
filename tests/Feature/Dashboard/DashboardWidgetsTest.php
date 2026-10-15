@@ -44,7 +44,7 @@ class DashboardWidgetsTest extends TestCase
 
     protected function metrics(int $days = 7): array
     {
-        return (new DashboardMetrics($this->owner->fresh()))->forRange($days);
+        return (new DashboardMetrics($this->owner->fresh(), true))->forRange($days);
     }
 
     protected function page(): TestResponse
