@@ -50,6 +50,18 @@
      fall back to the .page-enter CSS transition in app.css, which is scoped to
      apply only where this API is absent. --}}
 <meta name="view-transition" content="same-origin" />
+{{-- Turbo caches every visited page's snapshot for instant back/forward, and
+     by default also PAINTS that stale snapshot the instant an ordinary
+     forward link-click targets a page already in the cache — then replaces
+     it with the fresh response moments later. That is a real double render,
+     not a perception: measured with a MutationObserver, a revisit to a
+     cached page fires `turbo:render` twice (first the stale preview, then
+     the fresh page, ~250ms apart on this machine), while a never-before-seen
+     page renders once. `no-preview` turns off only the eager stale paint;
+     back/forward restores (`action: "restore"`) ignore this setting and stay
+     instant, and the snapshot itself is still cached and still used — this
+     page simply stops being shown before it is current. --}}
+<meta name="turbo-cache-control" content="no-preview" />
 <title>@yield('title', __('common.brand'))</title>
 @include('partials.favicons')
 {{-- Self-hosted Golos Text. Previously the dashboard linked no webfont at all,
