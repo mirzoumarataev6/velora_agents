@@ -120,7 +120,9 @@ class OnboardingTest extends TestCase
             'password_confirmation' => 'secret-password',
         ]);
 
-        $response->assertRedirect(route('dashboard'));
+        // A brand-new account has no agent yet, so HomeDestination sends it
+        // to agents.index rather than the empty /dashboard.
+        $response->assertRedirect(route('agents.index'));
         $response->assertSessionHasNoErrors();
         $this->assertNotSame(
             AuthController::GREETING_BACK,
@@ -142,11 +144,17 @@ class OnboardingTest extends TestCase
         ])->assertSessionHas(AuthController::GREETING_SESSION_KEY, AuthController::GREETING_WELCOME);
     }
 
-    public function test_the_sign_up_greeting_falls_back_to_a_toast_without_a_checklist(): void
+    /**
+     * Required case (e), first half. GREETING_WELCOME no longer has a toast
+     * branch at all: an arrival already gets the page heading's name
+     * greeting and, while unwelcomed, the modal — a toast on top of either
+     * was a third greeting for the same instant. Isolated from both of those
+     * by using an already-welcomed account (no modal) on a page with no
+     * checklist (no banner), so only the toast this test is about could
+     * possibly render.
+     */
+    public function test_the_welcome_toast_no_longer_renders_on_a_first_sign_in(): void
     {
-        // An established, already-welcomed account: no checklist on the page to
-        // carry the banner, and no modal (whose title contains the same words),
-        // so only the toast can satisfy this.
         $user = User::factory()->create(['name' => 'Nadia']);
 
         $response = $this->actingAs($user)
@@ -154,7 +162,7 @@ class OnboardingTest extends TestCase
             ->get(route('agents.index'));
 
         $response->assertOk();
-        $response->assertSee($this->toastCall(__('onboarding.welcome_greeting', ['name' => 'Nadia'])), false);
+        $response->assertDontSee($this->toastCall(__('onboarding.welcome_greeting', ['name' => 'Nadia'])), false);
     }
 
     public function test_the_greeting_is_shown_once_and_then_spent(): void
@@ -521,7 +529,7 @@ class OnboardingTest extends TestCase
             'email' => 'nadia@example.test',
             'password' => 'secret-password',
             'password_confirmation' => 'secret-password',
-        ])->assertRedirect(route('dashboard'));
+        ])->assertRedirect(route('agents.index'));
 
         $this->assertTrue(session(AuthController::ONBOARDING_SESSION_KEY));
 
@@ -544,7 +552,7 @@ class OnboardingTest extends TestCase
         $user = User::factory()->create(['email' => 'ada@example.test', 'name' => 'Ada']);
 
         $this->post('/login', ['email' => 'ada@example.test', 'password' => 'password'])
-            ->assertRedirect(route('dashboard'));
+            ->assertRedirect(route('agents.index'));
 
         $this->assertFalse(session()->has(AuthController::ONBOARDING_SESSION_KEY));
 
@@ -586,14 +594,14 @@ class OnboardingTest extends TestCase
             'email' => 'nadia@example.test',
             'password' => 'secret-password',
             'password_confirmation' => 'secret-password',
-        ])->assertRedirect(route('dashboard'));
+        ])->assertRedirect(route('agents.index'));
 
         $this->get(route('agents.index'))->assertSee(__('onboarding.checklist.title'), false);
 
         $this->post(route('logout'))->assertRedirect('/');
 
         $this->post('/login', ['email' => 'nadia@example.test', 'password' => 'secret-password'])
-            ->assertRedirect(route('dashboard'));
+            ->assertRedirect(route('agents.index'));
 
         $this->get(route('agents.index'))
             ->assertOk()

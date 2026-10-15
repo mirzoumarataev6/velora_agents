@@ -34,7 +34,12 @@ class RegisterIntendedRedirectTest extends TestCase
         $response->assertRedirect(route('settings.index'));
     }
 
-    public function test_a_plain_registration_still_lands_on_the_dashboard(): void
+    /**
+     * With nothing stored in url.intended, a plain registration falls back
+     * to HomeDestination's own resolved url — agents.index for a brand-new
+     * account, since it has no agent yet and /dashboard would be empty.
+     */
+    public function test_a_plain_registration_lands_on_agents_with_no_agent_yet(): void
     {
         $response = $this->post('/register', [
             'name' => 'Azim',
@@ -43,6 +48,6 @@ class RegisterIntendedRedirectTest extends TestCase
             'password_confirmation' => 'password123',
         ]);
 
-        $response->assertRedirect(route('dashboard'));
+        $response->assertRedirect(route('agents.index'));
     }
 }

@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Teams;
 
+use App\Models\Agent;
 use App\Models\Invitation;
 use App\Models\Role;
 use App\Models\TeamMembership;
@@ -89,12 +90,80 @@ class HomeDestinationTest extends TestCase
         $response->assertSee(__('common.no_access.message'));
     }
 
+    /**
+     * An established owner — one who already has at least one agent — still
+     * lands on /dashboard. Distinguishes this from the brand-new case below,
+     * where /dashboard has nothing on it yet.
+     */
     public function test_owner_still_lands_on_dashboard(): void
+    {
+        $owner = User::factory()->create(['email' => 'owner@example.test', 'password' => Hash::make('password123')]);
+        Agent::factory()->for($owner)->create();
+
+        $this->post('/login', ['email' => 'owner@example.test', 'password' => 'password123'])
+            ->assertRedirect(route('dashboard'));
+    }
+
+    /**
+     * Required case (a): /dashboard has nothing to show until there is at
+     * least one conversation, and a brand-new team has neither an agent nor
+     * a conversation. A first-time owner's landing route is agents.index —
+     * the screen with something to DO — for exactly as long as that holds.
+     */
+    public function test_a_new_owner_with_no_agents_lands_on_agents_after_registering(): void
+    {
+        $response = $this->post('/register', [
+            'name' => 'Nadia',
+            'email' => 'nadia@example.test',
+            'password' => 'secret-password',
+            'password_confirmation' => 'secret-password',
+        ]);
+
+        $response->assertRedirect(route('agents.index'));
+    }
+
+    public function test_a_new_owner_with_no_agents_lands_on_agents_after_logging_in(): void
     {
         $owner = User::factory()->create(['email' => 'owner@example.test', 'password' => Hash::make('password123')]);
 
         $this->post('/login', ['email' => 'owner@example.test', 'password' => 'password123'])
+            ->assertRedirect(route('agents.index'));
+    }
+
+    /**
+     * Required case (b): the same owner, once an agent exists, is back on
+     * /dashboard — proving the check is live (re-evaluated every landing),
+     * not a one-time flag stamped at registration.
+     */
+    public function test_the_same_owner_lands_on_dashboard_again_once_an_agent_exists(): void
+    {
+        $owner = User::factory()->create(['email' => 'owner@example.test', 'password' => Hash::make('password123')]);
+
+        $this->post('/login', ['email' => 'owner@example.test', 'password' => 'password123'])
+            ->assertRedirect(route('agents.index'));
+
+        Agent::factory()->for($owner)->create();
+
+        $this->post(route('logout'));
+
+        $this->post('/login', ['email' => 'owner@example.test', 'password' => 'password123'])
             ->assertRedirect(route('dashboard'));
+    }
+
+    /**
+     * The "no agents" override is scoped to the ACTIVE team specifically —
+     * an agent sitting in a team the actor merely used to belong to (or
+     * belongs to under a different membership) must not count.
+     */
+    public function test_an_agent_in_a_different_team_does_not_count(): void
+    {
+        $otherOwner = User::factory()->create();
+        Agent::factory()->for($otherOwner)->create();
+
+        $owner = User::factory()->create(['email' => 'owner@example.test', 'password' => Hash::make('password123')]);
+
+        $this->post('/login', ['email' => 'owner@example.test', 'password' => 'password123'])
+            ->assertRedirect(route('agents.index'));
     }
 
     /**

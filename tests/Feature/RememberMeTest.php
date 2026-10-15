@@ -43,7 +43,10 @@ class RememberMeTest extends TestCase
             'remember' => '1',
         ]);
 
-        $response->assertRedirect(route('dashboard'));
+        // No agent yet, so HomeDestination lands this account on
+        // agents.index rather than the empty /dashboard — immaterial to
+        // what this test is about (the recaller cookie).
+        $response->assertRedirect(route('agents.index'));
         $this->assertAuthenticatedAs($user);
 
         $recaller = collect($response->headers->getCookies())
@@ -75,7 +78,7 @@ class RememberMeTest extends TestCase
             'remember' => '0',
         ]);
 
-        $response->assertRedirect(route('dashboard'));
+        $response->assertRedirect(route('agents.index'));
         $this->assertAuthenticatedAs($user);
 
         $recaller = collect($response->headers->getCookies())
@@ -127,9 +130,10 @@ class RememberMeTest extends TestCase
         $response = $this->withUnencryptedCookie($this->recallerName(), $recaller->getValue())
             ->get('/home');
 
-        // /home is the panel's front door and now opens on the dashboard; what
-        // this test is about is that the recaller alone got them through it.
-        $response->assertRedirect(route('dashboard'));
+        // /home is the panel's front door, opening on agents.index for this
+        // agent-less account; what this test is about is that the recaller
+        // alone got them through it.
+        $response->assertRedirect(route('agents.index'));
         $this->assertAuthenticatedAs($user);
     }
 }

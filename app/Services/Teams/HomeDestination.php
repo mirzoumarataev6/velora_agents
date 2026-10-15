@@ -2,6 +2,7 @@
 
 namespace App\Services\Teams;
 
+use App\Models\Agent;
 use App\Models\User;
 use App\Services\Permissions\PermissionCatalog;
 use Illuminate\Http\RedirectResponse;
@@ -64,12 +65,37 @@ class HomeDestination
     public function routeName(User $user): ?string
     {
         foreach (self::CANDIDATES as $candidate) {
-            if (RouteFacade::has($candidate['route']) && $user->can($candidate['permission'])) {
-                return $candidate['route'];
+            if (! RouteFacade::has($candidate['route']) || ! $user->can($candidate['permission'])) {
+                continue;
             }
+
+            // /dashboard has nothing on it until there is at least one
+            // conversation, and a brand-new team has neither — a new owner's
+            // first screen would otherwise be empty. Only ever overrides the
+            // dashboard candidate specifically, and only when agents.index
+            // is itself reachable for this role; every other candidate
+            // (crm.view, conversations.view, ...) is untouched.
+            if ($candidate['route'] === 'dashboard'
+                && $user->can(PermissionCatalog::AGENTS_VIEW)
+                && $this->activeTeamHasNoAgents($user)) {
+                return 'agents.index';
+            }
+
+            return $candidate['route'];
         }
 
         return null;
+    }
+
+    /**
+     * One `exists()` against the active team only — never a count, and
+     * never the stale `current_team_id` on its own (see `activeTeamId()`'s
+     * docblock: a membership that no longer holds must read as "no team",
+     * not as whatever team the pointer still names).
+     */
+    private function activeTeamHasNoAgents(User $user): bool
+    {
+        return ! Agent::ownedBy($user)->exists();
     }
 
     /**

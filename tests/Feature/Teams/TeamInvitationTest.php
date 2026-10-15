@@ -250,7 +250,10 @@ class TeamInvitationTest extends TestCase
 
         $response = $this->actingAs($teammate)->get(route('invitations.accept', $invitation->token));
 
-        $response->assertRedirect(route('dashboard'));
+        // The Operator role has analytics.view, but this team has no agent
+        // yet, so HomeDestination sends the new membership to agents.index
+        // rather than the empty /dashboard.
+        $response->assertRedirect(route('agents.index'));
 
         $membership = TeamMembership::where('team_id', $owner->current_team_id)->where('user_id', $teammate->id)->sole();
         $this->assertSame($role->id, $membership->role_id);
