@@ -5,7 +5,13 @@ return [
     'heading' => 'Аналитика',
     'subheading' => 'Что ваши ассистенты сделали за вас.',
 
-    'greeting' => 'Добрый день, :name',
+    // Four variants picked by the hour (GreetingPeriod) rather than one
+    // fixed line — "Добрый день" at 01:00 read as not having looked at a
+    // clock. See that class for the hour ranges and the wraps-midnight note.
+    'greeting_morning' => 'Доброе утро',
+    'greeting_day' => 'Добрый день',
+    'greeting_evening' => 'Добрый вечер',
+    'greeting_night' => 'Доброй ночи',
 
     'details' => [
         'title' => 'Подробная аналитика',

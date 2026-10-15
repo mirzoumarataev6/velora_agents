@@ -9,6 +9,7 @@ use App\Models\Lead;
 use App\Models\User;
 use App\Services\Analytics\DashboardMetrics;
 use App\Services\Haggling\HagglingService;
+use Carbon\Carbon;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -130,6 +131,36 @@ class AnalyticsDashboardTest extends TestCase
         $this->assertSame(7, (new DashboardMetrics($this->owner, true))->forRange(365)['range']);
 
         $this->actingAs($this->owner)->get(route('dashboard', ['range' => 30]))->assertOk();
+    }
+
+    /**
+     * End to end, through the real page: GreetingPeriodTest pins the hour
+     * math itself, this pins that the view actually uses it. 19:00 Dushanbe
+     * time must read as evening, not the old fixed "Добрый день".
+     */
+    public function test_an_evening_visit_shows_the_evening_greeting(): void
+    {
+        // Pinned to the primary locale rather than the ambient app locale,
+        // same reasoning as test_the_dashboard_translates_across_every_
+        // supported_locale below: the string must match what the request
+        // actually rendered, not whatever locale this process happens to be
+        // in when the assertion runs.
+        $this->owner->forceFill(['locale' => 'ru'])->save();
+        Carbon::setTestNow(Carbon::create(2026, 1, 1, 19, 0, 0, 'Asia/Dushanbe'));
+
+        $response = $this->actingAs($this->owner)->get(route('dashboard'));
+
+        $response->assertOk();
+        $response->assertSee(__('dashboard.greeting_evening', [], 'ru'), false);
+        $response->assertDontSee(__('dashboard.greeting_morning', [], 'ru'), false);
+        $response->assertDontSee(__('dashboard.greeting_day', [], 'ru'), false);
+        $response->assertDontSee(__('dashboard.greeting_night', [], 'ru'), false);
+    }
+
+    protected function tearDown(): void
+    {
+        Carbon::setTestNow();
+        parent::tearDown();
     }
 
     // -----------------------------------------------------------------

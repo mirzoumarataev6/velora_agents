@@ -5,7 +5,10 @@ return [
     'heading' => 'Analytics',
     'subheading' => 'What your assistants did for you.',
 
-    'greeting' => 'Good afternoon, :name',
+    'greeting_morning' => 'Good morning',
+    'greeting_day' => 'Good afternoon',
+    'greeting_evening' => 'Good evening',
+    'greeting_night' => 'Good night',
 
     'details' => [
         'title' => 'Detailed analytics',

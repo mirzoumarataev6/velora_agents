@@ -412,7 +412,7 @@
     }
 
     // GREETING_WELCOME has no branch here on purpose: a first sign-in already
-    // gets the page heading's name greeting (dashboard.greeting) and, while
+    // gets the page heading's name greeting (dashboard.greeting_*) and, while
     // awaitsWelcome() is true, the welcome modal — a toast on top of both
     // made three welcomes fight for the same instant. "Welcome back" has
     // neither collision, so it still toasts.

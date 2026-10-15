@@ -5,6 +5,12 @@
 @php
     $summary = $metrics['summary'];
     $range = $metrics['range'];
+
+    // The greeting below is tagged for the instant locale swap (layouts/
+    // dashboard.blade.php's i18n bundle), which needs this page's own
+    // translation namespace — "nav"/"common"/"agents"/"onboarding" are
+    // loaded unconditionally, "dashboard" is not.
+    $i18nExtraNamespaces = ['dashboard'];
 @endphp
 
 @section('content')
@@ -43,6 +49,12 @@
        never did. Localised through Carbon so tg/ru/en each read naturally. */
     $today = \Carbon\CarbonImmutable::now(config('agent.analytics.timezone') ?: config('app.timezone'))
         ->locale(app()->getLocale());
+
+    // Which of the four dashboard.greeting_* keys applies right now, in the
+    // same wall-clock zone $today already uses — not config('app.timezone')
+    // alone, which is plain UTC and would greet a Dushanbe owner for the
+    // wrong part of their day. See GreetingPeriod's docblock for the ranges.
+    $greetingKey = \App\Services\Analytics\GreetingPeriod::key($today);
 @endphp
 
 <div>
@@ -61,8 +73,21 @@
                  highlighted nav item, so repeating it in 26px is the one thing
                  the title definitely should not say. The first word of the
                  account name, not the whole string — "Добрый день, Олами
-                 Компютерхо ООО" is not a greeting. --}}
-            <h1 class="page-title">{{ __('dashboard.greeting', ['name' => \Illuminate\Support\Str::of(auth()->user()->name)->trim()->explode(' ')->first()]) }}</h1>
+                 Компютерхо ООО" is not a greeting.
+
+                 The time-of-day phrase is its own span, tagged with the
+                 RESOLVED key ($greetingKey), not a fixed one — a locale
+                 switch must re-translate "good evening" at 9pm into the new
+                 language, not revert it to "good morning". The name sits
+                 outside that span, plain text: the swap engine does a literal
+                 textContent replacement with no :name interpolation (see
+                 partials/welcome-modal's own note on the same constraint), so
+                 baking the name into the translation string would show the
+                 literal placeholder the instant someone switched locale. The
+                 dashboard layout also fully reloads on switch (i18nReload),
+                 which fixes either approach a moment later — this is about
+                 the instant swap not lying in the meantime. --}}
+            <h1 class="page-title"><span data-i18n="{{ $greetingKey }}">{{ __($greetingKey) }}</span>, {{ \Illuminate\Support\Str::of(auth()->user()->name)->trim()->explode(' ')->first() }}</h1>
             <p class="page-sub">{{ __('dashboard.subheading') }}</p>
         </div>
 

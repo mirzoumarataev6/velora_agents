@@ -5,7 +5,10 @@ return [
     'heading' => 'Таҳлил',
     'subheading' => 'Ассистентҳои шумо ба ҷои шумо чӣ кор карданд.',
 
-    'greeting' => 'Рӯзи хуш, :name',
+    'greeting_morning' => 'Субҳ бахайр',
+    'greeting_day' => 'Рӯз бахайр',
+    'greeting_evening' => 'Шом бахайр',
+    'greeting_night' => 'Шаб бахайр',
 
     'details' => [
         'title' => 'Таҳлили муфассал',
