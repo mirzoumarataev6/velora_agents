@@ -2,12 +2,9 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\User;
 use App\Services\Teams\HomeDestination;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Routing\Router;
-use Throwable;
 
 /**
  * Switches which team the signed-in user is currently looking at. Nothing
@@ -46,39 +43,24 @@ class TeamSwitchController extends Controller
         $user->forceFill(['current_team_id' => $data['team_id']])->save();
         $user->flushPermissionCache();
 
-        // back() alone would happily return the user to the exact page they
-        // switched FROM — fine when the new team's role can still open it,
-        // a 403 the instant they arrive when it can't (a BI analyst role in
-        // the old team switching into a CRM-only role in the new one, say).
-        // Resolved through HomeDestination instead whenever that page is
-        // one of the sections it knows how to gate and the new role can't
-        // open it; every other page (nothing it recognizes) is assumed fine
-        // to return to, same as today.
-        if (! $this->previousPageStillOpen($request, $user, $destination)) {
-            return redirect($destination->url($user))->with('status', __('agents.nav.teams.switched'));
-        }
-
-        return back()->with('status', __('agents.nav.teams.switched'));
-    }
-
-    private function previousPageStillOpen(Request $request, User $user, HomeDestination $destination): bool
-    {
-        $previous = $request->headers->get('referer');
-
-        if ($previous === null) {
-            return true;
-        }
-
-        try {
-            $route = app(Router::class)->getRoutes()->match(Request::create($previous, 'GET'));
-        } catch (Throwable) {
-            // Not one of this app's own routes (or not a GET one) — nothing
-            // this class knows how to re-check, so assumed fine.
-            return true;
-        }
-
-        $name = $route->getName();
-
-        return $name === null || $destination->stillOpen($user, $name);
+        // D-02/U-02: always the new team's home, never back() to wherever
+        // the user was. This used to try to distinguish a handful of known
+        // "section index" routes (back() was fine) from everything else
+        // (assumed fine too, by default) — but a detail page bound to a
+        // specific row (/agents/{id}, /crm/deals/{id},
+        // /projects/boards/{id}, a conversation thread) belongs to the OLD
+        // team by construction: every such policy keys off the ROW's own
+        // team_id (see this class's own docblock), not the active team, so
+        // the row almost never exists under the new one. back() into it
+        // after a switch 404s at best; at worst, a colliding id under the
+        // new team silently shows the wrong team's row. There is no fixed
+        // list of "deep" routes to maintain here — any page bound to a
+        // specific record is a candidate, and guessing which ones happen
+        // to survive a switch is a losing game. Linear and GitHub both make
+        // the same call: switching context always lands on that context's
+        // home. The real cost, paid on every switch: the user loses their
+        // place in whatever they were looking at, even on a page the new
+        // role could still have opened.
+        return redirect($destination->url($user))->with('status', __('agents.nav.teams.switched'));
     }
 }

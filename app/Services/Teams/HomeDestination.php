@@ -12,8 +12,7 @@ use Symfony\Component\HttpKernel\Exception\HttpException;
 /**
  * Where a signed-in user should land when nothing more specific is already
  * decided for them — after login/register, after accepting an invitation,
- * and (when the page they were on stops being open to them) after switching
- * teams.
+ * and (unconditionally, since D-02/U-02) after switching teams.
  *
  * `route('home')` used to mean "redirect to /dashboard" unconditionally, but
  * /dashboard requires analytics.view — a role with crm.view and nothing
@@ -54,10 +53,13 @@ class HomeDestination
     }
 
     /**
-     * The route NAME rather than a URL, so callers that need to compare
-     * against an already-resolved route (TeamSwitchController, deciding
-     * whether the page it is about to send the user `back()` to survives a
-     * team switch) can do it without re-parsing a URL back into a name.
+     * The route NAME rather than a URL, split out from `url()` so a caller
+     * that needs the name itself (`stillOpen()`'s own kind of comparison)
+     * never has to re-parse a URL back into one. `TeamSwitchController` no
+     * longer calls this — after D-02/U-02 it always sends a switch to
+     * `url()` outright rather than comparing against the page the user was
+     * on — but `redirectIntended()` below still needs `stillOpen()`, which
+     * this feeds.
      */
     public function routeName(User $user): ?string
     {
@@ -72,12 +74,17 @@ class HomeDestination
 
     /**
      * Whether the user could still land on the page behind this route name
-     * right now — used by TeamSwitchController to decide whether `back()`
-     * is safe after the active team just changed. Deliberately narrow: it
-     * only answers for the routes THIS class already knows how to gate
-     * (the ones named above), not an arbitrary URL. A route it does not
-     * recognize is assumed fine to return to — this is a safety net for
-     * the known gated sections the nav itself hides, not a general-purpose
+     * right now — used by `redirectIntended()` below to decide whether a
+     * session-stored `url.intended` is still safe to honor after sign-in
+     * (D-04). `TeamSwitchController` used to call this too, to decide
+     * whether `back()` was safe after a team switch; it no longer does —
+     * D-02/U-02 replaced that with an unconditional redirect to `url()`,
+     * since a page bound to a specific row almost never survives a switch
+     * and there is no way to enumerate every such route here. Deliberately
+     * narrow: it only answers for the routes THIS class already knows how
+     * to gate (the ones named above), not an arbitrary URL. A route it
+     * does not recognize is assumed fine — this is a safety net for the
+     * known gated sections the nav itself hides, not a general-purpose
      * authorization re-check of every possible page.
      */
     public function stillOpen(User $user, string $routeName): bool

@@ -7,6 +7,7 @@ use App\Models\Role;
 use App\Models\TeamMembership;
 use App\Models\User;
 use App\Services\Permissions\PermissionCatalog;
+use App\Services\Projects\ProjectBoards;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Tests\TestCase;
@@ -122,12 +123,14 @@ class HomeDestinationTest extends TestCase
     }
 
     /**
-     * The scenario back() alone cannot handle: the actor was on /dashboard
-     * under team A (where their role has analytics.view) and switches into
-     * team B, where their role only has crm.view. A plain back() would
-     * return them to /dashboard and 403 immediately; this must not happen.
+     * D-02/U-02, required case (b): the actor was on /dashboard under team A
+     * (role has analytics.view) and switches into team B, where the role
+     * only has crm.view. The switch always lands on the new role's home —
+     * here that happens to also be the one outcome that avoids a 403, but
+     * the point after this fix is that it is ALWAYS the home, not that it
+     * was specifically rescued from a forbidden page (see the next test).
      */
-    public function test_switching_into_a_team_where_the_current_page_is_forbidden_does_not_end_on_a_403(): void
+    public function test_switching_from_dashboard_into_a_crm_view_only_role_lands_on_crm(): void
     {
         $teamAOwner = User::factory()->create();
         $teamBOwner = User::factory()->create();
@@ -146,17 +149,79 @@ class HomeDestinationTest extends TestCase
             ->post(route('teams.switch'), ['team_id' => $teamBOwner->current_team_id]);
 
         $response->assertRedirect(route('crm.board'));
+        $response->assertSessionHas('status', __('agents.nav.teams.switched'));
         $this->get(route('crm.board'))->assertOk();
         $this->assertSame($teamBOwner->current_team_id, $actor->fresh()->current_team_id);
     }
 
     /**
-     * The mirror of the test above: switching into a team where the
-     * CURRENT page is still open must keep the ordinary back() behavior
-     * (the switcher dropdown lives on every page, so this is the common
-     * case and must not be disturbed by the new check).
+     * D-02/U-02, required case (c): the page the actor switched FROM is
+     * still open under the new role — proving the fix is "always home",
+     * never "back() unless forbidden". The old implementation would have
+     * returned here via back(), since agents.index stays open under role
+     * B too; the new one goes to crm.board instead, because that is role
+     * B's actual home (crm.view outranks agents.view in HomeDestination's
+     * own candidate order) and home is now unconditional.
      */
-    public function test_switching_into_a_team_where_the_current_page_is_still_open_uses_a_plain_back(): void
+    public function test_switching_into_a_role_that_can_still_open_the_previous_page_lands_on_home_not_back(): void
+    {
+        $teamAOwner = User::factory()->create();
+        $teamBOwner = User::factory()->create();
+        $actor = User::factory()->create();
+
+        $roleA = $this->customRole($teamAOwner, [PermissionCatalog::AGENTS_VIEW]);
+        $this->addMember($teamAOwner, $actor, $roleA);
+        $actor->forceFill(['current_team_id' => $teamAOwner->current_team_id])->save();
+
+        $roleB = $this->customRole($teamBOwner, [PermissionCatalog::AGENTS_VIEW, PermissionCatalog::CRM_VIEW]);
+        $this->addMember($teamBOwner, $actor, $roleB);
+
+        $this->actingAs($actor)->get(route('agents.index'))->assertOk();
+
+        $response = $this->from(route('agents.index'))
+            ->post(route('teams.switch'), ['team_id' => $teamBOwner->current_team_id]);
+
+        // Role B can still open agents.index (it keeps agents.view) — a
+        // back()-based implementation would have returned exactly there.
+        $this->assertTrue($actor->fresh()->can(PermissionCatalog::AGENTS_VIEW));
+        $response->assertRedirect(route('crm.board'));
+    }
+
+    /**
+     * D-02/U-02, required case (a): the deepest, most concrete instance of
+     * the bug this closes. A project board detail page is bound to a
+     * specific row of the OLD team (ProjectAccess::authorize() 404s the
+     * instant activeTeamId() !== board->team_id) — not one of
+     * HomeDestination's 6 known candidates, so the old implementation's
+     * "not recognized, assumed fine" default sent back() straight into a
+     * 404. The new implementation never looks at the previous page at all.
+     */
+    public function test_switching_from_a_project_board_detail_of_the_old_team_lands_on_the_new_role_home(): void
+    {
+        $teamAOwner = User::factory()->create();
+        $teamBOwner = User::factory()->create();
+        $actor = User::factory()->create();
+
+        $roleA = $this->customRole($teamAOwner, [PermissionCatalog::PROJECTS_VIEW]);
+        $this->addMember($teamAOwner, $actor, $roleA);
+        $actor->forceFill(['current_team_id' => $teamAOwner->current_team_id])->save();
+        $board = app(ProjectBoards::class)->create($teamAOwner->current_team_id, $teamAOwner->id, 'Launch');
+
+        $roleB = $this->customRole($teamBOwner, [PermissionCatalog::CRM_VIEW]);
+        $this->addMember($teamBOwner, $actor, $roleB);
+
+        $boardUrl = route('projects.boards.show', $board);
+        $this->actingAs($actor)->get($boardUrl)->assertOk();
+
+        $response = $this->from($boardUrl)
+            ->post(route('teams.switch'), ['team_id' => $teamBOwner->current_team_id]);
+
+        $response->assertRedirect(route('crm.board'));
+        $response->assertSessionHas('status', __('agents.nav.teams.switched'));
+    }
+
+    /** D-02/U-02, required case (e): the switch's status flash survives the change to an unconditional redirect. */
+    public function test_a_switch_always_carries_the_switched_status_flash(): void
     {
         $teamAOwner = User::factory()->create();
         $teamBOwner = User::factory()->create();
@@ -169,10 +234,10 @@ class HomeDestinationTest extends TestCase
         $roleB = $this->customRole($teamBOwner, [PermissionCatalog::ANALYTICS_VIEW]);
         $this->addMember($teamBOwner, $actor, $roleB);
 
-        $response = $this->actingAs($actor)->from(route('dashboard'))
+        $response = $this->actingAs($actor)
             ->post(route('teams.switch'), ['team_id' => $teamBOwner->current_team_id]);
 
-        $response->assertRedirect(route('dashboard'));
+        $response->assertSessionHas('status', __('agents.nav.teams.switched'));
     }
 
     /**
