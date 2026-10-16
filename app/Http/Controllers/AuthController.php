@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Middleware\SetLocale;
 use App\Models\User;
 use App\Services\Teams\HomeDestination;
 use Illuminate\Http\RedirectResponse;
@@ -52,7 +53,13 @@ class AuthController extends Controller
             'name' => $validated['name'],
             'email' => $validated['email'],
             'password' => Hash::make($validated['password']),
-            'locale' => session('locale'),
+            // Only a REAL pick (the switcher, or a /ru /en /tg landing link) is
+            // worth keeping. Unqualified, session('locale') is just whatever
+            // SetLocale fell back to — the remembered or hardcoded default a
+            // visitor never asked for — and baking that onto the account would
+            // misrepresent a choice that was never made. NULL is fine here:
+            // SetLocale already falls back past a null users.locale.
+            'locale' => session(SetLocale::EXPLICIT_SESSION_KEY) ? session('locale') : null,
         ]);
 
         Auth::login($user);
@@ -115,6 +122,19 @@ class AuthController extends Controller
 
     private function syncLocale(User $user): void
     {
+        // A locale picked before authenticating (switcher, or a /ru /en /tg
+        // visit) outranks whatever is already on the account — otherwise
+        // choosing a language on the landing page and then logging into an
+        // account stored with a different one silently discarded the pick.
+        // SetLocale sets this only for a REAL pick: a locale the visitor
+        // merely landed on (the default, or the root redirect's bounce) never
+        // does, so it can't falsely "win" here either.
+        if (session(SetLocale::EXPLICIT_SESSION_KEY)) {
+            $user->forceFill(['locale' => session('locale')])->save();
+
+            return;
+        }
+
         if ($user->locale) {
             session(['locale' => $user->locale]);
         } else {

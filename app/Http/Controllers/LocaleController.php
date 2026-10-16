@@ -33,7 +33,11 @@ class LocaleController extends Controller
             $locale = SetLocale::DEFAULT_LOCALE;
         }
 
-        session(['locale' => $locale]);
+        // A switcher click is always a real pick, never the default fallback —
+        // mark it explicit so a pre-login choice survives login()/register()
+        // instead of being overwritten by, or merged into, the account's own
+        // stored locale. See SetLocale::EXPLICIT_SESSION_KEY.
+        session(['locale' => $locale, SetLocale::EXPLICIT_SESSION_KEY => true]);
 
         if ($request->user()) {
             $request->user()->forceFill(['locale' => $locale])->save();

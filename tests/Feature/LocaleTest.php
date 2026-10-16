@@ -2,9 +2,14 @@
 
 namespace Tests\Feature;
 
+use App\Http\Middleware\SetLocale;
 use App\Models\Agent;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Hash;
+use Laravel\Socialite\Contracts\Provider;
+use Laravel\Socialite\Facades\Socialite;
+use Laravel\Socialite\Two\User as SocialiteUser;
 use Tests\TestCase;
 
 class LocaleTest extends TestCase
@@ -161,5 +166,134 @@ class LocaleTest extends TestCase
 
         // And the stored choice is what a later unprefixed entry follows.
         $this->get('/')->assertRedirect('/en');
+    }
+
+    /**
+     * AuthController::syncLocale() used to let a stored users.locale always
+     * win, so picking a language on the landing page and then logging into an
+     * account stored with a different one silently discarded the pick. The
+     * explicit marker SetLocale sets on a real /{locale} visit is what makes
+     * the picked language outrank the account's own record here.
+     */
+    public function test_guest_who_picked_a_language_overrides_the_stored_locale_on_login(): void
+    {
+        $user = User::factory()->create([
+            'locale' => 'ru',
+            'password' => Hash::make('password123'),
+        ]);
+
+        $this->get('/en');
+
+        $this->post('/login', [
+            'email' => $user->email,
+            'password' => 'password123',
+        ])->assertRedirect();
+
+        $this->assertSame('en', session('locale'));
+        $this->assertSame('en', $user->fresh()->locale);
+    }
+
+    public function test_login_with_no_explicit_choice_applies_the_stored_locale(): void
+    {
+        $user = User::factory()->create([
+            'locale' => 'tg',
+            'password' => Hash::make('password123'),
+        ]);
+
+        // No prior visit to any /{locale} page or the switcher, so nothing in
+        // this session counts as an explicit pick — the account's own stored
+        // locale is what should win, same as before this change.
+        $this->post('/login', [
+            'email' => $user->email,
+            'password' => 'password123',
+        ])->assertRedirect();
+
+        $this->assertSame('tg', session('locale'));
+    }
+
+    public function test_register_after_an_explicit_locale_choice_stores_it(): void
+    {
+        $this->get('/tg');
+
+        $this->post('/register', [
+            'name' => 'Azim',
+            'email' => 'azim@example.com',
+            'password' => 'password123',
+            'password_confirmation' => 'password123',
+        ])->assertRedirect();
+
+        $this->assertSame('tg', User::where('email', 'azim@example.com')->first()->locale);
+    }
+
+    /**
+     * The bug this guards: register() used to store session('locale')
+     * unconditionally, but that session value is often just SetLocale's
+     * fallback default — nobody asked for it. A brand-new account must not
+     * have a language permanently baked onto it that the visitor never chose.
+     */
+    public function test_register_with_no_explicit_choice_leaves_locale_null(): void
+    {
+        $this->post('/register', [
+            'name' => 'Azim',
+            'email' => 'azim@example.com',
+            'password' => 'password123',
+            'password_confirmation' => 'password123',
+        ])->assertRedirect();
+
+        $this->assertNull(User::where('email', 'azim@example.com')->first()->locale);
+    }
+
+    /**
+     * "/" bounces a guest on to a remembered-or-default /{locale} landing
+     * page — that is the app choosing a locale for them, not them choosing
+     * one, even though the resulting request looks identical to a deliberate
+     * /ru visit. SetLocale::ROOT_BOUNCE_KEY is what tells the two apart.
+     */
+    public function test_register_after_landing_via_the_root_redirect_default_still_leaves_locale_null(): void
+    {
+        $this->get('/');
+
+        $this->post('/register', [
+            'name' => 'Azim',
+            'email' => 'azim@example.com',
+            'password' => 'password123',
+            'password_confirmation' => 'password123',
+        ])->assertRedirect();
+
+        $this->assertNull(User::where('email', 'azim@example.com')->first()->locale);
+    }
+
+    public function test_visiting_a_locale_prefixed_url_then_login_page_keeps_the_choice(): void
+    {
+        $this->get('/en');
+
+        $this->get('/en/login')
+            ->assertOk()
+            ->assertSee('<html lang="en">', false);
+
+        $this->assertTrue(session(SetLocale::EXPLICIT_SESSION_KEY));
+    }
+
+    public function test_google_callback_keeps_the_explicit_choice_from_before_login(): void
+    {
+        $user = User::factory()->create(['locale' => 'ru', 'google_id' => null]);
+
+        $this->get('/en');
+
+        $googleUser = SocialiteUser::fake([
+            'id' => 'google-123',
+            'email' => $user->email,
+            'name' => $user->name,
+        ]);
+
+        $provider = \Mockery::mock(Provider::class);
+        $provider->shouldReceive('user')->once()->andReturn($googleUser);
+
+        Socialite::shouldReceive('driver')->once()->with('google')->andReturn($provider);
+
+        $this->get('/auth/google/callback')->assertRedirect();
+
+        $this->assertSame('en', session('locale'));
+        $this->assertSame('en', $user->fresh()->locale);
     }
 }

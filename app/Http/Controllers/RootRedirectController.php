@@ -15,6 +15,12 @@ class RootRedirectController extends Controller
 {
     public function __invoke(): RedirectResponse
     {
+        // This is the app choosing a locale FOR the visitor — their remembered
+        // locale, or the hardcoded default — never the visitor choosing one.
+        // Flag it so SetLocale doesn't mistake the /{locale} landing this sends
+        // them to for an explicit pick; see SetLocale::ROOT_BOUNCE_KEY.
+        session([SetLocale::ROOT_BOUNCE_KEY => true]);
+
         return redirect('/'.session('locale', SetLocale::DEFAULT_LOCALE));
     }
 }

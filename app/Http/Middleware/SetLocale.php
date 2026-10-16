@@ -27,6 +27,28 @@ class SetLocale
      */
     public const QUERY_KEY = 'lang';
 
+    /**
+     * Set once a visitor has genuinely picked a language — the switcher, or a
+     * /ru /en /tg landing link — as opposed to merely being shown one by a
+     * fallback. AuthController trusts this to decide whether a pre-login
+     * locale should overwrite an account's stored one, or be written onto a
+     * brand-new account at all. See ROOT_BOUNCE_KEY for the one case below
+     * that looks identical to a real pick but must not set this.
+     */
+    public const EXPLICIT_SESSION_KEY = 'locale_explicit';
+
+    /**
+     * Set by RootRedirectController immediately before it sends "/" on to a
+     * remembered-or-default /{locale} landing page. That bounce is the app
+     * choosing FOR the visitor, not the visitor choosing — but it lands on
+     * exactly the route-segment branch below that a deliberate /ru /en /tg
+     * visit also hits, so without this flag the bounce was indistinguishable
+     * from a real pick. That let register() bake "ru" onto a brand-new
+     * account for a guest who had touched nothing but "/". Consumed (and
+     * cleared) on exactly the one request the bounce produces.
+     */
+    public const ROOT_BOUNCE_KEY = 'locale_root_bounce';
+
     public function handle(Request $request, Closure $next): Response
     {
         $routeLocale = $request->route('locale');
@@ -39,6 +61,7 @@ class SetLocale
         }
 
         $user = $request->user();
+        $bounced = session()->pull(self::ROOT_BOUNCE_KEY, false);
 
         // The dashboard's URLs carry no locale prefix, so the switcher used to
         // POST the choice in the background and navigate in the same tick. The
@@ -53,6 +76,10 @@ class SetLocale
 
         if ($chosen !== null) {
             session(['locale' => $chosen]);
+
+            if (! $bounced) {
+                session([self::EXPLICIT_SESSION_KEY => true]);
+            }
 
             if ($user && $user->locale !== $chosen) {
                 $user->forceFill(['locale' => $chosen])->save();
