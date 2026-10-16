@@ -229,6 +229,142 @@ document.addEventListener('submit', async (event) => {
     } finally { button.disabled = false; }
 });
 
+/**
+ * Double-submit guard — ONE place, not per form.
+ *
+ * A fast double-click, or Enter pressed twice before the first response
+ * lands, resubmits the same form a second time. That is where a duplicate
+ * agent, a duplicate invitation, a duplicate CRM note, or a duplicate task
+ * card comes from, and on the second response it can just as easily read as
+ * an error (a unique-constraint violation, a token already consumed) rather
+ * than a dup, which is the more confusing of the two outcomes.
+ *
+ * Rejected: copying the `saving`/`connecting`/`sending` Alpine flag pattern
+ * already used by `@submit.prevent` forms (the inbox composer, the channel
+ * connect forms, knowledge upload, …) into every remaining plain form. It
+ * works, but it is exactly the per-form repetition this is supposed to
+ * replace, and it is what every one of the forms this bug was filed against
+ * (agent create, invite, task card, CRM note) was still missing.
+ * Rejected: a server-side idempotency key alone. It can stop the second ROW,
+ * but the browser still fires two requests, and the user still sees
+ * whatever the second one answers with — the "confusing error on the second
+ * response" half of the bug is a client problem, not a database one.
+ *
+ * This only acts on a submission that is about to make a real network round
+ * trip. By the time this listener runs (bubble phase on `document`, so it is
+ * last among listeners on the form itself and anything registered earlier
+ * here) `event.defaultPrevented` already reflects whatever an
+ * `@submit.prevent` handler or the `data-task-toggle` listener just above
+ * decided — both call `preventDefault()` as their first line. Those already
+ * own their own disable/re-enable, and must be left alone: no Turbo
+ * `FormSubmission` ever starts for them, so there is no `turbo:submit-end`
+ * to release this guard's lock on, and the next legitimate click would stay
+ * dead forever instead of just the accidental second one.
+ */
+const SUBMIT_CONTROLS_SELECTOR = 'button[type="submit"], button:not([type]), input[type="submit"]';
+
+function lockFormSubmission(form, submitter) {
+    form.setAttribute('data-submit-locked', '');
+
+    // A disabled control is excluded from FormData entirely (the HTML spec
+    // says so), so if a controller ever reads the clicked button's own
+    // name/value — none does today — disabling it here would silently drop
+    // that value from the request. A hidden mirror keeps it in the request
+    // while the real button goes inert.
+    if (submitter?.name && submitter.form === form) {
+        const shadow = document.createElement('input');
+        shadow.type = 'hidden';
+        shadow.name = submitter.name;
+        shadow.value = submitter.value;
+        shadow.setAttribute('data-submit-shadow', '');
+        form.appendChild(shadow);
+    }
+
+    form.querySelectorAll(SUBMIT_CONTROLS_SELECTOR).forEach((control) => {
+        control.disabled = true;
+        control.setAttribute('aria-busy', 'true');
+    });
+}
+
+function unlockFormSubmission(form) {
+    if (!form.hasAttribute('data-submit-locked')) return;
+
+    form.removeAttribute('data-submit-locked');
+    form.querySelectorAll('[data-submit-shadow]').forEach((el) => el.remove());
+    form.querySelectorAll(SUBMIT_CONTROLS_SELECTOR).forEach((control) => {
+        control.disabled = false;
+        control.removeAttribute('aria-busy');
+    });
+}
+
+document.addEventListener('submit', (event) => {
+    const form = event.target;
+    if (!(form instanceof HTMLFormElement)) return;
+
+    if (form.hasAttribute('data-submit-locked')) {
+        // The second click, or the second Enter, of the double. A disabled
+        // button already stops the browser from generating this event at
+        // all in the ordinary case; this only matters for a resubmission
+        // fired some other way (a `requestSubmit()` from a key handler, say)
+        // that does not go through the disabled control.
+        event.preventDefault();
+        return;
+    }
+
+    // Already claimed by `@submit.prevent`/`data-task-toggle` above — see
+    // the block comment above `SUBMIT_CONTROLS_SELECTOR` for why this must
+    // not also lock it.
+    if (event.defaultPrevented) return;
+
+    // Escape hatch for a form that legitimately needs to stay submittable
+    // while its own previous submission is still in flight. Nothing in this
+    // app needs it today — shipping the hatch unused is cheaper than finding
+    // out later which form does, mid-incident.
+    if (form.hasAttribute('data-allow-resubmit')) return;
+
+    // A form whose response opens in a new tab is not what this bug
+    // duplicates: the tab holding the button is free, and locking it would
+    // just look stuck for no reason. (Audited: nothing in this codebase
+    // submits a `<form>` to a file-response endpoint today — the customer
+    // and deal exports are plain `<a download>`/`data-turbo="false"` links,
+    // never a form — so this is the only automatic rule needed for now; a
+    // future file-response form gets `data-allow-resubmit` too.)
+    if (form.target === '_blank') return;
+
+    // GET here is a search/filter resubmission, not a row-creating action —
+    // a second identical GET is not a duplicate of anything.
+    if (form.method.toLowerCase() === 'get') return;
+
+    lockFormSubmission(form, event.submitter);
+});
+
+/**
+ * `FormSubmission.requestFinished()` dispatches `turbo:submit-end`
+ * unconditionally — success, validation failure, or network error — so this
+ * one release point also covers a validation-error re-render leaving the
+ * button dead, which is the regression this guard must not reintroduce.
+ */
+document.addEventListener('turbo:submit-end', (event) => {
+    if (event.target instanceof HTMLFormElement) unlockFormSubmission(event.target);
+});
+
+/**
+ * Two cases `turbo:submit-end` does not cover, because no `FormSubmission`
+ * ever finishes:
+ *  - Turbo is about to snapshot the page before navigating away. A form
+ *    cached mid-lock would restore (via Back) looking permanently stuck.
+ *  - A `data-turbo="false"` form (team switch, sign-out) does a true
+ *    browser navigation, which the real back/forward cache can later
+ *    restore — `pageshow` is the one event that fires for that restore.
+ */
+document.addEventListener('turbo:before-cache', () => {
+    document.querySelectorAll('form[data-submit-locked]').forEach(unlockFormSubmission);
+});
+
+window.addEventListener('pageshow', () => {
+    document.querySelectorAll('form[data-submit-locked]').forEach(unlockFormSubmission);
+});
+
 const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 /**

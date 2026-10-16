@@ -167,6 +167,57 @@
         });
     });
 
+    /**
+     * Double-submit guard — same rule as the dashboard's (see
+     * resources/js/app.js), restated here rather than shared, because this
+     * layout deliberately loads no app.js/Turbo (see this file's own note
+     * above the Vite include): a fast double-click or a second Enter on
+     * forgot/reset password currently resubmits for real, which on the second response
+     * reads as a confusing error ("token already used") rather than a dup.
+     *
+     * login/register are already covered: `handleAuthSubmit` below disables
+     * their button and calls `preventDefault()` as its first line, so by the
+     * time this bubble-phase listener runs, `event.defaultPrevented` is
+     * already true for them — this must not also lock those, since nothing
+     * here ever fires for an `event.preventDefault()`-owned submission to
+     * release it on.
+     *
+     * No Turbo means no `turbo:submit-end` to release the lock on either —
+     * every plain form on this layout ends in a full page navigation either
+     * way (success redirects away; a validation error redirects back with
+     * flashed errors, "which a normal redirect renders for free", per the
+     * comment on the forgot-password form), so the disabled button is
+     * thrown away with the rest of the DOM before it could ever look stuck.
+     * `pageshow` only exists for the one case that is not a fresh load: the
+     * browser's back/forward cache restoring this exact page with the button
+     * still disabled from the click that navigated away from it.
+     */
+    document.addEventListener('submit', (event) => {
+        const form = event.target;
+        if (!(form instanceof HTMLFormElement)) return;
+        if (form.hasAttribute('data-submit-locked')) { event.preventDefault(); return; }
+        if (event.defaultPrevented) return;
+        if (form.hasAttribute('data-allow-resubmit')) return;
+        if (form.target === '_blank') return;
+        if (form.method.toLowerCase() === 'get') return;
+
+        form.setAttribute('data-submit-locked', '');
+        form.querySelectorAll('button[type="submit"], button:not([type]), input[type="submit"]').forEach((control) => {
+            control.disabled = true;
+            control.setAttribute('aria-busy', 'true');
+        });
+    });
+
+    window.addEventListener('pageshow', () => {
+        document.querySelectorAll('form[data-submit-locked]').forEach((form) => {
+            form.removeAttribute('data-submit-locked');
+            form.querySelectorAll('button[type="submit"], button:not([type]), input[type="submit"]').forEach((control) => {
+                control.disabled = false;
+                control.removeAttribute('aria-busy');
+            });
+        });
+    });
+
     function isValidEmail(value) {
         return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
     }
