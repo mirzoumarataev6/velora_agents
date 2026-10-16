@@ -229,9 +229,12 @@ class LocaleTest extends TestCase
      * The bug this guards: register() used to store session('locale')
      * unconditionally, but that session value is often just SetLocale's
      * fallback default — nobody asked for it. A brand-new account must not
-     * have a language permanently baked onto it that the visitor never chose.
+     * have a language permanently baked onto it that the visitor never chose
+     * — but Tajik IS the product default, so a never-made choice still gets
+     * that legitimate stored value, not a copy of whatever session state
+     * happened to be lying around.
      */
-    public function test_register_with_no_explicit_choice_leaves_locale_null(): void
+    public function test_register_with_no_explicit_choice_stores_the_product_default(): void
     {
         $this->post('/register', [
             'name' => 'Azim',
@@ -240,16 +243,18 @@ class LocaleTest extends TestCase
             'password_confirmation' => 'password123',
         ])->assertRedirect();
 
-        $this->assertNull(User::where('email', 'azim@example.com')->first()->locale);
+        $this->assertSame(SetLocale::DEFAULT_LOCALE, User::where('email', 'azim@example.com')->first()->locale);
     }
 
     /**
      * "/" bounces a guest on to a remembered-or-default /{locale} landing
      * page — that is the app choosing a locale for them, not them choosing
      * one, even though the resulting request looks identical to a deliberate
-     * /ru visit. SetLocale::ROOT_BOUNCE_KEY is what tells the two apart.
+     * /{locale} visit. SetLocale::ROOT_BOUNCE_KEY is what tells the two
+     * apart, so the stored locale here must be the product default, never a
+     * value copied from the bounce.
      */
-    public function test_register_after_landing_via_the_root_redirect_default_still_leaves_locale_null(): void
+    public function test_register_after_landing_via_the_root_redirect_default_stores_the_product_default(): void
     {
         $this->get('/');
 
@@ -260,7 +265,7 @@ class LocaleTest extends TestCase
             'password_confirmation' => 'password123',
         ])->assertRedirect();
 
-        $this->assertNull(User::where('email', 'azim@example.com')->first()->locale);
+        $this->assertSame(SetLocale::DEFAULT_LOCALE, User::where('email', 'azim@example.com')->first()->locale);
     }
 
     public function test_visiting_a_locale_prefixed_url_then_login_page_keeps_the_choice(): void

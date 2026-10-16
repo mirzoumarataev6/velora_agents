@@ -54,12 +54,13 @@ class AuthController extends Controller
             'email' => $validated['email'],
             'password' => Hash::make($validated['password']),
             // Only a REAL pick (the switcher, or a /ru /en /tg landing link) is
-            // worth keeping. Unqualified, session('locale') is just whatever
-            // SetLocale fell back to — the remembered or hardcoded default a
-            // visitor never asked for — and baking that onto the account would
-            // misrepresent a choice that was never made. NULL is fine here:
-            // SetLocale already falls back past a null users.locale.
-            'locale' => session(SetLocale::EXPLICIT_SESSION_KEY) ? session('locale') : null,
+            // worth copying from session state. Unqualified, session('locale')
+            // is just whatever SetLocale fell back to — a remembered or
+            // bounced value nobody asked for on THIS registration — and baking
+            // that onto the account would misrepresent a choice that was never
+            // made. Tajik is the product default, though, so a never-made
+            // choice still gets a legitimate stored value rather than NULL.
+            'locale' => session(SetLocale::EXPLICIT_SESSION_KEY) ? session('locale') : SetLocale::DEFAULT_LOCALE,
         ]);
 
         Auth::login($user);
