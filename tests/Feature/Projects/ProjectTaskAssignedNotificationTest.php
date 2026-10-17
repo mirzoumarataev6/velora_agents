@@ -12,6 +12,7 @@ use App\Services\Projects\ProjectBoards;
 use App\Services\Projects\ProjectTaskWorkflow;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Notifications\DatabaseNotification;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -223,6 +224,38 @@ class ProjectTaskAssignedNotificationTest extends TestCase
 
         $this->assertSame(0, $task->assignees()->count());
         $this->assertSame(0, $operator->notifications()->count());
+    }
+
+    /**
+     * notifyNewAssignees()'s DB::afterCommit callback runs after the
+     * assignment is already committed — the save has already succeeded by
+     * the time it fires. If Notification::sendNow throws there (a deploy
+     * that forgot to run migrations, a DB hiccup), that must stay a
+     * best-effort courtesy failure, never an exception that turns an
+     * already-successful write into a 500 the user retries — recreating the
+     * same assignment again.
+     */
+    public function test_a_failed_send_never_turns_a_successful_assignment_into_an_error(): void
+    {
+        $owner = User::factory()->create();
+        $operator = $this->member($owner, 'operator');
+        $board = $this->teamBoard($owner);
+        $task = Task::factory()->for($owner)->create([
+            'project_board_id' => $board->id,
+            'project_column_id' => $board->columns()->first()->id,
+        ]);
+
+        Notification::shouldReceive('sendNow')
+            ->once()
+            ->andThrow(new \RuntimeException('notifications table missing'));
+
+        $this->actingAs($owner)->patch(route('projects.tasks.update', [$board, $task]), [
+            'assignees_present' => '1',
+            'assignee_ids' => [$operator->id],
+        ])->assertRedirect()->assertSessionHas('status');
+
+        $this->assertSame(1, $task->assignees()->count());
+        $this->assertTrue($task->assignees()->whereKey($operator->id)->exists());
     }
 
     public function test_a_user_outside_the_team_cannot_be_assigned_and_receives_nothing(): void

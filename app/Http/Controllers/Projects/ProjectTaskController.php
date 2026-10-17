@@ -18,9 +18,11 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
+use Throwable;
 
 class ProjectTaskController extends Controller
 {
@@ -56,11 +58,13 @@ class ProjectTaskController extends Controller
                 'deal_id' => $data['deal_id'] ?? null,
             ]);
             $newlyAssigned = $this->syncAssignees($task, $data['assignee_ids'] ?? []);
-            // Registered before syncLabels()/workflow->record() run, not after:
-            // DB::afterCommit only protects a rollback if the callback is queued
-            // BEFORE whatever might still fail. Queuing it last would leave a
-            // window where this notification already fired for a write the
-            // rest of the transaction then undid.
+            // Where in this transaction notifyNewAssignees() is called doesn't
+            // affect whether a later failure can undo it: DB::afterCommit
+            // queues its callback onto the CURRENT transaction regardless of
+            // registration order, and the whole queue is discarded if that
+            // transaction rolls back for any reason, including something
+            // thrown by syncLabels()/workflow->record() below. Called here
+            // simply for locality with the write it reports on.
             $this->notifyNewAssignees($task, $board, $newlyAssigned, $request->user());
             $this->syncLabels($task, $data['label_ids'] ?? []);
             $workflow->record($task, $request->user(), 'created');
@@ -103,9 +107,9 @@ class ProjectTaskController extends Controller
             $newlyAssigned = [];
             if (array_key_exists('assignee_ids', $data)) {
                 $newlyAssigned = $this->syncAssignees($task, $data['assignee_ids']);
-                // See store() above for why this is registered immediately
-                // after the write it reports on, before anything later in
-                // this same transaction gets a chance to fail.
+                // See store() above: called here for locality with the write
+                // it reports on, not because the position within this
+                // transaction changes DB::afterCommit's rollback behaviour.
                 $this->notifyNewAssignees($task, $board, $newlyAssigned, $request->user());
             }
             if (array_key_exists('label_ids', $data)) {
@@ -311,15 +315,32 @@ class ProjectTaskController extends Controller
             dueAt: $task->due_at?->toIso8601String(),
         );
 
-        // DB::afterCommit, not a plain call: this runs inside the very
-        // DB::transaction() that writes the assignment (store()/update()
-        // above), so a later failure in that same transaction must take the
-        // notification down with it — nobody should be told about an
-        // assignment that a rollback just undid. Notification::sendNow, not
-        // ->notify()/queued: the database channel is one INSERT per
-        // recipient, not worth a round trip through the `default` queue pool,
-        // which CLAUDE.md reserves for customer-facing work.
-        DB::afterCommit(fn () => Notification::sendNow($recipients, $notification));
+        // DB::afterCommit, not a plain call: this queues the closure onto the
+        // CURRENT transaction (the one store()/update() above writes the
+        // assignment in) and Laravel discards the whole queue, unfired, if
+        // that transaction rolls back for any reason — nobody should be told
+        // about an assignment that a rollback just undid. Notification::
+        // sendNow, not ->notify()/queued: the database channel is one INSERT
+        // per recipient, not worth a round trip through the `default` queue
+        // pool, which CLAUDE.md reserves for customer-facing work.
+        DB::afterCommit(function () use ($recipients, $notification, $task, $recipientIds) {
+            // By the time this runs, the assignment is already committed —
+            // the write succeeded. The assignment is the source of truth;
+            // this notification is a courtesy on top of it, and a courtesy
+            // that fails (notifications table missing because a deploy
+            // forgot to migrate, a DB hiccup) must never turn an already
+            // -successful save into a 500 the user retries, assigning the
+            // same people again.
+            try {
+                Notification::sendNow($recipients, $notification);
+            } catch (Throwable $e) {
+                report($e);
+                Log::warning('Failed to send TaskAssigned notification', [
+                    'task_id' => $task->id,
+                    'recipient_ids' => $recipientIds,
+                ]);
+            }
+        });
     }
 
     private function syncLabels(Task $task, array $ids): void
