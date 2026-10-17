@@ -17,8 +17,14 @@
     // POSTing this view. `board` is also stripped from the carried query and
     // re-added last — a stray ?board=99 in the URL must never outrank the real
     // route parameter and point a card link at another board.
+    //
+    // `settings` is stripped too and never re-added: it carries the board
+    // settings panel's open state (PRJ-004), and every link built here opens a
+    // card or closes the task panel — none of them should also reopen settings
+    // behind it. The settings panel manages its own query parameter directly
+    // via history.replaceState, not through this helper.
     $boardLink = fn (array $extra = []) => route('projects.boards.show', array_merge(
-        \Illuminate\Support\Arr::except(request()->query(), ['board', 'task']),
+        \Illuminate\Support\Arr::except(request()->query(), ['board', 'task', 'settings']),
         ['board' => $board],
         $extra
     ));
@@ -33,7 +39,7 @@
     link to a DIFFERENT board, or any link without the attribute (pagination,
     filters), must still land at the top as a normal visit would.
 --}}
-<div class="project-accent-{{ $accent }} min-w-0 space-y-5" x-data="projectKanban()" data-scroll-key="board-{{ $board->id }}">
+<div class="project-accent-{{ $accent }} min-w-0 space-y-5" x-data="projectKanban({ settingsOpen: @js($settingsOpen) })" data-scroll-key="board-{{ $board->id }}">
     <div class="flex flex-wrap items-start justify-between gap-4">
         <div class="min-w-0">
             <a href="{{ route('projects.index') }}" class="inline-flex items-center gap-1 text-sm font-medium text-brand hover:underline"><x-icon name="arrow-left" size="h-3.5 w-3.5" />{{ __('projects.back_boards') }}</a>
@@ -54,7 +60,7 @@
                 </span>
             @endif
             <a href="{{ route('projects.my') }}" class="btn btn-ghost btn-sm">{{ __('projects.my_work') }}</a>
-            @if ($canManage)<a href="#board-settings" @click.prevent="settingsOpen = true; $nextTick(() => document.getElementById('board-settings').scrollIntoView({ behavior: 'smooth' }))" class="btn btn-secondary btn-sm">{{ __('projects.board_settings') }}</a>@endif
+            @if ($canManage)<a href="#board-settings" @click.prevent="openSettings()" class="btn btn-secondary btn-sm">{{ __('projects.board_settings') }}</a>@endif
         </div>
     </div>
 
@@ -176,11 +182,53 @@
 
 @push('scripts')
 <script>
-    function projectKanban() {
+    /**
+     * PRJ-004: the panel's open state has to survive a plain-POST settings
+     * form redirecting back to this same page. back() builds that redirect
+     * from the Referer header, and a URL fragment (#board-settings) is never
+     * sent as part of a Referer — only the query string is — so a fragment
+     * alone closed the panel after every single edit inside it. ?settings=1
+     * rides in the query string instead, kept in sync with the address bar
+     * via history.replaceState (no Turbo visit, so Turbo's own history.state
+     * is passed through untouched) each time the panel opens or closes, so
+     * the NEXT form submit's Referer carries it forward.
+     */
+    function setSettingsQueryParam(open) {
+        const url = new URL(window.location.href);
+        if (open) url.searchParams.set('settings', '1');
+        else url.searchParams.delete('settings');
+        history.replaceState(history.state, '', url);
+    }
+
+    function projectKanban(options = {}) {
         return {
             dragId: null,
             busy: false,
-            settingsOpen: window.location.hash === '#board-settings',
+            // The server decides the initial value from ?settings=1 (and only
+            // for a user who can manage the board — see BoardController), but
+            // the #board-settings hash link some pages still use must keep
+            // working too, so either source opens it.
+            settingsOpen: Boolean(options.settingsOpen) || window.location.hash === '#board-settings',
+            init() {
+                // Runs on every Turbo render of this page, same as the rest of
+                // this component. Only fires when the panel is ALREADY open on
+                // load (a settings-form redirect, or the hash link) — the
+                // click-driven open below does its own smooth scroll — and
+                // jumps straight there so the user isn't left looking at the
+                // top of the board with the panel they just edited off-screen.
+                if (this.settingsOpen) {
+                    this.$nextTick(() => document.getElementById('board-settings')?.scrollIntoView());
+                }
+            },
+            openSettings() {
+                this.settingsOpen = true;
+                setSettingsQueryParam(true);
+                this.$nextTick(() => document.getElementById('board-settings')?.scrollIntoView({ behavior: 'smooth' }));
+            },
+            closeSettings() {
+                this.settingsOpen = false;
+                setSettingsQueryParam(false);
+            },
             start(event, id) {
                 this.dragId = id;
                 event.dataTransfer.effectAllowed = 'move';

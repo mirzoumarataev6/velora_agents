@@ -2,7 +2,9 @@
 
 namespace Tests\Feature\Projects;
 
+use App\Models\Role;
 use App\Models\Task;
+use App\Models\TeamMembership;
 use App\Models\User;
 use App\Services\Projects\ProjectBoards;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -32,6 +34,103 @@ class ProjectPanelStateTest extends TestCase
         ]);
 
         return [$board, $task];
+    }
+
+    private function member(User $owner, string $role): User
+    {
+        $member = User::factory()->create();
+        TeamMembership::create([
+            'team_id' => $owner->current_team_id,
+            'user_id' => $member->id,
+            'role_id' => Role::where('team_id', $owner->current_team_id)->where('slug', $role)->sole()->id,
+            'joined_at' => now(),
+        ]);
+        $member->forceFill(['current_team_id' => $owner->current_team_id])->save();
+
+        return $member;
+    }
+
+    /**
+     * PRJ-004: back()'s redirect never carries a URL fragment (#board-settings
+     * is never sent as part of a Referer header), so the panel's open state
+     * now rides on ?settings=1 instead. The server decides it — never the
+     * client's x-data alone — so this is asserted on the rendered attribute,
+     * not just "the page didn't 500".
+     */
+    public function test_settings_query_parameter_opens_the_panel_for_a_user_who_can_manage(): void
+    {
+        $owner = User::factory()->create();
+        [$board] = $this->boardWithTask($owner);
+
+        $html = $this->actingAs($owner)
+            ->get(route('projects.boards.show', $board).'?settings=1')
+            ->assertOk()->getContent();
+
+        $this->assertStringContainsString('projectKanban({ settingsOpen: true })', $html);
+    }
+
+    public function test_plain_board_url_renders_the_panel_closed(): void
+    {
+        $owner = User::factory()->create();
+        [$board] = $this->boardWithTask($owner);
+
+        $html = $this->actingAs($owner)
+            ->get(route('projects.boards.show', $board))
+            ->assertOk()->getContent();
+
+        $this->assertStringContainsString('projectKanban({ settingsOpen: false })', $html);
+    }
+
+    public function test_settings_query_parameter_is_ignored_for_an_operator(): void
+    {
+        $owner = User::factory()->create();
+        [$board] = $this->boardWithTask($owner);
+        $operator = $this->member($owner, 'operator');
+
+        $html = $this->actingAs($operator)
+            ->get(route('projects.boards.show', $board).'?settings=1')
+            ->assertOk()->getContent();
+
+        $this->assertStringContainsString('projectKanban({ settingsOpen: false })', $html);
+        $this->assertStringNotContainsString('id="board-settings"', $html);
+    }
+
+    public function test_settings_query_parameter_is_ignored_for_a_viewer(): void
+    {
+        $owner = User::factory()->create();
+        [$board] = $this->boardWithTask($owner);
+        $viewer = $this->member($owner, 'viewer');
+
+        $html = $this->actingAs($viewer)
+            ->get(route('projects.boards.show', $board).'?settings=1')
+            ->assertOk()->getContent();
+
+        $this->assertStringContainsString('projectKanban({ settingsOpen: false })', $html);
+        $this->assertStringNotContainsString('id="board-settings"', $html);
+    }
+
+    /**
+     * $boardLink() (board.blade.php) backs the card overlay and the task
+     * panel's close/backdrop links — none of them must carry `settings`
+     * forward, or opening a card would leave the settings panel open behind
+     * the task panel it's supposed to be replaced by.
+     */
+    public function test_card_and_close_links_never_carry_the_settings_parameter(): void
+    {
+        $owner = User::factory()->create();
+        [$board, $task] = $this->boardWithTask($owner);
+
+        $html = $this->actingAs($owner)
+            ->get(route('projects.boards.show', [$board, 'task' => $task->id]).'&settings=1')
+            ->assertOk()->getContent();
+
+        $cardHref = $this->extractHref($html, 'class="absolute inset-0 rounded-xl');
+        $backdropHref = $this->extractHref($html, 'class="absolute inset-0 bg-ink/60');
+        $closeHref = $this->extractHref($html, 'x-ref="closePanel"', attributeFirst: true);
+
+        foreach ([$cardHref, $backdropHref, $closeHref] as $href) {
+            $this->assertStringNotContainsString('settings=', $href);
+        }
     }
 
     public function test_card_link_keeps_the_query_string_and_adds_the_task_id(): void

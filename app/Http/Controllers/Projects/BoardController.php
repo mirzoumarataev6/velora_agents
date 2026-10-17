@@ -139,6 +139,7 @@ class BoardController extends Controller
         }
 
         $canEdit = $board->archived_at === null && $request->user()->can(PermissionCatalog::PROJECTS_EDIT, $board);
+        $canManage = $board->archived_at === null && $request->user()->can(PermissionCatalog::PROJECTS_MANAGE, $board);
 
         return view('projects.board', [
             'i18nExtraNamespaces' => ['projects'],
@@ -157,7 +158,14 @@ class BoardController extends Controller
             'filterActive' => $filter !== 'all' || $search !== '',
             'canEdit' => $canEdit,
             'canCreate' => $board->archived_at === null && $request->user()->can(PermissionCatalog::PROJECTS_CREATE, $board),
-            'canManage' => $board->archived_at === null && $request->user()->can(PermissionCatalog::PROJECTS_MANAGE, $board),
+            'canManage' => $canManage,
+            // PRJ-004: the fragment #board-settings a form's back() redirect used to
+            // rely on is never sent in a Referer header, so the panel closed after
+            // every single-field edit inside it. The query string survives back()
+            // fine, so the open/closed state now rides on ?settings=1 instead — set
+            // server-side here, never trusted from the client alone: a Viewer or
+            // Operator passing the parameter still gets it ignored below.
+            'settingsOpen' => $canManage && $request->boolean('settings'),
             'canAssign' => $board->archived_at === null && $request->user()->can(PermissionCatalog::PROJECTS_ASSIGN, $board),
             'canComment' => $board->archived_at === null && $request->user()->can(PermissionCatalog::PROJECTS_COMMENT, $board),
             'canViewCrm' => $canViewCrm,

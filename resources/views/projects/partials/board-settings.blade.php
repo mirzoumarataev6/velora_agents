@@ -4,8 +4,21 @@
         <p class="text-xs font-bold uppercase tracking-[.18em] text-brand">VELORA / WORK</p>
         <h2 class="mt-1 font-display text-xl font-semibold">{{ __('projects.board_settings') }}</h2>
         </div>
-        <button type="button" @click="settingsOpen = false" class="btn btn-ghost btn-sm" aria-label="{{ __('projects.close') }}"><x-icon name="close" size="h-4 w-4" /></button>
+        <button type="button" @click="closeSettings()" class="btn btn-ghost btn-sm" aria-label="{{ __('projects.close') }}"><x-icon name="close" size="h-4 w-4" /></button>
     </div>
+
+    {{-- PRJ-004: every write in here redirects back to ?settings=1, scrolled
+    straight to this panel (see board.blade.php's init()) rather than the top
+    of the page, where the page-level error block above the kanban strip would
+    otherwise be the only place a validation error ever showed. Duplicated,
+    not moved — a validation error from the task panel still belongs at the
+    top, and this one is simply invisible (x-show="settingsOpen") whenever the
+    error came from somewhere else. --}}
+    @if ($errors->any())
+        <div role="alert" class="rounded-2xl border border-danger/20 bg-danger/5 px-5 py-4 text-sm text-danger dark:text-danger-light">
+            <ul class="list-inside list-disc space-y-1">@foreach ($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul>
+        </div>
+    @endif
 
     <form method="POST" action="{{ route('projects.boards.update', $board) }}" class="grid gap-3 md:grid-cols-2">
         @csrf @method('PATCH')
