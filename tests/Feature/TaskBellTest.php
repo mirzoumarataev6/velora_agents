@@ -57,6 +57,44 @@ class TaskBellTest extends TestCase
         $this->assertStringContainsString($expected, $html);
     }
 
+    /**
+     * Regression guard for a lifecycle bug: the sidebar instance of this
+     * component is data-turbo-permanent and survives a Turbo visit, but its
+     * teleported menu (a child of the OLD <body>) does not — so `open`
+     * could stay true with nothing left showing, and the next click on the
+     * bell would only "close" an already-invisible menu. None of this is
+     * executable from PHPUnit (it's Alpine runtime behaviour), so this only
+     * guards that the markup the fix depends on is actually emitted — same
+     * convention as TurboNavigationTest's own string-presence regression
+     * tests for client-side-only behaviour.
+     */
+    public function test_the_bell_closes_itself_on_item_click_and_on_any_turbo_visit(): void
+    {
+        $user = User::factory()->create();
+        Agent::factory()->for($user)->create();
+
+        $html = $this->actingAs($user)->get(route('agents.index'))->assertOk()->getContent();
+
+        // Item click: close(false) alongside markTaskRead(), not a bare
+        // navigation that leaves `open` stuck true once the teleported menu
+        // is gone.
+        $this->assertStringContainsString(
+            '@click="$store.shell.markTaskRead(item.id); close(false)"',
+            $html
+        );
+
+        // Belt-and-suspenders: ANY Turbo visit closes it, not only the one
+        // triggered by clicking this component's own items.
+        $this->assertStringContainsString('@turbo:before-visit.window="close(false)"', $html);
+
+        // destroy() removes the exact listener init() added — a reused
+        // `this._reposition` reference, not a fresh closure that would make
+        // removeEventListener a silent no-op.
+        $this->assertStringContainsString('this._reposition = () => this.open && this.position();', $html);
+        $this->assertStringContainsString("window.removeEventListener('scroll', this._reposition, true);", $html);
+        $this->assertStringContainsString("window.removeEventListener('resize', this._reposition);", $html);
+    }
+
     public function test_a_guest_does_not_see_the_bell(): void
     {
         $response = $this->get(route('agents.index'));

@@ -36,7 +36,12 @@
     rect.right - width, clamped to [gap, innerWidth - width - gap], as
     team-switcher's own position()) fixes both at once.
 --}}
-<div x-data="taskBell()" class="relative">
+{{-- @turbo:before-visit.window: belt-and-suspenders alongside the item
+     link's own close(false) below — ANY navigation away (a click on an
+     unrelated link elsewhere on the page while this menu happens to be
+     open, Esc-to-close-then-back-navigate, …) must close it too, not just
+     the one path through this component's own items. --}}
+<div x-data="taskBell()" class="relative" @turbo:before-visit.window="close(false)">
     <button type="button" x-ref="trigger" @click="toggle()"
         :aria-expanded="open ? 'true' : 'false'" aria-haspopup="true"
         :aria-label="$store.shell.i18nText('notifications.bell_aria', { count: $store.shell.tasksUnread > 99 ? '99+' : $store.shell.tasksUnread })"
@@ -86,8 +91,14 @@
                          and navigates with Turbo: a plain <a href>, no
                          preventDefault, so Turbo's own site-wide click
                          interception handles the visit exactly like any other
-                         in-app link — the POST never blocks the navigation. --}}
-                    <a :href="item.url" role="menuitem" @click="$store.shell.markTaskRead(item.id)"
+                         in-app link — the POST never blocks the navigation.
+                         close(false) alongside it: the sidebar instance is
+                         data-turbo-permanent and survives the visit, but its
+                         teleported menu (a child of the OLD <body>) is thrown
+                         away with the rest of the page — leaving `open` true
+                         with nothing left showing, so the very next click on
+                         the bell would only "close" a menu nobody can see. --}}
+                    <a :href="item.url" role="menuitem" @click="$store.shell.markTaskRead(item.id); close(false)"
                         class="flex gap-3 border-b border-hairline px-4 py-3 transition-colors last:border-b-0 hover:bg-sunk focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand dark:border-white/10 dark:hover:bg-night-raised"
                         :class="!item.read ? 'bg-azure-50 dark:bg-brand/10' : ''">
                         <span class="icon-circle icon-circle-sm shrink-0 text-xs font-semibold" aria-hidden="true" x-text="$store.shell.initialsOf(item.assigned_by_name)"></span>
@@ -178,10 +189,26 @@
                 // Keep the menu pinned to the trigger if the page moves
                 // underneath it — same reasoning as team-switcher's own
                 // init(), necessary here too since app-mobile-header scrolls
-                // with the page rather than staying fixed.
-                const reposition = () => this.open && this.position();
-                window.addEventListener('scroll', reposition, true);
-                window.addEventListener('resize', reposition);
+                // with the page rather than staying fixed. Kept on `this`
+                // (not a local const) so destroy() below can remove the
+                // exact same function reference — removeEventListener is a
+                // no-op otherwise.
+                this._reposition = () => this.open && this.position();
+                window.addEventListener('scroll', this._reposition, true);
+                window.addEventListener('resize', this._reposition);
+            },
+
+            // team-switcher's own position() listeners have never needed
+            // this: that menu's x-data root sits inside Turbo's own swapped
+            // content, so Alpine tears it down (and these listeners with it)
+            // on every visit for free. This component's root is
+            // data-turbo-permanent and never leaves the DOM that way, so
+            // nothing calls this automatically today — kept anyway, as the
+            // correct counterpart to init() for whatever stops being
+            // permanent, or gets removed some other way, later.
+            destroy() {
+                window.removeEventListener('scroll', this._reposition, true);
+                window.removeEventListener('resize', this._reposition);
             },
         };
     }
