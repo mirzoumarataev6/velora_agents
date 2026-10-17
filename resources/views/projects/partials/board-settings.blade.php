@@ -4,7 +4,7 @@
         <p class="text-xs font-bold uppercase tracking-[.18em] text-brand">VELORA / WORK</p>
         <h2 class="mt-1 font-display text-xl font-semibold">{{ __('projects.board_settings') }}</h2>
         </div>
-        <button type="button" @click="settingsOpen = false" class="btn btn-ghost btn-sm" aria-label="{{ __('projects.close') }}">✕</button>
+        <button type="button" @click="settingsOpen = false" class="btn btn-ghost btn-sm" aria-label="{{ __('projects.close') }}"><x-icon name="close" size="h-4 w-4" /></button>
     </div>
 
     <form method="POST" action="{{ route('projects.boards.update', $board) }}" class="grid gap-3 md:grid-cols-2">
@@ -29,8 +29,8 @@
                         <button type="submit" class="btn btn-secondary btn-sm">{{ __('projects.save') }}</button>
                     </form>
                     <div class="mt-2 flex flex-wrap items-center gap-3">
-                        <form method="POST" action="{{ route('projects.columns.order', [$board, $column]) }}">@csrf @method('PATCH')<input type="hidden" name="direction" value="up" /><button type="submit" class="text-xs text-brand hover:underline" aria-label="{{ __('projects.move_column_left') }}">← {{ __('projects.move_column_left') }}</button></form>
-                        <form method="POST" action="{{ route('projects.columns.order', [$board, $column]) }}">@csrf @method('PATCH')<input type="hidden" name="direction" value="down" /><button type="submit" class="text-xs text-brand hover:underline" aria-label="{{ __('projects.move_column_right') }}">{{ __('projects.move_column_right') }} →</button></form>
+                        <form method="POST" action="{{ route('projects.columns.order', [$board, $column]) }}">@csrf @method('PATCH')<input type="hidden" name="direction" value="up" /><button type="submit" class="inline-flex items-center gap-1 text-xs text-brand hover:underline" aria-label="{{ __('projects.move_column_left') }}"><x-icon name="arrow-left" size="h-3 w-3" />{{ __('projects.move_column_left') }}</button></form>
+                        <form method="POST" action="{{ route('projects.columns.order', [$board, $column]) }}">@csrf @method('PATCH')<input type="hidden" name="direction" value="down" /><button type="submit" class="inline-flex items-center gap-1 text-xs text-brand hover:underline" aria-label="{{ __('projects.move_column_right') }}">{{ __('projects.move_column_right') }}<x-icon name="arrow-right" size="h-3 w-3" /></button></form>
                         <form method="POST" action="{{ route('projects.columns.destroy', [$board, $column]) }}">@csrf @method('DELETE')<button type="submit" class="text-xs text-danger hover:underline">{{ __('projects.delete_column') }}</button></form>
                     </div>
                 </div>
@@ -39,13 +39,13 @@
         <div class="space-y-5">
             <div>
                 <h3 class="font-semibold">{{ __('projects.labels') }}</h3>
-                <div class="mt-3 flex flex-wrap gap-2">@foreach ($labels as $label)<form method="POST" action="{{ route('projects.labels.destroy', [$board, $label]) }}">@csrf @method('DELETE')<button type="submit" class="project-label project-accent-{{ in_array($label->color, ['blue','violet','emerald','amber','rose'], true) ? $label->color : 'blue' }}" title="{{ __('projects.remove_label') }}">{{ $label->name }} ×</button></form>@endforeach</div>
+                <div class="mt-3 flex flex-wrap gap-2">@foreach ($labels as $label)<form method="POST" action="{{ route('projects.labels.destroy', [$board, $label]) }}">@csrf @method('DELETE')<button type="submit" class="project-label project-accent-{{ in_array($label->color, ['blue','violet','emerald','amber','rose'], true) ? $label->color : 'blue' }} inline-flex items-center gap-1" title="{{ __('projects.remove_label') }}">{{ $label->name }}<x-icon name="close" size="h-3 w-3" /></button></form>@endforeach</div>
                 <form method="POST" action="{{ route('projects.labels.store', $board) }}" class="mt-3 flex flex-wrap items-end gap-2">@csrf<label class="min-w-36 flex-1 text-xs">{{ __('projects.label_name') }}<input name="name" required maxlength="80" class="field mt-1 w-full px-2 py-1.5 text-sm" /></label><label class="text-xs">{{ __('projects.label_color') }}<select name="color" class="field mt-1 px-2 py-1.5 text-sm">@foreach (['blue', 'violet', 'emerald', 'amber', 'rose'] as $color)<option value="{{ $color }}">{{ __('projects.color_'.$color) }}</option>@endforeach</select></label><button type="submit" class="btn btn-secondary btn-sm">{{ __('projects.add_label') }}</button></form>
             </div>
             @if ($board->visibility === 'private')
                 <div>
                     <h3 class="font-semibold">{{ __('projects.board_members') }}</h3>
-                    <div class="mt-3 flex flex-wrap gap-2">@foreach ($board->members as $member) @if ($member->id === $board->created_by)<span class="badge badge-neutral">{{ $member->name }}</span>@else<form method="POST" action="{{ route('projects.boards.members.destroy', [$board, $member->id]) }}">@csrf @method('DELETE')<button type="submit" class="badge badge-neutral" title="{{ __('projects.remove_member') }}">{{ $member->name }} ×</button></form>@endif @endforeach</div>
+                    <div class="mt-3 flex flex-wrap gap-2">@foreach ($board->members as $member) @if ($member->id === $board->created_by)<span class="badge badge-neutral">{{ $member->name }}</span>@else<form method="POST" action="{{ route('projects.boards.members.destroy', [$board, $member->id]) }}">@csrf @method('DELETE')<button type="submit" class="badge badge-neutral inline-flex items-center gap-1" title="{{ __('projects.remove_member') }}">{{ $member->name }}<x-icon name="close" size="h-3 w-3" /></button></form>@endif @endforeach</div>
                     <form method="POST" action="{{ route('projects.boards.members.store', $board) }}" class="mt-3 flex flex-wrap gap-2">@csrf<select name="user_id" aria-label="{{ __('projects.add_member') }}" class="field min-w-40 flex-1 px-3 py-2 text-sm">@foreach ($members as $membership)<option value="{{ $membership->user_id }}">{{ $membership->user?->name }}</option>@endforeach</select><button type="submit" class="btn btn-secondary btn-sm">{{ __('projects.add_member') }}</button></form>
                 </div>
             @endif

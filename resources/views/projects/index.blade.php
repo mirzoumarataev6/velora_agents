@@ -17,7 +17,7 @@
             <div class="flex flex-wrap gap-3">
                 <a href="{{ route('projects.my') }}" class="btn bg-white/10 text-white ring-1 ring-white/20 hover:bg-white/20">{{ __('projects.my_work') }}</a>
                 @can('projects.manage')
-                    <button type="button" @click="createOpen = true" class="btn bg-white text-ink hover:bg-white/90">+ {{ __('projects.new_board') }}</button>
+                    <button type="button" @click="createOpen = true" class="btn bg-white text-ink hover:bg-white/90"><x-icon name="plus" size="h-4 w-4" />{{ __('projects.new_board') }}</button>
                 @endcan
             </div>
         </div>
@@ -58,7 +58,7 @@
                     <p class="relative mt-1 line-clamp-2 min-h-10 text-sm text-muted dark:text-night-muted">{{ $board->description }}</p>
                     <div class="relative mt-auto flex items-center justify-between border-t border-hairline pt-4 text-xs dark:border-white/10">
                         <span class="text-muted dark:text-night-muted">{{ __('projects.open_tasks') }} <strong class="ml-1 text-ink dark:text-night-ink">{{ $board->open_tasks_count }}</strong></span>
-                        <span class="font-semibold text-brand transition-transform group-hover:translate-x-1">{{ __('projects.open_board') }} →</span>
+                        <span class="inline-flex items-center gap-1 font-semibold text-brand transition-transform group-hover:translate-x-1">{{ __('projects.open_board') }}<x-icon name="arrow-right" size="h-3.5 w-3.5" /></span>
                     </div>
                 </a>
             @endforeach
@@ -86,7 +86,7 @@
                         <p class="text-xs font-bold uppercase tracking-[.18em] text-brand">VELORA / WORK</p>
                         <h2 id="create-board-title" class="mt-1 font-display text-2xl font-semibold">{{ __('projects.new_board') }}</h2>
                     </div>
-                    <button type="button" @click="createOpen = false" class="btn btn-ghost btn-sm" aria-label="{{ __('projects.close') }}">✕</button>
+                    <button type="button" @click="createOpen = false" class="btn btn-ghost btn-sm" aria-label="{{ __('projects.close') }}"><x-icon name="close" size="h-4 w-4" /></button>
                 </div>
                 <form method="POST" action="{{ route('projects.boards.store') }}" class="mt-6 space-y-4">
                     @csrf

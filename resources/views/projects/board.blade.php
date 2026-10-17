@@ -7,14 +7,23 @@
 <div class="project-accent-{{ $accent }} min-w-0 space-y-5" x-data="projectKanban()">
     <div class="flex flex-wrap items-start justify-between gap-4">
         <div class="min-w-0">
-            <a href="{{ route('projects.index') }}" class="text-sm font-medium text-brand hover:underline">← {{ __('projects.back_boards') }}</a>
+            <a href="{{ route('projects.index') }}" class="inline-flex items-center gap-1 text-sm font-medium text-brand hover:underline"><x-icon name="arrow-left" size="h-3.5 w-3.5" />{{ __('projects.back_boards') }}</a>
             <div class="mt-3 flex items-center gap-3">
                 <div class="project-board-icon flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl font-semibold">{{ mb_strtoupper(mb_substr($board->name, 0, 1)) }}</div>
                 <div class="min-w-0"><h1 class="truncate font-display text-2xl font-semibold sm:text-3xl">{{ $board->name }}</h1><p class="text-sm text-muted dark:text-night-muted">{{ $board->description ?: ($canEdit ? ($dragEnabled ? __('projects.drag_hint') : __('projects.move_hint')) : __('projects.subtitle')) }}</p></div>
             </div>
         </div>
         <div class="flex flex-wrap items-center gap-2">
-            @if ($board->visibility === 'private')<span class="badge badge-neutral">◈ {{ __('projects.visibility_private') }}</span>@endif
+            @if ($board->visibility === 'private')
+                <span class="badge badge-neutral inline-flex items-center gap-1">
+                    {{-- Not one of the shared icon component's marks (that set is calendar/
+                    checklist/close/arrows/plus/check/square) — this is the same lock shape
+                    already used for "private" on the boards index card, kept inline there too
+                    rather than growing the shared set for a single one-off badge. --}}
+                    <svg class="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 018 0v3"/></svg>
+                    {{ __('projects.visibility_private') }}
+                </span>
+            @endif
             <a href="{{ route('projects.my') }}" class="btn btn-ghost btn-sm">{{ __('projects.my_work') }}</a>
             @if ($canManage)<a href="#board-settings" @click.prevent="settingsOpen = true; $nextTick(() => document.getElementById('board-settings').scrollIntoView({ behavior: 'smooth' }))" class="btn btn-secondary btn-sm">{{ __('projects.board_settings') }}</a>@endif
         </div>
@@ -67,9 +76,9 @@
                             @endif
                             @if ($task->archived_at)<span class="badge badge-neutral">{{ __('projects.archive') }}</span>@endif
                                 @if ($task->due_at)
-                                    <span class="rounded-md px-1.5 py-0.5 {{ ! $task->done_at && $task->due_at->isPast() ? 'bg-danger/10 font-semibold text-danger dark:text-danger-light' : 'bg-sunk text-muted dark:bg-night-raised dark:text-night-muted' }}">◷ {{ $task->due_at->translatedFormat('d M') }}</span>
+                                    <span class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 {{ ! $task->done_at && $task->due_at->isPast() ? 'bg-danger/10 font-semibold text-danger dark:text-danger-light' : 'bg-sunk text-muted dark:bg-night-raised dark:text-night-muted' }}"><x-icon name="calendar" size="h-3 w-3" />{{ $task->due_at->translatedFormat('d M') }}</span>
                                 @endif
-                                @if ($task->checklistItems->isNotEmpty())<span class="text-muted dark:text-night-muted">☑ {{ $task->checklistItems->whereNotNull('completed_at')->count() }}/{{ $task->checklistItems->count() }}</span>@endif
+                                @if ($task->checklistItems->isNotEmpty())<span class="inline-flex items-center gap-1 text-muted dark:text-night-muted"><x-icon name="checklist" size="h-3 w-3" />{{ $task->checklistItems->whereNotNull('completed_at')->count() }}/{{ $task->checklistItems->count() }}</span>@endif
                                 @if ($task->assignees->isNotEmpty())
                                     <span class="ml-auto flex -space-x-1.5">@foreach ($task->assignees->take(3) as $assignee)<span class="flex h-6 w-6 items-center justify-center rounded-full border-2 border-surface bg-brand-circle text-[9px] font-bold text-brand dark:border-night-card" title="{{ $assignee->name }}">{{ $assignee->initials() }}</span>@endforeach</span>
                                 @endif
@@ -81,24 +90,40 @@
                 </div>
                 @if ($pages[$column->id]->hasPages())
                     <nav class="mt-3 flex items-center justify-between gap-2 border-t border-hairline pt-3 text-xs dark:border-white/10" aria-label="{{ $column->name }}">
-                        @if ($pages[$column->id]->previousPageUrl())<a class="font-medium text-brand hover:underline" href="{{ $pages[$column->id]->previousPageUrl() }}">← {{ __('projects.previous') }}</a>@else<span></span>@endif
+                        @if ($pages[$column->id]->previousPageUrl())<a class="inline-flex items-center gap-1 font-medium text-brand hover:underline" href="{{ $pages[$column->id]->previousPageUrl() }}"><x-icon name="arrow-left" size="h-3 w-3" />{{ __('projects.previous') }}</a>@else<span></span>@endif
                         <span class="text-muted dark:text-night-muted">{{ __('projects.page_of', ['page' => $pages[$column->id]->currentPage(), 'total' => $pages[$column->id]->lastPage()]) }}</span>
-                        @if ($pages[$column->id]->nextPageUrl())<a class="font-medium text-brand hover:underline" href="{{ $pages[$column->id]->nextPageUrl() }}">{{ __('projects.next') }} →</a>@else<span></span>@endif
+                        @if ($pages[$column->id]->nextPageUrl())<a class="inline-flex items-center gap-1 font-medium text-brand hover:underline" href="{{ $pages[$column->id]->nextPageUrl() }}">{{ __('projects.next') }}<x-icon name="arrow-right" size="h-3 w-3" /></a>@else<span></span>@endif
                     </nav>
                 @endif
                 @if ($canCreate && ! $board->archived_at)
-                    <form method="POST" action="{{ route('projects.tasks.store', $board) }}" class="mt-3 space-y-2 border-t border-hairline pt-3 dark:border-white/10">
-                        @csrf
-                        <input type="hidden" name="column_id" value="{{ $column->id }}" />
-                        <input name="title" required maxlength="255" placeholder="+ {{ __('projects.add_task') }}" aria-label="{{ __('projects.task_title') }}" class="field w-full px-3 py-2 text-sm" />
-                        <button class="btn btn-primary btn-sm w-full" type="submit">{{ __('projects.add_task') }}</button>
-                    </form>
+                    <div class="mt-3 border-t border-hairline pt-3 dark:border-white/10" x-data="{ addOpen: false }">
+                        {{-- Deliberately no x-cloak on either state below: unlike the
+                        settings/create-board panels on this page (JS-only features), this
+                        form must still work with JS disabled, so the raw HTML renders it
+                        already expanded. Alpine only enhances it down to the quiet toggle
+                        once it loads — a brief flash of both on first paint, not a missing
+                        feature, is the accepted trade-off. --}}
+                        <button type="button" x-show="! addOpen" @click="addOpen = true; $nextTick(() => $refs.addCardTitle.focus())"
+                            class="btn btn-ghost btn-sm w-full text-muted dark:text-night-muted">
+                            <x-icon name="plus" size="h-4 w-4" />{{ __('projects.add_task') }}
+                        </button>
+                        <form x-show="addOpen" method="POST" action="{{ route('projects.tasks.store', $board) }}" class="space-y-2"
+                            @keydown.escape="addOpen = false; $refs.addCardTitle.value = ''">
+                            @csrf
+                            <input type="hidden" name="column_id" value="{{ $column->id }}" />
+                            <input x-ref="addCardTitle" name="title" required maxlength="255" placeholder="{{ __('projects.add_task') }}" aria-label="{{ __('projects.task_title') }}" class="field w-full px-3 py-2 text-sm" />
+                            <div class="flex gap-2">
+                                <button class="btn btn-primary btn-sm flex-1" type="submit">{{ __('projects.add') }}</button>
+                                <button type="button" class="btn btn-ghost btn-sm" @click="addOpen = false; $refs.addCardTitle.value = ''" aria-label="{{ __('projects.cancel') }}"><x-icon name="close" size="h-4 w-4" /></button>
+                            </div>
+                        </form>
+                    </div>
                 @endif
             </section>
         @endforeach
         @if ($canManage && ! $board->archived_at)
             <section class="w-[min(85vw,18rem)] shrink-0 snap-start rounded-2xl border-2 border-dashed border-hairline p-4 dark:border-white/15 sm:w-72">
-                <h2 class="text-sm font-semibold">+ {{ __('projects.add_column') }}</h2>
+                <h2 class="flex items-center gap-1.5 text-sm font-semibold"><x-icon name="plus" size="h-4 w-4" />{{ __('projects.add_column') }}</h2>
                 <form method="POST" action="{{ route('projects.columns.store', $board) }}" class="mt-4 space-y-3">
                     @csrf
                     <input name="name" required maxlength="255" placeholder="{{ __('projects.column_name') }}" class="field w-full px-3 py-2 text-sm" />
@@ -109,7 +134,7 @@
         @endif
     </div>
 
-    @if ($archivedCount > 0 && $filter !== 'archived')<a href="{{ route('projects.boards.show', [$board, 'filter' => 'archived']) }}" class="text-sm font-medium text-brand hover:underline">{{ __('projects.archived_tasks') }} ({{ $archivedCount }}) →</a>@endif
+    @if ($archivedCount > 0 && $filter !== 'archived')<a href="{{ route('projects.boards.show', [$board, 'filter' => 'archived']) }}" class="inline-flex items-center gap-1 text-sm font-medium text-brand hover:underline">{{ __('projects.archived_tasks') }} ({{ $archivedCount }})<x-icon name="arrow-right" size="h-3.5 w-3.5" /></a>@endif
 
     @if ($canManage)
         @include('projects.partials.board-settings')

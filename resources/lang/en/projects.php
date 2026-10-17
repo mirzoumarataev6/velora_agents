@@ -67,6 +67,7 @@ return [
     'deal' => 'Deal',
     'none' => 'None',
     'save' => 'Save',
+    'add' => 'Add',
     'cancel' => 'Cancel',
     'close' => 'Close',
     'archive' => 'Archive',
