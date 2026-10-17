@@ -118,10 +118,13 @@
                 <img src="{{ asset('images/brand/gen/mark.webp') }}?v={{ config('agent.brand_mark_version') }}" width="32" height="32"
                     alt="{{ __('common.brand') }}" class="h-8 w-8" decoding="async" />
             </a>
-            {{-- No room for the bell beside the mark at rail width; the Заявки
-                 nav item keeps its own unread dot, so nothing is lost. --}}
-            <div class="ml-auto" :class="$store.shell.railCollapsed && 'lg:hidden'">
+            {{-- No room for the bells beside the mark at rail width; the
+                 Заявки nav item keeps its own unread dot, so nothing is lost
+                 for leads — a task-assignment bell has no rail-width
+                 equivalent to fall back to, so it is simply hidden there too. --}}
+            <div class="ml-auto flex items-center gap-1" :class="$store.shell.railCollapsed && 'lg:hidden'">
                 @include('partials.lead-bell')
+                @include('partials.task-bell')
             </div>
         </div>
 
@@ -337,8 +340,9 @@
                 <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16"/></svg>
             </button>
             <span data-i18n="common.brand" class="text-sm font-semibold">{{ __('common.brand') }}</span>
-            <div class="ml-auto">
+            <div class="ml-auto flex items-center gap-1">
                 @include('partials.lead-bell')
+                @include('partials.task-bell')
             </div>
         </header>
 
@@ -363,9 +367,13 @@
 </div>
 
 {{-- Pages that add their own namespace (the inbox, settings) pass
-     $i18nExtraNamespaces; the chrome's own namespaces are always present. --}}
+     $i18nExtraNamespaces; the chrome's own namespaces are always present.
+     'notifications' joins them here, not via some page's own
+     $i18nExtraNamespaces, because the task bell (partials/task-bell.blade.php)
+     is itself part of the chrome — it renders on every dashboard page, the
+     same as the lead bell beside it. --}}
 @include('partials.i18n-bundle', [
-    'i18nNamespaces' => array_merge(['nav', 'common', 'agents', 'onboarding'], $i18nExtraNamespaces ?? []),
+    'i18nNamespaces' => array_merge(['nav', 'common', 'agents', 'onboarding', 'notifications'], $i18nExtraNamespaces ?? []),
     'i18nReload' => true,
 ])
 
@@ -385,6 +393,19 @@
             'needsHuman' => __('conversations.filters.needs_human'),
             'signals' => __('conversations.escalation.signals'),
         ]) }},
+        // Gated the same way pollUrl is above: a role without even
+        // projects.view can never have a live task-assignment notification
+        // (TaskNotificationFeed's own access filter would hide every row
+        // anyway), so there is nothing to poll for and the store's own
+        // `if (!this.tasksPollUrl) return;` guard skips it entirely.
+        tasksPollUrl: @js(auth()->user()->can('projects.view') ? route('notifications.tasks.index') : ''),
+        tasksReadAllUrl: '{{ route('notifications.tasks.read-all') }}',
+        // '__ID__' stands in for the one route parameter route() requires;
+        // markTaskRead() in the store substitutes the real notification id
+        // at click time, since this config is rendered once per page load,
+        // long before any particular notification exists to link to.
+        tasksReadUrlTemplate: '{{ route('notifications.tasks.read', ['id' => '__ID__']) }}',
+        activeTeamId: {{ (int) auth()->user()->current_team_id }},
     };
 </script>
 @php

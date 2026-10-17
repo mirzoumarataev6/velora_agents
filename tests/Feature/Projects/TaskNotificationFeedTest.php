@@ -96,12 +96,15 @@ class TaskNotificationFeedTest extends TestCase
         $first = $json['items'][0];
         $this->assertSame($taskNew->id, $first['task_id']);
         $this->assertSame(
-            ['id', 'read', 'created_at', 'task_id', 'board_id', 'team_id', 'team_name', 'task_title', 'board_name', 'assigned_by_name', 'url'],
+            ['id', 'read', 'created_at', 'task_id', 'board_id', 'team_id', 'team_name', 'team_is_personal', 'task_title', 'board_name', 'assigned_by_name', 'url'],
             array_keys($first)
         );
         $this->assertFalse($first['read']);
         $this->assertSame($board->id, $first['board_id']);
         $this->assertSame($owner->current_team_id, $first['team_id']);
+        // $owner here is a plain factory user who never created an explicit
+        // team, so their current_team_id is still the hidden personal one.
+        $this->assertTrue($first['team_is_personal']);
         $this->assertSame('Fix the checkout bug', $first['task_title']);
         $this->assertSame('Launch', $first['board_name']);
         $this->assertSame($owner->name, $first['assigned_by_name']);
@@ -159,6 +162,22 @@ class TaskNotificationFeedTest extends TestCase
         $json = $this->actingAs($operator)->getJson(route('notifications.tasks.index'))->assertOk()->json();
         $this->assertSame(0, $json['unread']);
         $this->assertSame([], $json['items']);
+    }
+
+    public function test_team_is_personal_is_false_for_an_explicit_team(): void
+    {
+        $owner = User::factory()->create();
+        $operator = $this->member($owner, 'operator');
+        $this->actingAs($owner)->post(route('teams.store'), ['name' => 'Launch Co'])->assertRedirect();
+        $owner->flushPermissionCache();
+        $operator->flushPermissionCache();
+
+        [$board, $task] = $this->boardWithTask($owner);
+        $this->notify($operator, $task, $board, $owner);
+
+        $json = $this->actingAs($operator)->getJson(route('notifications.tasks.index'))->assertOk()->json();
+        $this->assertFalse($json['items'][0]['team_is_personal']);
+        $this->assertSame('Launch Co', $json['items'][0]['team_name']);
     }
 
     public function test_shows_the_live_task_title_after_a_rename(): void

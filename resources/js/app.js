@@ -96,6 +96,43 @@ Alpine.store('shell', {
     _started: false,
     _pollTimer: null,
 
+    // Project task-assignment notifications (App\Notifications\TaskAssigned,
+    // via GET/POST /notifications/tasks...) — a second, separate bell next
+    // to the lead one (see partials/task-bell.blade.php for why it is
+    // separate rather than a section merged into the lead bell's panel).
+    // Shares this same store and the one poll timer below on purpose: two
+    // setInterval loops would double the idle network chatter for no
+    // benefit, and this is exactly the "which element owns this" problem
+    // the store already exists to sidestep. The open/closed state of the
+    // DROPDOWN itself is deliberately NOT here, unlike the lead bell's
+    // bellOpen: it lives as local x-data on the taskBell() component
+    // instead (below), one instance per bell button — see that component's
+    // own docblock for why a single shared boolean broke with two bell
+    // instances on the page at once.
+    tasksUnread: 0,
+    tasksItems: [],
+    tasksLoading: false,
+    tasksLoadError: false,
+    tasksPollUrl: '',
+    tasksReadAllUrl: '',
+    // A template, not a built URL: route() needs the notification id at
+    // request time, which this store never has in advance. '__ID__' is
+    // substituted in markTaskRead() below.
+    tasksReadUrlTemplate: '',
+    // The signed-in user's currently active team — only needed to decide
+    // whether an item's team name is redundant (see boardLine() below), not
+    // for anything authorization-related; the server already filtered the
+    // feed to rows this user may actually see.
+    activeTeamId: null,
+    // Mirrors window.__i18n.current, but as an Alpine-reactive property:
+    // window.__i18n is a plain object the locale switcher mutates directly
+    // (see partials/i18n-bundle.blade.php), which Alpine's reactivity system
+    // cannot see. i18nText() below reads THIS property instead, so every
+    // x-text/:aria-label expression that calls it re-evaluates when the
+    // locale switch fires `i18n:changed` — the same event the switcher
+    // already dispatches for exactly this kind of client-rendered string.
+    locale: window.__i18n?.current || 'ru',
+
     /**
      * Called once, synchronously, before `Alpine.start()` below — with the
      * (static, session-wide) config the server rendered; see
@@ -118,9 +155,25 @@ Alpine.store('shell', {
         this.railCollapsed = this.railPinned;
 
         this.poll();
-        this._pollTimer = setInterval(() => this.poll(), 25000);
+        this.pollTasks();
+        // One timer for both polls, not two: see tasksPollUrl's own comment
+        // above. Skipped entirely while the tab is hidden — nobody is
+        // watching the badge, so there is nothing to refresh for — and the
+        // visibilitychange listener right below already covers "catch up
+        // the instant it becomes visible again" on top of this.
+        this._pollTimer = setInterval(() => {
+            if (document.hidden) return;
+            this.poll();
+            this.pollTasks();
+        }, 25000);
         document.addEventListener('visibilitychange', () => {
-            if (document.visibilityState === 'visible') this.poll();
+            if (document.visibilityState === 'visible') {
+                this.poll();
+                this.pollTasks();
+            }
+        });
+        document.addEventListener('i18n:changed', (event) => {
+            this.locale = event.detail.locale;
         });
     },
 
@@ -167,6 +220,185 @@ Alpine.store('shell', {
                 this.recent = this.recent.map((lead) => ({ ...lead, seen: true }));
             }
         } catch (e) { /* ignore */ }
+    },
+
+    /**
+     * Mirrors poll() above — same not-yet-configured guard, same
+     * swallow-and-retry-next-tick on failure — except a failure also sets
+     * tasksLoadError so the open dropdown can show something rather than
+     * silently stay stale. Never throws: a failed fetch here must not spam
+     * the console once per tick, forever, for a signal nobody but the badge
+     * cares about.
+     */
+    async pollTasks() {
+        if (!this.tasksPollUrl) return; // not yet configured, or this user has no projects access — see init()
+
+        this.tasksLoading = true;
+        try {
+            const res = await fetch(this.tasksPollUrl, { headers: { Accept: 'application/json' } });
+            if (!res.ok) { this.tasksLoadError = true; return; }
+            const data = await res.json();
+            this.tasksUnread = data.unread ?? 0;
+            this.tasksItems = data.items ?? [];
+            this.tasksLoadError = false;
+        } catch (e) {
+            this.tasksLoadError = true;
+        } finally {
+            this.tasksLoading = false;
+        }
+    },
+
+    /**
+     * Optimistic: the badge and the item's own dot update instantly, before
+     * the network round trip even starts, because the user just told us
+     * this is read by clicking it — waiting for a response to confirm what
+     * they already know would only make the UI feel laggy. The POST is
+     * fire-and-forget; if it fails, the next poll (≤25s, or immediately on
+     * next open) reconciles from the server's own idea of what is read.
+     */
+    async markTaskRead(id) {
+        const item = this.tasksItems.find((candidate) => candidate.id === id);
+        if (item && !item.read) {
+            item.read = true;
+            this.tasksUnread = Math.max(0, this.tasksUnread - 1);
+        }
+
+        try {
+            await fetch(this.tasksReadUrlTemplate.replace('__ID__', encodeURIComponent(id)), {
+                method: 'POST',
+                headers: {
+                    Accept: 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '',
+                },
+            });
+        } catch (e) { /* best-effort — see markTaskRead()'s own docblock */ }
+    },
+
+    async markAllTasksRead() {
+        if (this.tasksUnread === 0) return;
+
+        this.tasksItems = this.tasksItems.map((item) => ({ ...item, read: true }));
+        this.tasksUnread = 0;
+
+        try {
+            await fetch(this.tasksReadAllUrl, {
+                method: 'POST',
+                headers: {
+                    Accept: 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '',
+                },
+            });
+        } catch (e) { /* best-effort — see markTaskRead()'s own docblock */ }
+    },
+
+    /**
+     * board_name alone unless the item's team both differs from the one the
+     * rest of the shell is currently working with AND isn't a personal
+     * workspace — a personal team's own name is never shown elsewhere in
+     * the product either (see team-switcher.blade.php), so repeating it
+     * here would just be noise.
+     */
+    boardLine(item) {
+        if (item.team_id !== this.activeTeamId && !item.team_is_personal) {
+            return `${item.board_name} · ${item.team_name}`;
+        }
+
+        return item.board_name;
+    },
+
+    /**
+     * First letter of each of the first two words, uppercased — same rule
+     * as User::initials() server-side, reimplemented here because the only
+     * thing the feed sends is the assigner's name, not a ready-made initial.
+     */
+    initialsOf(name) {
+        const words = String(name || '').trim().split(/\s+/).filter(Boolean);
+        if (words.length === 0) return '?';
+
+        return (words[0][0] + (words.length > 1 ? words[1][0] : '')).toUpperCase();
+    },
+
+    /**
+     * Resolves a namespaced key from window.__i18n (see partials/
+     * i18n-bundle.blade.php) against `this.locale`, not window.__i18n.current
+     * directly — see that property's own comment for why the distinction
+     * matters for reactivity. Substitutes `:key` placeholders the same way
+     * Laravel's own __() does, since the server deliberately leaves these
+     * untranslated-at-rest: this bell builds every sentence from DATA
+     * (assigned_by_name, task_title, …), never a prebuilt one, the same
+     * convention App\Notifications\TaskAssigned's own docblock describes.
+     */
+    i18nText(path, vars = {}) {
+        const messages = window.__i18n?.messages?.[this.locale];
+        let node = messages;
+        for (const part of path.split('.')) {
+            if (node == null || typeof node !== 'object') { node = null; break; }
+            node = node[part];
+        }
+
+        let text = typeof node === 'string' ? node : '';
+        for (const [key, value] of Object.entries(vars)) {
+            text = text.split(`:${key}`).join(value);
+        }
+
+        return text;
+    },
+
+    /**
+     * Splits an i18nText() template around its `:key` placeholders into an
+     * ordered list of {value, strong} segments, so the two dynamic values
+     * (the assigner's name, the task title) can render in medium weight
+     * while the surrounding sentence stays regular — without ever assuming
+     * which order a locale puts them in (ru/tg may not match the en word
+     * order this was drafted in).
+     */
+    sentenceParts(template, vars) {
+        const keys = Object.keys(vars);
+        if (keys.length === 0) return [{ value: template, strong: false }];
+
+        const tokens = keys.map((key) => `:${key}`);
+        return template
+            .split(new RegExp(`(${tokens.join('|')})`, 'g'))
+            .filter((segment) => segment !== '')
+            .map((segment) => (tokens.includes(segment)
+                ? { value: vars[segment.slice(1)], strong: true }
+                : { value: segment, strong: false }));
+    },
+
+    /**
+     * Intl.RelativeTimeFormat in the current locale, falling back to a short
+     * absolute date when the runtime doesn't really have that locale — ru
+     * and en are universally supported, but tg (Tajik) is not guaranteed
+     * everywhere, and an unsupported locale does NOT throw: Intl silently
+     * resolves to its own best-fit locale instead, which would otherwise
+     * show English or Russian relative phrasing mislabeled as Tajik. The
+     * resolvedOptions() check below is what actually catches that — a plain
+     * try/catch around the constructor would not.
+     */
+    relativeTime(iso) {
+        const date = new Date(iso);
+        const diffSeconds = Math.round((date.getTime() - Date.now()) / 1000);
+
+        try {
+            const rtf = new Intl.RelativeTimeFormat(this.locale, { numeric: 'auto' });
+            if (!rtf.resolvedOptions().locale.toLowerCase().startsWith(this.locale.toLowerCase())) {
+                throw new Error('Intl.RelativeTimeFormat has no real support for this locale');
+            }
+
+            const units = [
+                [31536000, 'year'], [2592000, 'month'], [604800, 'week'],
+                [86400, 'day'], [3600, 'hour'], [60, 'minute'],
+            ];
+            for (const [secondsInUnit, unit] of units) {
+                if (Math.abs(diffSeconds) >= secondsInUnit) {
+                    return rtf.format(Math.round(diffSeconds / secondsInUnit), unit);
+                }
+            }
+
+            return rtf.format(diffSeconds, 'second');
+        } catch (e) {
+            return date.toLocaleDateString(this.locale, { day: 'numeric', month: 'short' });
+        }
     },
 });
 

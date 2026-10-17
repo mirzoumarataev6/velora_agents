@@ -119,6 +119,12 @@ class TaskNotificationFeed
                 'board_id' => $board->id,
                 'team_id' => $board->team_id,
                 'team_name' => $memberships->get($board->team_id)?->team_name,
+                // Already on the same cached membership row as team_name
+                // (HasTeams' own select aliases it) — the client needs this
+                // to decide whether a personal workspace's own name would be
+                // worth showing at all (it never is, see team-switcher.
+                // blade.php's identical rule).
+                'team_is_personal' => (bool) $memberships->get($board->team_id)?->team_is_personal,
                 // Live, not the stored snapshot: both are guaranteed loaded
                 // here (the filter above already dropped any row whose board
                 // or task is missing), so there is no fallback case left to
