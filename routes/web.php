@@ -35,6 +35,7 @@ use App\Http\Controllers\Projects\BoardController as ProjectBoardController;
 use App\Http\Controllers\Projects\ProjectTaskController;
 use App\Http\Controllers\RootRedirectController;
 use App\Http\Controllers\SettingsController;
+use App\Http\Controllers\TaskNotificationController;
 use App\Http\Controllers\Teams\TeamController;
 use App\Http\Controllers\Teams\TeamInvitationController;
 use App\Http\Controllers\Teams\TeamMemberController;
@@ -149,6 +150,21 @@ Route::middleware(['auth', 'auth.session'])->group(function () {
         Route::patch('boards/{board}/tasks/{task}/checklist/{item}', [ProjectTaskController::class, 'toggleChecklist'])->name('checklist.toggle');
         Route::delete('boards/{board}/tasks/{task}/checklist/{item}', [ProjectTaskController::class, 'destroyChecklist'])->name('checklist.destroy');
         Route::post('boards/{board}/tasks/{task}/comments', [ProjectTaskController::class, 'comment'])->name('comments.store');
+    });
+
+    // Backend-only feed for project task-assignment notifications (database
+    // channel: App\Notifications\TaskAssigned). No bell/view consumes this
+    // yet — that is the next stage; this just lets a signed-in user read and
+    // mark their own rows. {id} is a notification's own (uuid) primary key,
+    // not a task id. Static segment (read-all) declared before the {id}
+    // wildcard, same reasoning as leads/poll below — though here it cannot
+    // actually collide: read-all and {id}/read have different segment
+    // counts. No throttle, matching leads.poll: this is a cheap, capped read
+    // (at most 50 rows), not something that dials out or costs an LLM call.
+    Route::prefix('notifications/tasks')->name('notifications.tasks.')->group(function () {
+        Route::get('/', [TaskNotificationController::class, 'index'])->name('index');
+        Route::post('read-all', [TaskNotificationController::class, 'readAll'])->name('read-all');
+        Route::post('{id}/read', [TaskNotificationController::class, 'read'])->name('read');
     });
 
     // The only onboarding endpoint. Step progress is derived from the account's
