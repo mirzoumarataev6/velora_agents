@@ -108,14 +108,54 @@ class ProjectPanelStateTest extends TestCase
         $this->assertStringContainsString('@keydown.escape.window="$refs.closePanel.click()"', $panelHtml);
     }
 
-    public function test_archive_redirect_keeps_the_query_string(): void
+    /**
+     * PRJ-005 follow-up: a real browser PATCH carries _token and _method in
+     * its body (the form uses @csrf @method('PATCH') under a plain POST verb
+     * Laravel then spoofs). The redirect was built from $request->except('task'),
+     * which reads all() — query string AND body — so the live CSRF token
+     * ended up in the redirect URL, browser history and Referer header. The
+     * original version of this test sent no body and never caught it.
+     */
+    public function test_archive_redirect_keeps_the_query_string_and_never_leaks_the_request_body(): void
     {
         $owner = User::factory()->create();
         [$board, $task] = $this->boardWithTask($owner);
 
-        $this->actingAs($owner)
-            ->patch(route('projects.tasks.archive', [$board, $task]).'?q=login&filter=all')
-            ->assertRedirect(route('projects.boards.show', $board).'?q=login&filter=all');
+        $response = $this->actingAs($owner)->patch(
+            route('projects.tasks.archive', [$board, $task]).'?q=login&filter=all',
+            ['_token' => 'leaked-csrf-token-should-not-appear', '_method' => 'PATCH']
+        );
+
+        $response->assertRedirect(route('projects.boards.show', $board).'?q=login&filter=all');
+        $location = $response->headers->get('Location');
+        $this->assertStringNotContainsString('_token', $location);
+        $this->assertStringNotContainsString('_method', $location);
+        $this->assertStringNotContainsString('leaked-csrf-token-should-not-appear', $location);
+    }
+
+    /**
+     * PRJ-005 follow-up: array_merge(['board' => $board], <query>, ...) let a
+     * query parameter named "board" overwrite the route parameter, so
+     * ?board=999999 on the URL redirected every card link to a different
+     * board. The route parameter must always win.
+     */
+    public function test_a_stray_board_query_parameter_cannot_redirect_the_card_link_to_another_board(): void
+    {
+        $owner = User::factory()->create();
+        [$board, $task] = $this->boardWithTask($owner);
+        // The search filter is a plain title LIKE; "x" has to actually be in
+        // the title for the card to survive ?q=x and render at all.
+        $task->forceFill(['title' => 'Fix the flux capacitor'])->save();
+
+        $html = $this->actingAs($owner)
+            ->get(route('projects.boards.show', $board).'?board=999999&q=x')
+            ->assertOk()->getContent();
+
+        $href = $this->extractHref($html, 'class="absolute inset-0 rounded-xl');
+        $this->assertStringContainsString('/boards/'.$board->id.'?', $href);
+        $this->assertStringContainsString('q=x', $href);
+        $this->assertStringContainsString('task='.$task->id, $href);
+        $this->assertStringNotContainsString('/boards/999999', $href);
     }
 
     public function test_archive_form_action_carries_the_current_query_string(): void

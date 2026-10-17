@@ -10,7 +10,18 @@
     // that only toggles the task panel goes through this instead of a bare
     // route() call — one place carrying the rest of the query string forward,
     // with `task` set (open) or left out (closed) on top of it.
-    $boardLink = fn (array $extra = []) => route('projects.boards.show', array_merge(['board' => $board], request()->except('task'), $extra));
+    //
+    // request()->query(), not ->except()/->all(): this view only ever renders on
+    // a GET, so there is no request body to leak here today, but spelling it as
+    // query() makes that boundary explicit rather than relying on nothing ever
+    // POSTing this view. `board` is also stripped from the carried query and
+    // re-added last — a stray ?board=99 in the URL must never outrank the real
+    // route parameter and point a card link at another board.
+    $boardLink = fn (array $extra = []) => route('projects.boards.show', array_merge(
+        \Illuminate\Support\Arr::except(request()->query(), ['board', 'task']),
+        ['board' => $board],
+        $extra
+    ));
 @endphp
 <div class="project-accent-{{ $accent }} min-w-0 space-y-5" x-data="projectKanban()">
     <div class="flex flex-wrap items-start justify-between gap-4">

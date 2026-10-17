@@ -4,7 +4,16 @@
     // there's no task id to send back to), which means q/filter/page only
     // survive if THIS request carries them — back()'s Referer trick doesn't
     // apply. Put them on the form's action the same way $boardLink() does.
-    $archiveUrl = route('projects.tasks.archive', array_merge(['board' => $board, 'task' => $selectedTask], request()->except('task')));
+    //
+    // Same two guards as $boardLink(): request()->query() (this view is GET
+    // only, so there is no body to leak, but spelling it as query() keeps that
+    // explicit) with `board`/`task` stripped and re-added LAST, so neither a
+    // stray ?board= nor ?task= in the current URL can outrank the real route
+    // parameters this form must submit to.
+    $archiveUrl = route('projects.tasks.archive', array_merge(
+        \Illuminate\Support\Arr::except(request()->query(), ['board', 'task']),
+        ['board' => $board, 'task' => $selectedTask]
+    ));
 @endphp
 <div class="fixed inset-0 z-[80] flex justify-end" x-data @keydown.escape.window="$refs.closePanel.click()">
     {{-- Esc, the X and the backdrop all resolve to the one $boardLink() href

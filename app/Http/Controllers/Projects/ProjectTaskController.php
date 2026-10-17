@@ -14,6 +14,7 @@ use App\Services\Projects\ProjectTaskWorkflow;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
@@ -129,9 +130,16 @@ class ProjectTaskController extends Controller
         // Rebuilt from route() rather than back(), so — unlike the other actions
         // below, which already keep q/filter/page via back()'s Referer — this one
         // must explicitly carry the rest of the query string forward itself
-        // (PRJ-005). No task id: archiving closes the panel, same as before.
-        return redirect()->route('projects.boards.show', array_merge(['board' => $board], $request->except('task')))
-            ->with('status', __('projects.messages.task_saved'));
+        // (PRJ-005). $request->query(), never ->except()/->all(): this is a PATCH
+        // whose body carries _token and _method, and except() reads from the
+        // merged query+body — that put the live CSRF token in the redirect URL,
+        // browser history and Referer header. And the route parameter must be
+        // merged in LAST: a stray ?board=99 in the query must never be allowed
+        // to outrank the real board this request was authorized against.
+        return redirect()->route('projects.boards.show', array_merge(
+            Arr::except($request->query(), ['board', 'task']),
+            ['board' => $board]
+        ))->with('status', __('projects.messages.task_saved'));
     }
 
     public function storeChecklist(Request $request, ProjectBoard $board, Task $task, ProjectAccess $access): RedirectResponse
