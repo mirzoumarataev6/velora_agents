@@ -17,7 +17,11 @@ class ProjectBoards
         }
 
         try {
-            return $this->create($teamId, $creatorId, 'Задачи', null, 'team', 'blue', '_inbox');
+            // Translated at creation time, in whatever locale is active for this
+            // request. The name is then plain text on the row: it is NOT re-translated
+            // if the owner later switches language, because it is editable and a
+            // silent rewrite would clobber a name they already chose for themselves.
+            return $this->create($teamId, $creatorId, __('projects.defaults.board_name'), null, 'team', 'blue', '_inbox');
         } catch (UniqueConstraintViolationException) {
             // Two requests can open a new team's first task simultaneously.
             // The unique team+slug key decides which one created the board;
@@ -46,10 +50,12 @@ class ProjectBoards
                 'slug' => $slug ?? 'board-'.Str::lower(Str::random(16)),
             ]);
 
+            // Same reasoning as the default board name above: translated once, here,
+            // in the creating request's locale, then stored as plain editable text.
             foreach ([
-                ['name' => 'К выполнению', 'is_done' => false],
-                ['name' => 'В работе', 'is_done' => false],
-                ['name' => 'Готово', 'is_done' => true],
+                ['name' => __('projects.defaults.column_todo'), 'is_done' => false],
+                ['name' => __('projects.defaults.column_doing'), 'is_done' => false],
+                ['name' => __('projects.defaults.column_done'), 'is_done' => true],
             ] as $position => $column) {
                 $board->columns()->create([
                     'team_id' => $teamId,

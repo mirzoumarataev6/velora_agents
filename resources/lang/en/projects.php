@@ -122,4 +122,10 @@ return [
         'last_column' => 'Keep at least one open stage and one completion stage.',
         'default_board' => 'The default task board stays active so new CRM reminders have a place to go.',
     ],
+    'defaults' => [
+        'board_name' => 'Tasks',
+        'column_todo' => 'To do',
+        'column_doing' => 'In progress',
+        'column_done' => 'Done',
+    ],
 ];
