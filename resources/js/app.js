@@ -439,10 +439,28 @@ document.addEventListener('click', (event) => {
  * persisting across a reload or a new tab, so a plain module-level variable
  * is enough and a failure to read scroll state (try/catch below) just means
  * nothing gets restored rather than a thrown error.
+ *
+ * Two-stage on purpose — `candidate` then `saved` — because `click` fires
+ * for a ctrl/cmd/middle/shift click too, and those open a new tab without
+ * ever starting a Turbo visit. A single-stage version saved on click and
+ * consumed on the next turbo:load stayed set across that open-in-new-tab, so
+ * the NEXT unrelated visit in THIS tab (the Filter button, a pagination
+ * link) wrongly restored a position nothing asked to return to.
+ * `turbo:before-visit` only fires for a real Turbo visit, so promoting
+ * `candidate` to `saved` there — and clearing `candidate` either way — means
+ * a new-tab click leaves nothing for this tab's next visit to pick up.
  */
+let scrollCandidate = null;
 let savedBoardScroll = null;
 
 document.addEventListener('click', (event) => {
+    // Reset on every click, not just ones that end up matching below: a
+    // candidate from a previous click that never reached turbo:before-visit
+    // (new tab, or any other click afterward) must not survive to be
+    // promoted by a LATER, unrelated visit.
+    scrollCandidate = null;
+
+    if (event.defaultPrevented || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
     const link = event.target.closest('a[data-preserve-scroll]');
     if (!link) return;
 
@@ -450,37 +468,66 @@ document.addEventListener('click', (event) => {
         const key = document.querySelector('[data-scroll-key]')?.dataset.scrollKey;
         if (!key) return;
         const strip = document.querySelector('[data-kanban-strip]');
-        savedBoardScroll = { key, x: strip?.scrollLeft ?? 0, y: window.scrollY };
+        scrollCandidate = { key, x: strip?.scrollLeft ?? 0, y: window.scrollY };
     } catch {
-        savedBoardScroll = null;
+        scrollCandidate = null;
     }
 });
 
+document.addEventListener('turbo:before-visit', () => {
+    savedBoardScroll = scrollCandidate;
+    scrollCandidate = null;
+});
+
+/** Shared by both restore points below — only acts when the page carries the
+ * SAME board's data-scroll-key as the one the position was saved for; a card
+ * link always targets its own board, but this still guards the case where
+ * the saved value is stale for any other reason. */
+function restoreBoardScroll(state) {
+    const root = document.querySelector('[data-scroll-key]');
+    if (!root || root.dataset.scrollKey !== state.key) return;
+    const strip = document.querySelector('[data-kanban-strip]');
+    if (strip) strip.scrollLeft = state.x;
+    window.scrollTo(0, state.y);
+}
+
 /**
- * Consumed exactly once per navigation, win or lose, so a save can never
- * leak into a later, unrelated visit. Only restores when the page Turbo just
- * rendered carries the SAME board's data-scroll-key — a card link always
- * targets its own board, but this still guards the case where the saved
- * value is stale for any other reason.
+ * Measured directly (frame-by-frame, timestamped against turbo:render): with
+ * the restore done only from turbo:load, turbo:load itself lands ~300ms
+ * after turbo:render, and Turbo's own scroll-to-top has already painted by
+ * then — 10-18 real frames at (0,0) before the jump, a visible flash. This
+ * restores from turbo:render instead: double-nested requestAnimationFrame so
+ * Turbo's OWN reset has already landed (it runs as a synchronous DOM write,
+ * not scheduled against a frame) but nothing has been PAINTED yet — a rAF
+ * callback runs before the browser paints the frame it was scheduled in,
+ * and the nested one gives Turbo's own render a full extra frame to settle
+ * first.
  *
- * Inside requestAnimationFrame: at the moment `turbo:load` fires, Turbo's
- * own scroll-to-top has already run but the browser may not have painted it
- * yet, so setting scroll position immediately risked the native reset
- * landing after (and undoing) this one.
+ * Deliberately does NOT clear `savedBoardScroll` — turbo:load below still
+ * does that, and still re-applies the same values. Idempotent (setting an
+ * identical scroll position twice is a no-op), and keeps a single place
+ * responsible for "this has now been consumed" so a value can never survive
+ * to leak into a later, unrelated visit even if this earlier attempt never
+ * fires for some reason (a route that skips turbo:render entirely, say).
+ */
+document.addEventListener('turbo:render', () => {
+    if (!savedBoardScroll) return;
+    const state = savedBoardScroll;
+    requestAnimationFrame(() => requestAnimationFrame(() => restoreBoardScroll(state)));
+});
+
+/**
+ * Consumed exactly once per Turbo visit, win or lose, so a save can never
+ * leak into a later, unrelated one. Kept as a fallback alongside the earlier
+ * turbo:render attempt above — idempotent, so if that one already applied
+ * the position this is a harmless no-op re-application, and if it didn't
+ * fire this is still what actually restores it.
  */
 document.addEventListener('turbo:load', () => {
     if (!savedBoardScroll) return;
-    const { key, x, y } = savedBoardScroll;
+    const state = savedBoardScroll;
     savedBoardScroll = null;
-
-    const root = document.querySelector('[data-scroll-key]');
-    if (!root || root.dataset.scrollKey !== key) return;
-
-    requestAnimationFrame(() => {
-        const strip = document.querySelector('[data-kanban-strip]');
-        if (strip) strip.scrollLeft = x;
-        window.scrollTo(0, y);
-    });
+    requestAnimationFrame(() => restoreBoardScroll(state));
 });
 
 /**
