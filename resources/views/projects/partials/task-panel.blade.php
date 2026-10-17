@@ -1,9 +1,20 @@
-<div class="fixed inset-0 z-[80] flex justify-end" x-data @keydown.escape.window="window.location.href = @js(route('projects.boards.show', $board))">
-    <a href="{{ route('projects.boards.show', $board) }}" class="absolute inset-0 bg-ink/60 backdrop-blur-[2px]" aria-label="{{ __('projects.close') }}"></a>
+@php
+    // archive()'s own redirect rebuilds the URL from route() rather than
+    // back() (see ProjectTaskController::archive — it closes the panel, so
+    // there's no task id to send back to), which means q/filter/page only
+    // survive if THIS request carries them — back()'s Referer trick doesn't
+    // apply. Put them on the form's action the same way $boardLink() does.
+    $archiveUrl = route('projects.tasks.archive', array_merge(['board' => $board, 'task' => $selectedTask], request()->except('task')));
+@endphp
+<div class="fixed inset-0 z-[80] flex justify-end" x-data @keydown.escape.window="$refs.closePanel.click()">
+    {{-- Esc, the X and the backdrop all resolve to the one $boardLink() href
+    (board.blade.php) and the X link below, so Esc clicks that real <a> and
+    gets Turbo's fast visit — PRJ-006 — rather than forcing a full page reload. --}}
+    <a href="{{ $boardLink() }}" class="absolute inset-0 bg-ink/60 backdrop-blur-[2px]" aria-label="{{ __('projects.close') }}"></a>
     <aside role="dialog" aria-modal="true" aria-labelledby="project-task-title" class="relative flex h-full w-full max-w-2xl flex-col overflow-y-auto bg-surface p-5 shadow-2xl dark:bg-night-card sm:p-8">
         <div class="flex items-start justify-between gap-4">
             <div class="min-w-0"><p class="text-xs font-bold uppercase tracking-[.16em] text-brand">{{ $board->name }} / {{ $selectedTask->projectColumn?->name }}</p><h2 id="project-task-title" class="mt-2 break-words font-display text-2xl font-semibold">{{ $selectedTask->title }}</h2></div>
-            <a href="{{ route('projects.boards.show', $board) }}" class="btn btn-ghost btn-sm" aria-label="{{ __('projects.close') }}"><x-icon name="close" size="h-4 w-4" /></a>
+            <a x-ref="closePanel" href="{{ $boardLink() }}" class="btn btn-ghost btn-sm" aria-label="{{ __('projects.close') }}"><x-icon name="close" size="h-4 w-4" /></a>
         </div>
 
         @if ($canEdit && ! $selectedTask->archived_at)
@@ -29,11 +40,11 @@
             </form>
             <div class="mt-6 flex flex-wrap gap-2 border-t border-hairline pt-5 dark:border-white/10">
                 <form method="POST" action="{{ route('projects.tasks.move', [$board, $selectedTask]) }}" class="flex flex-1 flex-wrap items-center gap-2">@csrf @method('PATCH')<label for="move-column" class="text-sm font-medium">{{ __('projects.move_to') }}</label><select id="move-column" name="column_id" class="field min-w-36 flex-1 px-3 py-2 text-sm">@foreach ($columns as $column)<option value="{{ $column->id }}" @selected($selectedTask->project_column_id === $column->id)>{{ $column->name }}</option>@endforeach</select><button type="submit" class="btn btn-secondary btn-sm">{{ __('projects.move') }}</button></form>
-                <form method="POST" action="{{ route('projects.tasks.archive', [$board, $selectedTask]) }}">@csrf @method('PATCH')<button type="submit" class="btn btn-ghost btn-sm text-danger">{{ $selectedTask->archived_at ? __('projects.restore') : __('projects.archive') }}</button></form>
+                <form method="POST" action="{{ $archiveUrl }}">@csrf @method('PATCH')<button type="submit" class="btn btn-ghost btn-sm text-danger">{{ $selectedTask->archived_at ? __('projects.restore') : __('projects.archive') }}</button></form>
             </div>
         @else
             <div class="mt-6 space-y-4"><p class="whitespace-pre-wrap text-sm leading-6">{{ $selectedTask->description }}</p><p class="text-sm text-muted dark:text-night-muted">{{ __('projects.due_at') }}: {{ $selectedTask->due_at?->translatedFormat('d M Y H:i') ?? __('projects.no_due') }}</p><p class="text-sm text-muted dark:text-night-muted">{{ __('projects.assignees') }}: {{ $selectedTask->assignees->pluck('name')->join(', ') ?: __('projects.unassigned') }}</p></div>
-            @if ($canEdit && $selectedTask->archived_at)<form method="POST" action="{{ route('projects.tasks.archive', [$board, $selectedTask]) }}" class="mt-5">@csrf @method('PATCH')<button type="submit" class="btn btn-secondary btn-sm">{{ __('projects.restore') }}</button></form>@endif
+            @if ($canEdit && $selectedTask->archived_at)<form method="POST" action="{{ $archiveUrl }}" class="mt-5">@csrf @method('PATCH')<button type="submit" class="btn btn-secondary btn-sm">{{ __('projects.restore') }}</button></form>@endif
         @endif
 
         <section class="mt-8 border-t border-hairline pt-6 dark:border-white/10">

@@ -3,7 +3,15 @@
 @section('title', $board->name.' · Velora')
 
 @section('content')
-@php $accent = in_array($board->accent, ['blue', 'violet', 'emerald', 'amber', 'rose'], true) ? $board->accent : 'blue'; @endphp
+@php
+    $accent = in_array($board->accent, ['blue', 'violet', 'emerald', 'amber', 'rose'], true) ? $board->accent : 'blue';
+    // PRJ-005: the search box, filter and each column's own page are all in the
+    // query string. Opening or closing a card must not lose them, so every link
+    // that only toggles the task panel goes through this instead of a bare
+    // route() call — one place carrying the rest of the query string forward,
+    // with `task` set (open) or left out (closed) on top of it.
+    $boardLink = fn (array $extra = []) => route('projects.boards.show', array_merge(['board' => $board], request()->except('task'), $extra));
+@endphp
 <div class="project-accent-{{ $accent }} min-w-0 space-y-5" x-data="projectKanban()">
     <div class="flex flex-wrap items-start justify-between gap-4">
         <div class="min-w-0">
@@ -61,7 +69,7 @@
                         <article data-project-task-id="{{ $task->id }}" data-move-url="{{ route('projects.tasks.move', [$board, $task]) }}"
                             @if ($canEdit && $dragEnabled) draggable="true" @dragstart="start($event, {{ $task->id }})" @dragend="dragId = null" @endif
                             class="project-task-card group card relative cursor-pointer p-4 transition-[transform,box-shadow] duration-150 hover:-translate-y-0.5 hover:shadow-lg">
-                            <a href="{{ route('projects.boards.show', [$board, 'task' => $task->id]) }}" class="absolute inset-0 rounded-xl focus-visible:outline-2 focus-visible:outline-brand" aria-label="{{ $task->title }}"></a>
+                            <a href="{{ $boardLink(['task' => $task->id]) }}" class="absolute inset-0 rounded-xl focus-visible:outline-2 focus-visible:outline-brand" aria-label="{{ $task->title }}"></a>
                             @if ($task->projectLabels->isNotEmpty())
                                 <div class="relative pointer-events-none mb-2 flex flex-wrap gap-1">
                                     @foreach ($task->projectLabels as $label)

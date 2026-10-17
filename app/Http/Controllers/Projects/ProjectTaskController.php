@@ -126,7 +126,12 @@ class ProjectTaskController extends Controller
         DB::transaction(fn () => $task->forceFill(['archived_at' => $task->archived_at ? null : now()])->save());
         $workflow->record($task, $request->user(), $task->archived_at ? 'archived' : 'restored');
 
-        return redirect()->route('projects.boards.show', $board)->with('status', __('projects.messages.task_saved'));
+        // Rebuilt from route() rather than back(), so — unlike the other actions
+        // below, which already keep q/filter/page via back()'s Referer — this one
+        // must explicitly carry the rest of the query string forward itself
+        // (PRJ-005). No task id: archiving closes the panel, same as before.
+        return redirect()->route('projects.boards.show', array_merge(['board' => $board], $request->except('task')))
+            ->with('status', __('projects.messages.task_saved'));
     }
 
     public function storeChecklist(Request $request, ProjectBoard $board, Task $task, ProjectAccess $access): RedirectResponse
