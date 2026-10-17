@@ -8,6 +8,7 @@ use App\Models\ProjectChecklistItem;
 use App\Models\ProjectColumn;
 use App\Models\Task;
 use App\Models\User;
+use App\Notifications\TaskAssigned;
 use App\Services\Permissions\PermissionCatalog;
 use App\Services\Projects\ProjectAccess;
 use App\Services\Projects\ProjectTaskWorkflow;
@@ -17,6 +18,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -53,7 +55,13 @@ class ProjectTaskController extends Controller
                 'customer_id' => $data['customer_id'] ?? null,
                 'deal_id' => $data['deal_id'] ?? null,
             ]);
-            $this->syncAssignees($task, $data['assignee_ids'] ?? []);
+            $newlyAssigned = $this->syncAssignees($task, $data['assignee_ids'] ?? []);
+            // Registered before syncLabels()/workflow->record() run, not after:
+            // DB::afterCommit only protects a rollback if the callback is queued
+            // BEFORE whatever might still fail. Queuing it last would leave a
+            // window where this notification already fired for a write the
+            // rest of the transaction then undid.
+            $this->notifyNewAssignees($task, $board, $newlyAssigned, $request->user());
             $this->syncLabels($task, $data['label_ids'] ?? []);
             $workflow->record($task, $request->user(), 'created');
 
@@ -84,7 +92,7 @@ class ProjectTaskController extends Controller
             $this->checkAssignees($request->user(), $board, $data['assignee_ids']);
         }
 
-        DB::transaction(function () use ($request, $task, $data, $workflow): void {
+        DB::transaction(function () use ($request, $board, $task, $data, $workflow): void {
             $changes = [];
             foreach (['title', 'description', 'priority', 'due_at', 'customer_id', 'deal_id'] as $field) {
                 if (array_key_exists($field, $data)) {
@@ -92,8 +100,13 @@ class ProjectTaskController extends Controller
                 }
             }
             $task->forceFill($changes)->save();
+            $newlyAssigned = [];
             if (array_key_exists('assignee_ids', $data)) {
-                $this->syncAssignees($task, $data['assignee_ids']);
+                $newlyAssigned = $this->syncAssignees($task, $data['assignee_ids']);
+                // See store() above for why this is registered immediately
+                // after the write it reports on, before anything later in
+                // this same transaction gets a chance to fail.
+                $this->notifyNewAssignees($task, $board, $newlyAssigned, $request->user());
             }
             if (array_key_exists('label_ids', $data)) {
                 $this->syncLabels($task, $data['label_ids']);
@@ -237,8 +250,14 @@ class ProjectTaskController extends Controller
         }
     }
 
-    private function syncAssignees(Task $task, array $ids): void
+    /**
+     * @param  list<int>  $ids
+     * @return list<int> ids present in $ids but not in the set this write replaces
+     */
+    private function syncAssignees(Task $task, array $ids): array
     {
+        $previousIds = DB::table('project_task_assignees')->where('task_id', $task->id)->pluck('user_id')->all();
+
         DB::table('project_task_assignees')->where('task_id', $task->id)->delete();
         if ($ids !== []) {
             DB::table('project_task_assignees')->insert(array_map(fn (int $id) => [
@@ -247,6 +266,60 @@ class ProjectTaskController extends Controller
                 'created_at' => now(), 'updated_at' => now(),
             ], $ids));
         }
+
+        // Every write here — including re-saving a card with its assignee
+        // list untouched — goes through the same wipe-and-reinsert, so there
+        // is no "this id is new to the request" flag to read off anywhere.
+        // Diffing the before/after sets is the only way to tell "just
+        // assigned" apart from "already was, still is": without it, editing
+        // a task's title would silently re-notify everyone already on it.
+        return array_values(array_diff($ids, $previousIds));
+    }
+
+    /**
+     * @param  list<int>  $newlyAssignedIds  from syncAssignees() — already the
+     *                                       new-minus-previous diff, never the
+     *                                       full submitted set
+     */
+    private function notifyNewAssignees(Task $task, ProjectBoard $board, array $newlyAssignedIds, User $actor): void
+    {
+        // Assigning yourself is not news. checkAssignees() lets an actor name
+        // themselves as an assignee like anyone else, so this is filtered here
+        // rather than relied on to never happen upstream.
+        $recipientIds = array_values(array_diff($newlyAssignedIds, [$actor->id]));
+        if ($recipientIds === []) {
+            return;
+        }
+
+        // Already validated: every id here passed checkAssignees() earlier in
+        // this request (same team, and board access for a private board), so
+        // this fetch only resolves rows to notify — it does not decide who is
+        // allowed to be assigned.
+        $recipients = User::whereIn('id', $recipientIds)->get();
+        if ($recipients->isEmpty()) {
+            return;
+        }
+
+        $notification = new TaskAssigned(
+            taskId: $task->id,
+            boardId: $board->id,
+            teamId: $board->team_id,
+            taskTitle: $task->title,
+            boardName: $board->name,
+            assignedById: $actor->id,
+            assignedByName: $actor->name,
+            dueAt: $task->due_at?->toIso8601String(),
+        );
+
+        // DB::afterCommit, not a plain call: this runs inside the very
+        // DB::transaction() that writes the assignment (store()/update()
+        // above), so a later failure in that same transaction must take the
+        // notification down with it — nobody should be told about an
+        // assignment that a rollback just undid. Notification::sendNow, not
+        // ->notify()/queued: the database channel is one INSERT per
+        // recipient, not worth a round trip through the `default` queue pool,
+        // which CLAUDE.md reserves for customer-facing work.
+        DB::afterCommit(fn () => Notification::sendNow($recipients, $notification));
     }
 
     private function syncLabels(Task $task, array $ids): void

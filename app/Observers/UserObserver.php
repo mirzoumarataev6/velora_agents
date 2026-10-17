@@ -45,5 +45,13 @@ class UserObserver
         // `get()` rather than `cursor()`, for the reason BiSourceObserver spells
         // out: deleting each one issues DDL, and DDL under an open cursor is a lock.
         $user->biSources()->get()->each(fn ($source) => $source->delete());
+
+        // `notifications` (Notifiable's own table) carries no FK — it is keyed
+        // by a polymorphic notifiable_type/notifiable_id pair, so nothing stops
+        // a deleted user's rows from sitting there forever pointing at an id
+        // that no longer resolves to anyone. Same category of gap as the BI
+        // module's physical tables above: a cascade cannot reach it, so this
+        // observer is what does.
+        $user->notifications()->delete();
     }
 }
