@@ -19,11 +19,11 @@
     {{-- Esc, the X and the backdrop all resolve to the one $boardLink() href
     (board.blade.php) and the X link below, so Esc clicks that real <a> and
     gets Turbo's fast visit — PRJ-006 — rather than forcing a full page reload. --}}
-    <a href="{{ $boardLink() }}" class="absolute inset-0 bg-ink/60 backdrop-blur-[2px]" aria-label="{{ __('projects.close') }}"></a>
+    <a href="{{ $boardLink() }}" data-preserve-scroll class="absolute inset-0 bg-ink/60 backdrop-blur-[2px]" aria-label="{{ __('projects.close') }}"></a>
     <aside role="dialog" aria-modal="true" aria-labelledby="project-task-title" class="relative flex h-full w-full max-w-2xl flex-col overflow-y-auto bg-surface p-5 shadow-2xl dark:bg-night-card sm:p-8">
         <div class="flex items-start justify-between gap-4">
             <div class="min-w-0"><p class="text-xs font-bold uppercase tracking-[.16em] text-brand">{{ $board->name }} / {{ $selectedTask->projectColumn?->name }}</p><h2 id="project-task-title" class="mt-2 break-words font-display text-2xl font-semibold">{{ $selectedTask->title }}</h2></div>
-            <a x-ref="closePanel" href="{{ $boardLink() }}" class="btn btn-ghost btn-sm" aria-label="{{ __('projects.close') }}"><x-icon name="close" size="h-4 w-4" /></a>
+            <a x-ref="closePanel" href="{{ $boardLink() }}" data-preserve-scroll class="btn btn-ghost btn-sm" aria-label="{{ __('projects.close') }}"><x-icon name="close" size="h-4 w-4" /></a>
         </div>
 
         @if ($canEdit && ! $selectedTask->archived_at)

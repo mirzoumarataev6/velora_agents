@@ -23,7 +23,17 @@
         $extra
     ));
 @endphp
-<div class="project-accent-{{ $accent }} min-w-0 space-y-5" x-data="projectKanban()">
+{{--
+    data-scroll-key identifies this board for app.js's scroll-preserve listener:
+    opening/closing a card is a Turbo visit, which scrolls a normal visit to
+    the top like any link click, resetting the kanban strip's horizontal
+    scroll (data-kanban-strip below) and the page's vertical scroll. Only
+    links carrying data-preserve-scroll (the card overlay here, and the X/
+    backdrop in task-panel.blade.php) opt into saving and restoring it — a
+    link to a DIFFERENT board, or any link without the attribute (pagination,
+    filters), must still land at the top as a normal visit would.
+--}}
+<div class="project-accent-{{ $accent }} min-w-0 space-y-5" x-data="projectKanban()" data-scroll-key="board-{{ $board->id }}">
     <div class="flex flex-wrap items-start justify-between gap-4">
         <div class="min-w-0">
             <a href="{{ route('projects.index') }}" class="inline-flex items-center gap-1 text-sm font-medium text-brand hover:underline"><x-icon name="arrow-left" size="h-3.5 w-3.5" />{{ __('projects.back_boards') }}</a>
@@ -66,7 +76,7 @@
         @if ($filterActive)<a href="{{ route('projects.boards.show', $board) }}" class="btn btn-ghost btn-sm">{{ __('projects.clear_filters') }}</a>@endif
     </form>
 
-    <div class="project-kanban-strip flex snap-x gap-4 overflow-x-auto pb-6" aria-label="{{ $board->name }}">
+    <div class="project-kanban-strip flex snap-x gap-4 overflow-x-auto pb-6" aria-label="{{ $board->name }}" data-kanban-strip>
         @foreach ($columns as $column)
             <section data-project-column="{{ $column->id }}" @dragover.prevent="over($event)" @drop.prevent="drop($event, {{ $column->id }})"
                 class="project-kanban-column flex w-[min(85vw,20rem)] shrink-0 snap-start flex-col rounded-2xl bg-sunk/80 p-3 dark:bg-night-raised/80 sm:w-80">
@@ -80,7 +90,7 @@
                         <article data-project-task-id="{{ $task->id }}" data-move-url="{{ route('projects.tasks.move', [$board, $task]) }}"
                             @if ($canEdit && $dragEnabled) draggable="true" @dragstart="start($event, {{ $task->id }})" @dragend="dragId = null" @endif
                             class="project-task-card group card relative cursor-pointer p-4 transition-[transform,box-shadow] duration-150 hover:-translate-y-0.5 hover:shadow-lg">
-                            <a href="{{ $boardLink(['task' => $task->id]) }}" class="absolute inset-0 rounded-xl focus-visible:outline-2 focus-visible:outline-brand" aria-label="{{ $task->title }}"></a>
+                            <a href="{{ $boardLink(['task' => $task->id]) }}" data-preserve-scroll class="absolute inset-0 rounded-xl focus-visible:outline-2 focus-visible:outline-brand" aria-label="{{ $task->title }}"></a>
                             @if ($task->projectLabels->isNotEmpty())
                                 <div class="relative pointer-events-none mb-2 flex flex-wrap gap-1">
                                     @foreach ($task->projectLabels as $label)

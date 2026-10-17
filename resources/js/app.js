@@ -421,6 +421,69 @@ document.addEventListener('click', (event) => {
 });
 
 /**
+ * Projects board: opening or closing a task card is a Turbo visit to the
+ * same board with (or without) ?task=ID, and Turbo scrolls a normal visit to
+ * the top like any link click — resetting the kanban strip's horizontal
+ * scroll and the page's vertical scroll every time. Opt-in per link
+ * (`data-preserve-scroll`, set only on the card overlay, the panel's X and
+ * its backdrop — Esc already clicks the X) rather than a blanket rule:
+ * pagination, filters and a link to a different board must keep landing at
+ * the top like any other visit.
+ *
+ * Registered once here at module load, same as every other delegated
+ * listener in this file — app.js itself is loaded from `<head>` (outside
+ * Turbo's `<main>` swap region) and never re-executes on navigation, so
+ * there is nothing to guard against double-binding.
+ *
+ * In-memory only: this is a same-tab convenience, not state worth
+ * persisting across a reload or a new tab, so a plain module-level variable
+ * is enough and a failure to read scroll state (try/catch below) just means
+ * nothing gets restored rather than a thrown error.
+ */
+let savedBoardScroll = null;
+
+document.addEventListener('click', (event) => {
+    const link = event.target.closest('a[data-preserve-scroll]');
+    if (!link) return;
+
+    try {
+        const key = document.querySelector('[data-scroll-key]')?.dataset.scrollKey;
+        if (!key) return;
+        const strip = document.querySelector('[data-kanban-strip]');
+        savedBoardScroll = { key, x: strip?.scrollLeft ?? 0, y: window.scrollY };
+    } catch {
+        savedBoardScroll = null;
+    }
+});
+
+/**
+ * Consumed exactly once per navigation, win or lose, so a save can never
+ * leak into a later, unrelated visit. Only restores when the page Turbo just
+ * rendered carries the SAME board's data-scroll-key — a card link always
+ * targets its own board, but this still guards the case where the saved
+ * value is stale for any other reason.
+ *
+ * Inside requestAnimationFrame: at the moment `turbo:load` fires, Turbo's
+ * own scroll-to-top has already run but the browser may not have painted it
+ * yet, so setting scroll position immediately risked the native reset
+ * landing after (and undoing) this one.
+ */
+document.addEventListener('turbo:load', () => {
+    if (!savedBoardScroll) return;
+    const { key, x, y } = savedBoardScroll;
+    savedBoardScroll = null;
+
+    const root = document.querySelector('[data-scroll-key]');
+    if (!root || root.dataset.scrollKey !== key) return;
+
+    requestAnimationFrame(() => {
+        const strip = document.querySelector('[data-kanban-strip]');
+        if (strip) strip.scrollLeft = x;
+        window.scrollTo(0, y);
+    });
+});
+
+/**
  * Dashboard summary figures counting up from zero on first paint.
  *
  * The one piece of dashboard motion that cannot be done in CSS — there is no

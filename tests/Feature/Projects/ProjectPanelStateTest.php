@@ -158,6 +158,69 @@ class ProjectPanelStateTest extends TestCase
         $this->assertStringNotContainsString('/boards/999999', $href);
     }
 
+    /**
+     * The scroll-preserve fix in app.js only acts on links carrying
+     * data-preserve-scroll: the card overlay, the panel's X and its
+     * backdrop (Esc already clicks the X, so it needs no attribute of its
+     * own). Everything else — pagination, filters, a link to another board —
+     * must keep landing at the top of a normal Turbo visit.
+     */
+    public function test_the_three_panel_toggling_links_carry_the_preserve_scroll_attribute(): void
+    {
+        $owner = User::factory()->create();
+        [$board, $task] = $this->boardWithTask($owner);
+
+        $html = $this->actingAs($owner)
+            ->get(route('projects.boards.show', [$board, 'task' => $task->id]))
+            ->assertOk()->getContent();
+
+        $cardTag = $this->extractTag($html, 'class="absolute inset-0 rounded-xl');
+        $this->assertStringContainsString('data-preserve-scroll', $cardTag);
+
+        $backdropTag = $this->extractTag($html, 'class="absolute inset-0 bg-ink/60');
+        $this->assertStringContainsString('data-preserve-scroll', $backdropTag);
+
+        $closeTag = $this->extractTag($html, 'x-ref="closePanel"');
+        $this->assertStringContainsString('data-preserve-scroll', $closeTag);
+    }
+
+    public function test_pagination_and_filter_links_do_not_carry_the_preserve_scroll_attribute(): void
+    {
+        $owner = User::factory()->create();
+        $board = app(ProjectBoards::class)->defaultForTeam($owner->current_team_id, $owner->id);
+        $column = $board->columns()->first();
+        // CARDS_PER_COLUMN is 50 (BoardController) — one over it is enough to
+        // render a "next page" link for this column. filter=soon (not "mine",
+        // which filters by assignee, not creator) still matches every one of
+        // these: TaskFactory's default due_at is +1 day, inside the window.
+        Task::factory()->for($owner)->count(51)->create([
+            'project_board_id' => $board->id,
+            'project_column_id' => $column->id,
+        ]);
+
+        $html = $this->actingAs($owner)
+            ->get(route('projects.boards.show', $board).'?filter=soon')
+            ->assertOk()->getContent();
+
+        $nextPageTag = $this->extractTag($html, __('projects.next'));
+        $this->assertStringNotContainsString('data-preserve-scroll', $nextPageTag);
+
+        $clearFiltersTag = $this->extractTag($html, __('projects.clear_filters'));
+        $this->assertStringNotContainsString('data-preserve-scroll', $clearFiltersTag);
+    }
+
+    public function test_board_root_carries_the_scroll_key(): void
+    {
+        $owner = User::factory()->create();
+        [$board] = $this->boardWithTask($owner);
+
+        $html = $this->actingAs($owner)
+            ->get(route('projects.boards.show', $board))
+            ->assertOk()->getContent();
+
+        $this->assertStringContainsString('data-scroll-key="board-'.$board->id.'"', $html);
+    }
+
     public function test_archive_form_action_carries_the_current_query_string(): void
     {
         $owner = User::factory()->create();
@@ -171,6 +234,24 @@ class ProjectPanelStateTest extends TestCase
         $this->assertStringContainsString('q=login', $archiveHref);
         $this->assertStringContainsString('filter=all', $archiveHref);
         $this->assertStringNotContainsString('task=', $archiveHref);
+    }
+
+    /**
+     * Returns the full opening <a ...> tag nearest before a marker — an
+     * attribute fragment inside the tag, or text content just after it —
+     * so a test can assert on any attribute of the tag, not just href.
+     */
+    private function extractTag(string $html, string $needle): string
+    {
+        $pos = strpos($html, $needle);
+        $this->assertNotFalse($pos, "Could not find marker [{$needle}] in response HTML");
+
+        $tagStart = strrpos(substr($html, 0, $pos), '<a ');
+        $this->assertNotFalse($tagStart, 'Could not find enclosing <a> for marker');
+        $tagEnd = strpos($html, '>', $tagStart);
+        $this->assertNotFalse($tagEnd, 'Could not find end of <a> tag');
+
+        return substr($html, $tagStart, $tagEnd - $tagStart + 1);
     }
 
     /**
