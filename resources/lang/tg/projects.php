@@ -124,7 +124,7 @@ return [
     ],
     'defaults' => [
         'board_name' => 'Вазифаҳо',
-        'column_todo' => 'Иҷро кардан',
+        'column_todo' => 'Барои иҷро',
         'column_doing' => 'Дар кор',
         'column_done' => 'Анҷом ёфт',
     ],
