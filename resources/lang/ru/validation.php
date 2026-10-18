@@ -15,6 +15,17 @@ return [
     'url' => 'Поле «:attribute» должно быть корректной ссылкой.',
     'array' => 'Поле «:attribute» должно быть списком.',
     'file' => 'Поле «:attribute» должно быть файлом.',
+    // PHASE 2 item 9: Laravel looks up each rule's message by its own exact
+    // name — a translated 'in' does not cover 'exists' too, even though
+    // they share the same default English wording. Every rule a Projects
+    // form actually uses must have its own entry here or that one rule's
+    // error renders in Laravel's packaged English regardless of locale.
+    'exists' => 'Выбранное значение поля «:attribute» некорректно.',
+    'distinct' => 'Значение поля «:attribute» повторяется.',
+    'date' => 'Поле «:attribute» должно быть корректной датой.',
+    'after' => 'Поле «:attribute» должно быть датой позже :date.',
+    'before' => 'Поле «:attribute» должно быть датой раньше :date.',
+    'prohibited' => 'Поле «:attribute» должно быть пустым.',
 
     'max' => [
         'numeric' => 'Поле «:attribute» не должно быть больше :max.',
@@ -51,5 +62,18 @@ return [
         'page_access_token' => 'токен доступа страницы',
         'message' => 'сообщение',
         'status' => 'статус',
+        'title' => 'название',
+        'priority' => 'приоритет',
+        'due_at' => 'срок',
+        'wip_limit' => 'лимит задач в работе',
+        'column_id' => 'этап',
+        'assignee_ids' => 'исполнители',
+        'assignee_ids.*' => 'исполнитель',
+        'label_ids' => 'метки',
+        'label_ids.*' => 'метка',
+        'customer_id' => 'клиент',
+        'deal_id' => 'сделка',
+        'body' => 'текст',
+        'color' => 'цвет',
     ],
 ];

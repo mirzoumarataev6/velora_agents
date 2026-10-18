@@ -15,6 +15,17 @@ return [
     'url' => 'The :attribute field must be a valid URL.',
     'array' => 'The :attribute field must be a list.',
     'file' => 'The :attribute field must be a file.',
+    // PHASE 2 item 9: Laravel looks up each rule's message by its own exact
+    // name — a translated 'in' does not cover 'exists' too, even though
+    // they share the same default wording. Every rule a Projects form
+    // actually uses must have its own entry here, this file being the one
+    // every OTHER locale falls back to if its own copy is ever missing one.
+    'exists' => 'The selected :attribute is invalid.',
+    'distinct' => 'The :attribute field has a duplicate value.',
+    'date' => 'The :attribute field must be a valid date.',
+    'after' => 'The :attribute field must be a date after :date.',
+    'before' => 'The :attribute field must be a date before :date.',
+    'prohibited' => 'The :attribute field must be empty.',
 
     'max' => [
         'numeric' => 'The :attribute field must not be greater than :max.',
@@ -51,5 +62,18 @@ return [
         'page_access_token' => 'page access token',
         'message' => 'message',
         'status' => 'status',
+        'title' => 'title',
+        'priority' => 'priority',
+        'due_at' => 'due date',
+        'wip_limit' => 'work in progress limit',
+        'column_id' => 'stage',
+        'assignee_ids' => 'assignees',
+        'assignee_ids.*' => 'assignee',
+        'label_ids' => 'labels',
+        'label_ids.*' => 'label',
+        'customer_id' => 'customer',
+        'deal_id' => 'deal',
+        'body' => 'text',
+        'color' => 'color',
     ],
 ];
