@@ -12,6 +12,7 @@ use App\Models\Task;
 use App\Models\TeamMembership;
 use App\Models\User;
 use App\Services\Permissions\PermissionCatalog;
+use App\Services\Projects\InvisibleCharacters;
 use App\Services\Projects\ProjectAccess;
 use App\Services\Projects\ProjectBoards;
 use Illuminate\Http\RedirectResponse;
@@ -272,6 +273,7 @@ class BoardController extends Controller
         $this->authorize(PermissionCatalog::PROJECTS_MANAGE);
         $teamId = $request->user()->activeTeamId();
         abort_if($teamId === null, 403);
+        InvisibleCharacters::stripFromRequest($request, 'name');
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:3000'],
@@ -288,6 +290,7 @@ class BoardController extends Controller
     public function update(Request $request, ProjectBoard $board, ProjectAccess $access): RedirectResponse
     {
         $access->authorize($request->user(), $board, PermissionCatalog::PROJECTS_MANAGE);
+        InvisibleCharacters::stripFromRequest($request, 'name');
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:3000'],
@@ -352,6 +355,7 @@ class BoardController extends Controller
     public function storeColumn(Request $request, ProjectBoard $board, ProjectAccess $access): RedirectResponse
     {
         $access->authorize($request->user(), $board, PermissionCatalog::PROJECTS_MANAGE);
+        InvisibleCharacters::stripFromRequest($request, 'name');
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'is_done' => ['sometimes', 'boolean'],
@@ -373,6 +377,7 @@ class BoardController extends Controller
     {
         $access->authorize($request->user(), $board, PermissionCatalog::PROJECTS_MANAGE);
         abort_unless($column->team_id === $board->team_id && $column->board_id === $board->id, 404);
+        InvisibleCharacters::stripFromRequest($request, 'name');
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'wip_limit' => ['nullable', 'integer', 'min:1', 'max:10000'],
@@ -423,6 +428,7 @@ class BoardController extends Controller
     public function storeLabel(Request $request, ProjectBoard $board, ProjectAccess $access): RedirectResponse
     {
         $access->authorize($request->user(), $board, PermissionCatalog::PROJECTS_MANAGE);
+        InvisibleCharacters::stripFromRequest($request, 'name');
         $data = $request->validate([
             'name' => ['required', 'string', 'max:80'],
             'color' => ['required', Rule::in(self::ACCENTS)],

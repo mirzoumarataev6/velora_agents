@@ -10,6 +10,7 @@ use App\Models\Task;
 use App\Models\User;
 use App\Notifications\TaskAssigned;
 use App\Services\Permissions\PermissionCatalog;
+use App\Services\Projects\InvisibleCharacters;
 use App\Services\Projects\ProjectAccess;
 use App\Services\Projects\ProjectTaskWorkflow;
 use Illuminate\Http\JsonResponse;
@@ -36,6 +37,7 @@ class ProjectTaskController extends Controller
     public function store(Request $request, ProjectBoard $board, ProjectAccess $access, ProjectTaskWorkflow $workflow): RedirectResponse|JsonResponse
     {
         $access->authorize($request->user(), $board, PermissionCatalog::PROJECTS_CREATE);
+        InvisibleCharacters::stripFromRequest($request, 'title');
         $data = $request->validate($this->taskRules($board, false), $this->taskMessages());
         $column = ProjectColumn::where('team_id', $board->team_id)->where('board_id', $board->id)
             ->findOrFail($data['column_id']);
@@ -83,6 +85,7 @@ class ProjectTaskController extends Controller
     public function update(Request $request, ProjectBoard $board, Task $task, ProjectAccess $access, ProjectTaskWorkflow $workflow): RedirectResponse
     {
         $this->taskOnBoard($request, $board, $task, $access, PermissionCatalog::PROJECTS_EDIT);
+        InvisibleCharacters::stripFromRequest($request, 'title');
         $data = $request->validate($this->taskRules($board, true), $this->taskMessages());
         if ($request->boolean('assignees_present')) {
             $data['assignee_ids'] ??= [];
@@ -293,8 +296,8 @@ class ProjectTaskController extends Controller
     /**
      * @param  list<int>  $ids
      * @return array{0: list<int>, 1: list<int>} [added ids, removed ids] — ids
-     *                                            present only in the new set,
-     *                                            and ids present only in the old
+     *                                           present only in the new set,
+     *                                           and ids present only in the old
      */
     private function syncAssignees(Task $task, array $ids): array
     {
