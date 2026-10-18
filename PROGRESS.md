@@ -30,16 +30,14 @@ see their commit messages for what was actually observed).
 | 12 | Drag disabled board-wide once any column passes 50 cards | `54b67d9` | `tests/Feature/Projects/ProjectBoardDragPaginationTest.php` |
 | 13 | Page weight (i18n bundle ~380KB/page) | `b659191` | `tests/Feature/Frontend/I18nBundleSizeTest.php` — measured before/after: `/projects` 441,834 → 134,046 bytes (−307,788, same visible content, no behaviour change). |
 | 14 | Column counter loses "/ limit" after a drop | `abb71ae` | `tests/Feature/Projects/ProjectColumnCounterMarkupTest.php` — fix verified live in a real browser. |
+| 15 | Drag feedback (target-column highlight, insertion indicator) | `ba2651e` | `tests/Feature/Projects/ProjectBoardDragFeedbackTest.php` — verified live in a real browser; reduced-motion respected, tokens only (`--color-brand`, not a hardcoded hex). |
+| 16 | Unsaved-edits warning on task panel close | `86b5793` | `tests/Feature/Projects/ProjectTaskPanelUnsavedChangesTest.php` — picked `confirm()` over autosave-on-blur (see the WHY comment in task-panel.blade.php); verified live in a real browser (no-edits close, edit+Cancel stays open, edit+OK closes). |
 
-## Not started — Phase 2 remainder
-
-- 15. Drag feedback (target-column highlight, insertion indicator, reduced-motion, tokens-only colours)
-- 16. Unsaved-edits warning on task panel close
+**Phase 2 is complete and pushed.**
 
 ## Not started — Phase 3 (P2)
 
-Per the original instructions, Phase 3 only starts once Phase 2 is fully
-green and pushed.
+Phase 2 is now fully green and pushed, so Phase 3 can start next.
 
 - 17. Projects index: duplicated "Boards" eyebrow/heading; board cards show open/overdue/member count
 - 18. Card meta text 11px → 12px minimum; checklist progress bar + x/y
@@ -55,12 +53,12 @@ green and pushed.
   label name on one board — relevant context for item 11 if it's ever
   revisited, and for any future unique-index migration on
   `project_labels`/`project_columns`.
-- Items 5, 8, 13 and 14 were verified against a live `php artisan serve` +
-  Playwright (headless Chromium), not just PHPUnit — PHPUnit alone can't
-  execute the JS/Alpine behavior those items are about. A throwaway QA user
-  (`qa-sidebar-check@example.test`) was created and deleted each time for
-  this; none should remain in the dev database.
-- `resources/js/app.js` and `public/build/*` were rebuilt (`npm run build`)
-  during manual verification for items 5, 8 and 14 — the committed source
-  is current; if `public/build` looks stale when picking this up, just
-  `npm run build` again before testing live.
+- Items 5, 8, 13, 14, 15 and 16 were verified against a live
+  `php artisan serve` + Playwright (headless Chromium), not just PHPUnit —
+  PHPUnit alone can't execute the JS/Alpine behavior those items are about.
+  A throwaway QA user (`qa-sidebar-check@example.test`) was created and
+  deleted each time for this; none should remain in the dev database.
+- `resources/js/app.js`, `resources/css/app.css` and `public/build/*` were
+  rebuilt (`npm run build`) during manual verification for items 5, 8, 14
+  and 15 — the committed source is current; if `public/build` looks stale
+  when picking this up, just `npm run build` again before testing live.
