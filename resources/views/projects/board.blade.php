@@ -84,7 +84,8 @@
 
     <div class="project-kanban-strip flex snap-x gap-4 overflow-x-auto pb-6" aria-label="{{ $board->name }}" data-kanban-strip>
         @foreach ($columns as $column)
-            <section data-project-column="{{ $column->id }}" @dragover.prevent="over($event)" @drop.prevent="drop($event, {{ $column->id }})"
+            <section data-project-column="{{ $column->id }}" @dragover.prevent="over($event, {{ $column->id }})" @dragleave="dragLeaveColumn($event, {{ $column->id }})" @drop.prevent="drop($event, {{ $column->id }})"
+                :class="dragOverColumn === {{ $column->id }} && 'project-kanban-column--drag-over'"
                 class="project-kanban-column flex w-[min(85vw,20rem)] shrink-0 snap-start flex-col rounded-2xl bg-sunk/80 p-3 dark:bg-night-raised/80 sm:w-80">
                 <div class="flex items-center gap-2 px-1 pb-3">
                     <span class="h-2.5 w-2.5 rounded-full {{ $column->is_done ? 'bg-success' : 'project-dot' }}" aria-hidden="true"></span>
@@ -103,7 +104,8 @@
                 <div data-project-cards data-has-more-pages="{{ $pages[$column->id]->hasMorePages() ? '1' : '0' }}" class="min-h-20 flex-1 space-y-2">
                     @forelse ($column->tasks as $task)
                         <article data-project-task-id="{{ $task->id }}" data-move-url="{{ route('projects.tasks.move', [$board, $task]) }}"
-                            @if ($canEdit && $dragEnabled) draggable="true" @dragstart="start($event, {{ $task->id }})" @dragend="dragId = null" @endif
+                            @if ($canEdit && $dragEnabled) draggable="true" @dragstart="start($event, {{ $task->id }})" @dragend="dragId = null; dragOverColumn = null; dragOverCardId = null" @endif
+                            :class="dragOverCardId === '{{ $task->id }}' && 'project-task-card--drop-before'"
                             class="project-task-card group card relative cursor-pointer p-4 transition-[transform,box-shadow] duration-150 hover:-translate-y-0.5 hover:shadow-lg">
                             <a href="{{ $boardLink(['task' => $task->id]) }}" data-preserve-scroll class="absolute inset-0 rounded-xl focus-visible:outline-2 focus-visible:outline-brand" aria-label="{{ $task->title }}"></a>
                             @if ($task->projectLabels->isNotEmpty())
@@ -213,6 +215,17 @@
         return {
             dragId: null,
             busy: false,
+            // PHASE 2 item 15: which column (if any) the pointer is
+            // currently dragging over, and which specific card (if any)
+            // within it — rendered as a column highlight and a per-card
+            // insertion line via :class below, both reset on drop, on
+            // dragend (a drag can end outside any valid target entirely —
+            // dropped on the page background, or cancelled with Esc) and
+            // on dragleave (but only once the pointer has actually left the
+            // <section>, not merely moved from one child element to
+            // another inside it — see dragLeaveColumn()).
+            dragOverColumn: null,
+            dragOverCardId: null,
             // The server decides the initial value from ?settings=1 (and only
             // for a user who can manage the board — see BoardController), but
             // the #board-settings hash link some pages still use must keep
@@ -243,7 +256,31 @@
                 event.dataTransfer.effectAllowed = 'move';
                 event.dataTransfer.setData('text/plain', String(id));
             },
-            over(event) { event.dataTransfer.dropEffect = 'move'; },
+            over(event, columnId) {
+                event.dataTransfer.dropEffect = 'move';
+                this.dragOverColumn = columnId;
+                const before = event.target.closest('[data-project-task-id]');
+                // Never indicate "insert before the card being dragged" —
+                // dragover keeps firing over the card's own (still-in-DOM)
+                // original position until drop() actually moves it.
+                this.dragOverCardId = before && before.dataset.projectTaskId !== String(this.dragId)
+                    ? before.dataset.projectTaskId
+                    : null;
+            },
+            /**
+             * `relatedTarget` (where the pointer is going), not just "a
+             * dragleave fired" — dragover/dragleave bubble from every
+             * child, so moving from one card to the next inside the SAME
+             * column fires a dragleave on the section too. Without this
+             * guard the column highlight flickered off and back on between
+             * every two cards instead of staying on for the whole hover.
+             */
+            dragLeaveColumn(event, columnId) {
+                if (this.dragOverColumn === columnId && ! event.currentTarget.contains(event.relatedTarget)) {
+                    this.dragOverColumn = null;
+                    this.dragOverCardId = null;
+                }
+            },
             /** See the comment at its call site in drop() for why this exists. */
             renderCount(columnId, delta) {
                 const count = document.querySelector(`[data-project-column="${columnId}"] [data-column-count]`);
@@ -308,7 +345,7 @@
                 } catch (error) {
                     previousParent.insertBefore(card, previousNext);
                     window.showToast?.(error.message, 'error');
-                } finally { this.busy = false; this.dragId = null; }
+                } finally { this.busy = false; this.dragId = null; this.dragOverColumn = null; this.dragOverCardId = null; }
             },
         };
     }

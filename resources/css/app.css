@@ -2823,7 +2823,43 @@ html.dark {
     font-weight: 700;
 }
 .project-kanban-strip { scrollbar-width: thin; }
-.project-kanban-column { border: 1px solid color-mix(in srgb, var(--project-accent) 10%, var(--color-hairline)); }
+.project-kanban-column {
+    border: 1px solid color-mix(in srgb, var(--project-accent) 10%, var(--color-hairline));
+    transition: background-color 120ms ease, border-color 120ms ease;
+}
 .project-task-card:active { cursor: grabbing; }
 .dark .project-board-icon,
 .dark .project-label { background: color-mix(in srgb, var(--project-accent) 18%, var(--color-night-card)); }
+
+/* PHASE 2 item 15: drag feedback. `--color-brand` deliberately, not
+   `--project-accent` — this is a transient UI-state signal ("drop here"),
+   the same role --color-brand already plays for a focus ring
+   (focus-visible:outline-brand above), not a board decoration, so it
+   should look the same on every board regardless of that board's own
+   accent colour. */
+.project-kanban-column--drag-over {
+    background: color-mix(in srgb, var(--color-brand) 8%, var(--color-sunk));
+    border-color: color-mix(in srgb, var(--color-brand) 55%, transparent);
+}
+.dark .project-kanban-column--drag-over {
+    background: color-mix(in srgb, var(--color-brand-light) 14%, var(--color-night-raised));
+    border-color: color-mix(in srgb, var(--color-brand-light) 55%, transparent);
+}
+/* A line at the card's own top edge — not a layout-shifting element inserted
+   between cards, which would itself fight the drag for cursor position and
+   keep firing new dragover/dragleave pairs as the card list reflows under
+   the pointer. */
+.project-task-card--drop-before::before {
+    content: '';
+    position: absolute;
+    top: -.4rem;
+    left: 0;
+    right: 0;
+    height: 2px;
+    border-radius: 1px;
+    background: var(--color-brand);
+}
+.dark .project-task-card--drop-before::before { background: var(--color-brand-light); }
+@media (prefers-reduced-motion: reduce) {
+    .project-kanban-column { transition: none; }
+}
