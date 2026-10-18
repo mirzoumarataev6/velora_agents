@@ -321,6 +321,7 @@ class BoardController extends Controller
             'is_done' => ['sometimes', 'boolean'],
             'wip_limit' => ['nullable', 'integer', 'min:1', 'max:10000'],
         ]);
+        $this->assertUniqueColumnName($board, $data['name']);
         $board->columns()->create([
             'team_id' => $board->team_id,
             'name' => trim($data['name']),
@@ -340,6 +341,7 @@ class BoardController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'wip_limit' => ['nullable', 'integer', 'min:1', 'max:10000'],
         ]);
+        $this->assertUniqueColumnName($board, $data['name'], $column->id);
         $column->fill(['name' => trim($data['name']), 'wip_limit' => $data['wip_limit'] ?? null])->save();
 
         return back()->with('status', __('projects.messages.column_saved'));
@@ -389,6 +391,7 @@ class BoardController extends Controller
             'name' => ['required', 'string', 'max:80'],
             'color' => ['required', Rule::in(self::ACCENTS)],
         ]);
+        $this->assertUniqueLabelName($board, $data['name']);
         $board->labels()->create(['team_id' => $board->team_id, ...$data]);
 
         return back()->with('status', __('projects.messages.label_created'));
@@ -401,5 +404,51 @@ class BoardController extends Controller
         $label->delete();
 
         return back()->with('status', __('projects.messages.label_deleted'));
+    }
+
+    /**
+     * PHASE 2 item 11: validation only, deliberately NOT a DB unique index.
+     * A migration adding one would be unsafe to ship as-is — this dev
+     * database already has one real board with two labels differing only
+     * by case (audited via `project_labels` grouped on LOWER(name) before
+     * writing this), and a unique index migration fails outright the
+     * moment it hits a row that already violates it. Cleaning that up is a
+     * data migration of its own, out of scope here; this stops any NEW
+     * duplicate from being created in the meantime.
+     *
+     * Compared in PHP, not via SQL LOWER(): this suite runs on sqlite
+     * (phpunit.xml), whose built-in LOWER()/UPPER() are ASCII-only unless
+     * the ICU extension is loaded — a Cyrillic board name would silently
+     * never collide under sqlite's LOWER() while genuinely colliding under
+     * MySQL's, which would have made this exact check pass in the test
+     * suite and still let a Russian-named duplicate through in production.
+     * mb_strtolower() in PHP (loading the board's existing rows, always a
+     * handful) behaves identically on both.
+     */
+    private function assertUniqueColumnName(ProjectBoard $board, string $name, ?int $exceptId = null): void
+    {
+        $normalized = mb_strtolower(trim($name));
+        $duplicate = $board->columns()
+            ->when($exceptId, fn ($query) => $query->whereKeyNot($exceptId))
+            ->get(['id', 'name'])
+            ->contains(fn (ProjectColumn $column) => mb_strtolower($column->name) === $normalized);
+
+        if ($duplicate) {
+            throw ValidationException::withMessages(['name' => __('projects.errors.duplicate_column_name')]);
+        }
+    }
+
+    /** Same reasoning as assertUniqueColumnName() above — see its docblock. */
+    private function assertUniqueLabelName(ProjectBoard $board, string $name, ?int $exceptId = null): void
+    {
+        $normalized = mb_strtolower(trim($name));
+        $duplicate = $board->labels()
+            ->when($exceptId, fn ($query) => $query->whereKeyNot($exceptId))
+            ->get(['id', 'name'])
+            ->contains(fn (ProjectLabel $label) => mb_strtolower($label->name) === $normalized);
+
+        if ($duplicate) {
+            throw ValidationException::withMessages(['name' => __('projects.errors.duplicate_label_name')]);
+        }
     }
 }

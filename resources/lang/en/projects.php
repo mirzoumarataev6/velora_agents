@@ -143,6 +143,8 @@ return [
         'last_column' => 'Keep at least one open stage and one completion stage.',
         'default_board' => 'The default task board stays active so new CRM reminders have a place to go.',
         'due_at_range' => 'The due date must be between 1970 and 2038.',
+        'duplicate_column_name' => 'This board already has a stage with that name.',
+        'duplicate_label_name' => 'This board already has a label with that name.',
     ],
     'defaults' => [
         'board_name' => 'Tasks',
