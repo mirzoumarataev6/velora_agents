@@ -116,7 +116,14 @@
                                 </div>
                             @endif
                             <h3 class="relative pointer-events-none break-words text-sm font-semibold leading-5">{{ $task->title }}</h3>
-                            <div class="relative pointer-events-none mt-3 flex flex-wrap items-center gap-2 text-[11px]">
+                            {{-- PHASE 3 item 18: text-xs (12px), not the old
+                            arbitrary text-[11px] — 12px is this app's own
+                            floor for body text everywhere else; the card
+                            meta row was the one place still a pixel under
+                            it. text-xs over a new text-[12px] value since
+                            Tailwind's own xs step already is exactly 12px —
+                            no reason to spell the same number a second way. --}}
+                            <div class="relative pointer-events-none mt-3 flex flex-wrap items-center gap-2 text-xs">
                             @if ($task->priority === 'urgent' || $task->priority === 'high')
                                 <span class="badge {{ $task->priority === 'urgent' ? 'badge-danger' : 'badge-warning' }}">{{ __('projects.priority_'.$task->priority) }}</span>
                             @endif
@@ -124,7 +131,24 @@
                                 @if ($task->due_at)
                                     <span class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 {{ ! $task->done_at && $task->due_at->isPast() ? 'bg-danger/10 font-semibold text-danger dark:text-danger-light' : 'bg-sunk text-muted dark:bg-night-raised dark:text-night-muted' }}"><x-icon name="calendar" size="h-3 w-3" />{{ $task->due_at->translatedFormat('d M') }}</span>
                                 @endif
-                                @if ($task->checklistItems->isNotEmpty())<span class="inline-flex items-center gap-1 text-muted dark:text-night-muted"><x-icon name="checklist" size="h-3 w-3" />{{ $task->checklistItems->whereNotNull('completed_at')->count() }}/{{ $task->checklistItems->count() }}</span>@endif
+                                @if ($task->checklistItems->isNotEmpty())
+                                    @php
+                                        $checklistDone = $task->checklistItems->whereNotNull('completed_at')->count();
+                                        $checklistTotal = $task->checklistItems->count();
+                                        $checklistPercent = $checklistTotal > 0 ? round($checklistDone / $checklistTotal * 100) : 0;
+                                    @endphp
+                                    {{-- Same track/fill convention as partials/onboarding-card.blade.php
+                                    and the dashboard's own bars (dashboard/partials/*.blade.php) — a
+                                    fixed-width track (w-10: readable as a bar, not so wide it crowds
+                                    the due-date badge beside it on a narrow card) with an inline
+                                    style="width: N%" fill, since the percentage is per-task data
+                                    Tailwind's build-time class scan can never see as a class name. --}}
+                                    <span class="inline-flex items-center gap-1.5 text-muted dark:text-night-muted">
+                                        <x-icon name="checklist" size="h-3 w-3" />
+                                        <span class="h-1 w-10 overflow-hidden rounded-full bg-sunk dark:bg-night-raised" role="progressbar" aria-valuemin="0" aria-valuemax="{{ $checklistTotal }}" aria-valuenow="{{ $checklistDone }}" aria-label="{{ __('projects.checklist') }}"><span class="block h-full rounded-full bg-brand" style="width: {{ $checklistPercent }}%"></span></span>
+                                        <span>{{ $checklistDone }}/{{ $checklistTotal }}</span>
+                                    </span>
+                                @endif
                                 @if ($task->assignees->isNotEmpty())
                                     <span class="ml-auto flex -space-x-1.5">@foreach ($task->assignees->take(3) as $assignee)<span class="flex h-6 w-6 items-center justify-center rounded-full border-2 border-surface bg-brand-circle text-[9px] font-bold text-brand dark:border-night-card" title="{{ $assignee->name }}">{{ $assignee->initials() }}</span>@endforeach</span>
                                 @endif
