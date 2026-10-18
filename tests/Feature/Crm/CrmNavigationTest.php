@@ -19,7 +19,7 @@ class CrmNavigationTest extends TestCase
 
         $response->assertOk();
         $response->assertSee('href="'.route('crm.board').'"', false);
-        $response->assertSee(__('agents.nav.crm'));
+        $response->assertSee(__('shell.nav.crm'));
         $response->assertSee('aria-current="page"', false);
     }
 
@@ -30,8 +30,8 @@ class CrmNavigationTest extends TestCase
 
         $response->assertOk();
         $response->assertSee(route('crm.board'));
-        $response->assertSee(__('agents.nav.dashboard'));
-        $response->assertSee(__('agents.nav.crm'));
+        $response->assertSee(__('shell.nav.dashboard'));
+        $response->assertSee(__('shell.nav.crm'));
         $response->assertSee('aria-current="page"', false);
     }
 
@@ -41,7 +41,7 @@ class CrmNavigationTest extends TestCase
         $response = $this->actingAs(User::factory()->create())->get(route('leads.index'));
 
         $response->assertOk();
-        $response->assertSee(__('agents.nav.leads'));
+        $response->assertSee(__('shell.nav.leads'));
     }
 
     /** Project work has its own section; CRM keeps customer and deal context. */

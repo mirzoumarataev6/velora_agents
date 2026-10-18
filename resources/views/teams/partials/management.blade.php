@@ -12,7 +12,7 @@
                         <p class="truncate text-xs text-muted dark:text-night-muted">{{ $memberMembership->user->email }}</p>
                     </div>
                     @if ($memberMembership->role->is_owner)
-                        <span class="badge badge-neutral">{{ __('agents.nav.teams.roles.owner') }}</span>
+                        <span class="badge badge-neutral">{{ __('shell.nav.teams.roles.owner') }}</span>
                     @else
                         <div class="flex flex-wrap items-center gap-2">
                             @can('team.roles.manage')

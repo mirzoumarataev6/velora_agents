@@ -18,7 +18,7 @@
         @csrf
         <button type="submit"
             class="btn btn-primary">
-            {{ __('agents.nav.logout') }}
+            {{ __('shell.nav.logout') }}
         </button>
     </form>
 </body>

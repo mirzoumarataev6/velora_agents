@@ -45,14 +45,17 @@ class AgentController extends Controller
             $user->markOnboardingCompleted();
         }
 
-        return view('agents.index', compact('agents') + ['onboarding' => $checklist]);
+        return view('agents.index', compact('agents') + [
+            'onboarding' => $checklist,
+            'i18nExtraNamespaces' => ['agents'],
+        ]);
     }
 
     public function create(): View
     {
         $this->authorize('create', Agent::class);
 
-        return view('agents.form', ['agent' => new Agent]);
+        return view('agents.form', ['agent' => new Agent, 'i18nExtraNamespaces' => ['agents']]);
     }
 
     public function store(StoreAgentRequest $request): RedirectResponse
@@ -91,7 +94,7 @@ class AgentController extends Controller
         $tab = in_array($request->query('tab'), $tabs, true) ? $request->query('tab') : $tabs[0];
 
         return view('agents.show', compact('agent', 'tab', 'tabs', 'playgroundConversation') + [
-            'i18nExtraNamespaces' => ['conversations'],
+            'i18nExtraNamespaces' => ['agents', 'conversations'],
             // The conversations tab renders the shared inbox partial, pinned to
             // this agent. Channel types come off the already-loaded relation so
             // the tab costs no extra query on a page that never opens it.
@@ -110,7 +113,7 @@ class AgentController extends Controller
     {
         $this->authorize('update', $agent);
 
-        return view('agents.form', compact('agent'));
+        return view('agents.form', compact('agent') + ['i18nExtraNamespaces' => ['agents']]);
     }
 
     public function update(StoreAgentRequest $request, Agent $agent): RedirectResponse

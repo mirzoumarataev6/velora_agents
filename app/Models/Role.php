@@ -55,7 +55,7 @@ class Role extends Model
     {
         // Only the four seeded roles have translated slugs. A custom role's
         // own name is the owner's chosen label, not a missing translation key.
-        $key = 'agents.nav.teams.roles.'.$slug;
+        $key = 'shell.nav.teams.roles.'.$slug;
 
         return Lang::has($key) ? __($key) : $name;
     }

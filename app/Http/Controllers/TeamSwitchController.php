@@ -61,6 +61,6 @@ class TeamSwitchController extends Controller
         // home. The real cost, paid on every switch: the user loses their
         // place in whatever they were looking at, even on a page the new
         // role could still have opened.
-        return redirect($destination->url($user))->with('status', __('agents.nav.teams.switched'));
+        return redirect($destination->url($user))->with('status', __('shell.nav.teams.switched'));
     }
 }

@@ -39,7 +39,7 @@ class SidebarRailTest extends TestCase
 
             $response->assertOk();
             $response->assertSee('toggleRail()', false);
-            $response->assertSee(__('agents.nav.collapse_sidebar'), false);
+            $response->assertSee(__('shell.nav.collapse_sidebar'), false);
         }
     }
 
@@ -52,7 +52,7 @@ class SidebarRailTest extends TestCase
         $response->assertSee('type="button" @click="$store.shell.toggleRail()"', false);
         $response->assertSee(':aria-expanded="(! $store.shell.railCollapsed).toString()"', false);
         // Both labels ship, so the control renames itself in either state.
-        $response->assertSee(__('agents.nav.expand_sidebar'), false);
+        $response->assertSee(__('shell.nav.expand_sidebar'), false);
     }
 
     /**
@@ -68,7 +68,7 @@ class SidebarRailTest extends TestCase
         // Every nav item carries an accessible name, so the icon-only rail is
         // still navigable once the label text is hidden.
         foreach (['agents', 'conversations', 'leads', 'settings'] as $item) {
-            $response->assertSee('aria-label="'.__('agents.nav.'.$item).'"', false);
+            $response->assertSee('aria-label="'.__('shell.nav.'.$item).'"', false);
         }
     }
 
@@ -84,7 +84,7 @@ class SidebarRailTest extends TestCase
         $response->assertOk();
 
         foreach (['agents', 'conversations', 'leads', 'settings', 'logout'] as $item) {
-            $response->assertDontSee('title="'.__('agents.nav.'.$item).'"', false);
+            $response->assertDontSee('title="'.__('shell.nav.'.$item).'"', false);
         }
 
         // The owner's own name sat on the profile link as a tooltip too.

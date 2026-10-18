@@ -218,7 +218,7 @@ class HomeDestinationTest extends TestCase
             ->post(route('teams.switch'), ['team_id' => $teamBOwner->current_team_id]);
 
         $response->assertRedirect(route('crm.board'));
-        $response->assertSessionHas('status', __('agents.nav.teams.switched'));
+        $response->assertSessionHas('status', __('shell.nav.teams.switched'));
         $this->get(route('crm.board'))->assertOk();
         $this->assertSame($teamBOwner->current_team_id, $actor->fresh()->current_team_id);
     }
@@ -286,7 +286,7 @@ class HomeDestinationTest extends TestCase
             ->post(route('teams.switch'), ['team_id' => $teamBOwner->current_team_id]);
 
         $response->assertRedirect(route('crm.board'));
-        $response->assertSessionHas('status', __('agents.nav.teams.switched'));
+        $response->assertSessionHas('status', __('shell.nav.teams.switched'));
     }
 
     /** D-02/U-02, required case (e): the switch's status flash survives the change to an unconditional redirect. */
@@ -306,7 +306,7 @@ class HomeDestinationTest extends TestCase
         $response = $this->actingAs($actor)
             ->post(route('teams.switch'), ['team_id' => $teamBOwner->current_team_id]);
 
-        $response->assertSessionHas('status', __('agents.nav.teams.switched'));
+        $response->assertSessionHas('status', __('shell.nav.teams.switched'));
     }
 
     /**

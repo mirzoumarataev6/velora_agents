@@ -101,7 +101,7 @@ class I18nBundleTest extends TestCase
 
         $response->assertOk();
         $response->assertSee('window.__i18n', false);
-        $response->assertSee('data-i18n="agents.nav.agents"', false);
+        $response->assertSee('data-i18n="shell.nav.agents"', false);
         // The dashboard switcher opts into the client-side swap.
         $response->assertSee('data-locale="ru"', false);
         // Dashboard opts into the reload-after-swap path for deep content.

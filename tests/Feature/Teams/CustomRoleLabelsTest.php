@@ -33,7 +33,7 @@ class CustomRoleLabelsTest extends TestCase
 
         $response->assertOk();
         $response->assertSee('Sales coach');
-        $response->assertDontSee('agents.nav.teams.roles.sales-coach-custom');
+        $response->assertDontSee('shell.nav.teams.roles.sales-coach-custom');
         $this->assertSame('Sales coach', (new TeamInvitationMail($invitation))->content()->with['roleName']);
     }
 
@@ -54,7 +54,7 @@ class CustomRoleLabelsTest extends TestCase
 
         $response->assertOk();
         $response->assertSee('Sales coach');
-        $response->assertDontSee('agents.nav.teams.roles.sales-coach-custom');
+        $response->assertDontSee('shell.nav.teams.roles.sales-coach-custom');
     }
 
     public function test_created_custom_role_can_be_assigned_to_a_member_and_an_invitation(): void

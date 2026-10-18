@@ -96,7 +96,7 @@ class SourceUploadTest extends TestCase
         $response->assertSee(__('bi.data.title'));
         // The section has to be reachable, not merely routable.
         $response->assertSee(route('bi.sources.index'));
-        $response->assertSee(__('agents.nav.bi'));
+        $response->assertSee(__('shell.nav.bi'));
     }
 
     /**

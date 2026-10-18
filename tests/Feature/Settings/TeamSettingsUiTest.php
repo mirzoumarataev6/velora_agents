@@ -29,7 +29,7 @@ class TeamSettingsUiTest extends TestCase
         $response->assertOk();
         $response->assertSee('data-i18n="settings.team.invite_heading"', false);
         foreach (PermissionCatalog::systemRoleSlugs() as $slug) {
-            $response->assertSee(__('agents.nav.teams.roles.'.$slug));
+            $response->assertSee(__('shell.nav.teams.roles.'.$slug));
         }
     }
 

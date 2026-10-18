@@ -1,33 +1,9 @@
 <?php
 
 return [
-    'nav' => [
-        'dashboard' => 'Аналитика',
-        'agents' => 'Агенты',
-        'conversations' => 'Диалоги',
-        'crm' => 'CRM',
-        'projects' => 'Задачи',
-        'bi' => 'Анализ данных',
-        'leads' => 'Заявки',
-        'settings' => 'Настройки',
-        'team_section' => 'Команда',
-        'logout' => 'Выйти',
-        'open_menu' => 'Открыть меню',
-        'toggle_theme' => 'Переключить тему',
-        'collapse_sidebar' => 'Свернуть меню',
-        'expand_sidebar' => 'Развернуть меню',
-        'teams' => [
-            'switcher_label' => 'Команда: :name',
-            'switched' => 'Команда изменена',
-            'roles' => [
-                'owner' => 'Владелец',
-                'admin' => 'Администратор',
-                'operator' => 'Оператор',
-                'viewer' => 'Наблюдатель',
-            ],
-        ],
-    ],
-
+    // 'nav' moved to shell.php (PHASE 2 item 13) — the dashboard shell loads
+    // on every page and used to drag the rest of this ~70KB-per-locale file
+    // along with it. Still `shell.nav.*` in every caller, not renamed.
     'index' => [
         'title' => 'Агенты — Velora Agents',
         /* Screen-reader names for the three counts on an agent card. They

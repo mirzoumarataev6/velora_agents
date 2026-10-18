@@ -165,35 +165,35 @@
                  either state. It carries data-i18n-al so the instant locale
                  swap updates it too. --}}
             @can('analytics.view')
-            <a href="{{ route('dashboard') }}" aria-label="{{ __('agents.nav.dashboard') }}" data-i18n-al="agents.nav.dashboard"
+            <a href="{{ route('dashboard') }}" aria-label="{{ __('shell.nav.dashboard') }}" data-i18n-al="shell.nav.dashboard"
                 data-nav="dashboard"
                 @if (request()->routeIs('dashboard')) aria-current="page" @endif
                 :class="$store.shell.railCollapsed && 'lg:justify-center'"
                 class="nav-item {{ request()->routeIs('dashboard') ? 'nav-item-active' : '' }}">
                 <svg class="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M3 3v18h18M7 15l4-4 3 3 5-6"/></svg>
-                <span data-i18n="agents.nav.dashboard" :class="$store.shell.railCollapsed && 'lg:hidden'">{{ __('agents.nav.dashboard') }}</span>
+                <span data-i18n="shell.nav.dashboard" :class="$store.shell.railCollapsed && 'lg:hidden'">{{ __('shell.nav.dashboard') }}</span>
             </a>
             @endcan
 
             @can('agents.view')
-            <a href="{{ route('agents.index') }}" aria-label="{{ __('agents.nav.agents') }}" data-i18n-al="agents.nav.agents"
+            <a href="{{ route('agents.index') }}" aria-label="{{ __('shell.nav.agents') }}" data-i18n-al="shell.nav.agents"
                 data-nav="agents"
                 @if (request()->routeIs('agents.*')) aria-current="page" @endif
                 :class="$store.shell.railCollapsed && 'lg:justify-center'"
                 class="nav-item {{ request()->routeIs('agents.*') ? 'nav-item-active' : '' }}">
                 <svg class="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 12a4 4 0 100-8 4 4 0 000 8zm0 0c-4.4 0-8 2.24-8 5v2h16v-2c0-2.76-3.6-5-8-5z"/></svg>
-                <span data-i18n="agents.nav.agents" :class="$store.shell.railCollapsed && 'lg:hidden'">{{ __('agents.nav.agents') }}</span>
+                <span data-i18n="shell.nav.agents" :class="$store.shell.railCollapsed && 'lg:hidden'">{{ __('shell.nav.agents') }}</span>
             </a>
             @endcan
 
             @can('conversations.view')
-            <a href="{{ route('conversations.index') }}" aria-label="{{ __('agents.nav.conversations') }}" data-i18n-al="agents.nav.conversations"
+            <a href="{{ route('conversations.index') }}" aria-label="{{ __('shell.nav.conversations') }}" data-i18n-al="shell.nav.conversations"
                 data-nav="conversations"
                 @if (request()->routeIs('conversations.*')) aria-current="page" @endif
                 :class="$store.shell.railCollapsed && 'lg:justify-center'"
                 class="nav-item {{ request()->routeIs('conversations.*') ? 'nav-item-active' : '' }}">
                 <svg class="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8-1.06 0-2.08-.16-3.02-.46L3 21l1.5-4.5C3.55 15.1 3 13.6 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
-                <span data-i18n="agents.nav.conversations" :class="$store.shell.railCollapsed && 'lg:hidden'">{{ __('agents.nav.conversations') }}</span>
+                <span data-i18n="shell.nav.conversations" :class="$store.shell.railCollapsed && 'lg:hidden'">{{ __('shell.nav.conversations') }}</span>
             </a>
             @endcan
 
@@ -204,24 +204,24 @@
                  crm.view, not analytics.view — Stage B's whole point is that
                  CRM access is grantable without BI riding along. --}}
             @can('crm.view')
-            <a href="{{ route('crm.board') }}" aria-label="{{ __('agents.nav.crm') }}" data-i18n-al="agents.nav.crm"
+            <a href="{{ route('crm.board') }}" aria-label="{{ __('shell.nav.crm') }}" data-i18n-al="shell.nav.crm"
                 data-nav="crm"
                 @if (request()->routeIs('crm.*')) aria-current="page" @endif
                 :class="$store.shell.railCollapsed && 'lg:justify-center'"
                 class="nav-item {{ request()->routeIs('crm.*') ? 'nav-item-active' : '' }}">
                 <svg class="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 5h5v14H4zM10 5h5v9h-5zM16 5h4v6h-4z"/></svg>
-                <span data-i18n="agents.nav.crm" :class="$store.shell.railCollapsed && 'lg:hidden'">{{ __('agents.nav.crm') }}</span>
+                <span data-i18n="shell.nav.crm" :class="$store.shell.railCollapsed && 'lg:hidden'">{{ __('shell.nav.crm') }}</span>
             </a>
             @endcan
 
             @can('projects.view')
-            <a href="{{ route('projects.index') }}" aria-label="{{ __('agents.nav.projects') }}" data-i18n-al="agents.nav.projects"
+            <a href="{{ route('projects.index') }}" aria-label="{{ __('shell.nav.projects') }}" data-i18n-al="shell.nav.projects"
                 data-nav="projects"
                 @if (request()->routeIs('projects.*')) aria-current="page" @endif
                 :class="$store.shell.railCollapsed && 'lg:justify-center'"
                 class="nav-item {{ request()->routeIs('projects.*') ? 'nav-item-active' : '' }}">
                 <svg class="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path stroke-linecap="round" d="M9 4v16M13 9h5M13 13h5M5.5 9h1M5.5 13h1"/></svg>
-                <span data-i18n="agents.nav.projects" :class="$store.shell.railCollapsed && 'lg:hidden'">{{ __('agents.nav.projects') }}</span>
+                <span data-i18n="shell.nav.projects" :class="$store.shell.railCollapsed && 'lg:hidden'">{{ __('shell.nav.projects') }}</span>
             </a>
             @endcan
 
@@ -230,13 +230,13 @@
                  whatever the owner uploads. Both are reading rather than working,
                  so they bracket the two sections where work happens. --}}
             @can('analytics.view')
-            <a href="{{ route('bi.dashboards.index') }}" aria-label="{{ __('agents.nav.bi') }}" data-i18n-al="agents.nav.bi"
+            <a href="{{ route('bi.dashboards.index') }}" aria-label="{{ __('shell.nav.bi') }}" data-i18n-al="shell.nav.bi"
                 data-nav="bi"
                 @if (request()->routeIs('bi.*')) aria-current="page" @endif
                 :class="$store.shell.railCollapsed && 'lg:justify-center'"
                 class="nav-item {{ request()->routeIs('bi.*') ? 'nav-item-active' : '' }}">
                 <svg class="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 7c0-1.657 3.582-3 8-3s8 1.343 8 3-3.582 3-8 3-8-1.343-8-3z"/><path stroke-linecap="round" stroke-linejoin="round" d="M20 7v5c0 1.657-3.582 3-8 3s-8-1.343-8-3V7M20 12v5c0 1.657-3.582 3-8 3s-8-1.343-8-3v-5"/></svg>
-                <span data-i18n="agents.nav.bi" :class="$store.shell.railCollapsed && 'lg:hidden'">{{ __('agents.nav.bi') }}</span>
+                <span data-i18n="shell.nav.bi" :class="$store.shell.railCollapsed && 'lg:hidden'">{{ __('shell.nav.bi') }}</span>
             </a>
             @endcan
 
@@ -245,7 +245,7 @@
                  change status, delete — so this is crm.view/crm.manage
                  territory, not analytics.*. See LeadPolicy's own docblock. --}}
             @can('crm.view')
-            <a href="{{ route('leads.index') }}" aria-label="{{ __('agents.nav.leads') }}" data-i18n-al="agents.nav.leads"
+            <a href="{{ route('leads.index') }}" aria-label="{{ __('shell.nav.leads') }}" data-i18n-al="shell.nav.leads"
                 data-nav="leads"
                 @if (request()->routeIs('leads.*')) aria-current="page" @endif
                 :class="$store.shell.railCollapsed && 'lg:justify-center'"
@@ -257,29 +257,29 @@
                     <span x-show="$store.shell.count > 0 && $store.shell.railCollapsed" x-cloak
                         class="absolute -right-1 -top-0.5 hidden h-2.5 w-2.5 rounded-full bg-brand ring-2 ring-white dark:ring-night lg:block"></span>
                 </span>
-                <span data-i18n="agents.nav.leads" :class="$store.shell.railCollapsed && 'lg:hidden'">{{ __('agents.nav.leads') }}</span>
+                <span data-i18n="shell.nav.leads" :class="$store.shell.railCollapsed && 'lg:hidden'">{{ __('shell.nav.leads') }}</span>
                 <span x-show="$store.shell.count > 0" x-cloak x-text="$store.shell.count > 99 ? '99+' : $store.shell.count"
                     :class="$store.shell.railCollapsed && 'lg:hidden'"
                     class="nav-unread-count ml-auto" aria-live="polite"></span>
             </a>
             @endcan
 
-            <a href="{{ route('teams.index') }}" aria-label="{{ __('agents.nav.team_section') }}" data-i18n-al="agents.nav.team_section"
+            <a href="{{ route('teams.index') }}" aria-label="{{ __('shell.nav.team_section') }}" data-i18n-al="shell.nav.team_section"
                 data-nav="teams"
                 @if (request()->routeIs('teams.*')) aria-current="page" @endif
                 :class="$store.shell.railCollapsed && 'lg:justify-center'"
                 class="nav-item {{ request()->routeIs('teams.*') ? 'nav-item-active' : '' }}">
                 <svg class="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3 19v-2a6 6 0 0 1 12 0v2H3zM17 6a3 3 0 0 1 0 6m1 2a5 5 0 0 1 3 5"/></svg>
-                <span data-i18n="agents.nav.team_section" :class="$store.shell.railCollapsed && 'lg:hidden'">{{ __('agents.nav.team_section') }}</span>
+                <span data-i18n="shell.nav.team_section" :class="$store.shell.railCollapsed && 'lg:hidden'">{{ __('shell.nav.team_section') }}</span>
             </a>
 
-            <a href="{{ route('settings.index') }}" aria-label="{{ __('agents.nav.settings') }}" data-i18n-al="agents.nav.settings"
+            <a href="{{ route('settings.index') }}" aria-label="{{ __('shell.nav.settings') }}" data-i18n-al="shell.nav.settings"
                 data-nav="settings"
                 @if (request()->routeIs('settings.*')) aria-current="page" @endif
                 :class="$store.shell.railCollapsed && 'lg:justify-center'"
                 class="nav-item {{ request()->routeIs('settings.*') ? 'nav-item-active' : '' }}">
                 <svg class="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-                <span data-i18n="agents.nav.settings" :class="$store.shell.railCollapsed && 'lg:hidden'">{{ __('agents.nav.settings') }}</span>
+                <span data-i18n="shell.nav.settings" :class="$store.shell.railCollapsed && 'lg:hidden'">{{ __('shell.nav.settings') }}</span>
             </a>
         </nav>
 
@@ -313,7 +313,7 @@
                 <div :class="$store.shell.railCollapsed && 'lg:hidden'" class="contents">
                     @include('partials.dashboard-locale-switcher')
                 </div>
-                <button id="theme-toggle" type="button" aria-label="{{ __('agents.nav.toggle_theme') }}" data-i18n-al="agents.nav.toggle_theme"
+                <button id="theme-toggle" type="button" aria-label="{{ __('shell.nav.toggle_theme') }}" data-i18n-al="shell.nav.toggle_theme"
                     class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-sunk hover:text-ink dark:text-night-muted dark:hover:bg-night-raised dark:hover:text-night-ink">
                     <svg class="h-4 w-4 dark:hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
                     <svg class="hidden h-4 w-4 dark:block" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path stroke-linecap="round" d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
@@ -325,8 +325,8 @@
                      already stacks vertically when collapsed. --}}
                 <button type="button" @click="$store.shell.toggleRail()"
                     :aria-expanded="(! $store.shell.railCollapsed).toString()"
-                    :aria-label="$store.shell.railCollapsed ? @js(__('agents.nav.expand_sidebar')) : @js(__('agents.nav.collapse_sidebar'))"
-                    :title="$store.shell.railCollapsed ? @js(__('agents.nav.expand_sidebar')) : @js(__('agents.nav.collapse_sidebar'))"
+                    :aria-label="$store.shell.railCollapsed ? @js(__('shell.nav.expand_sidebar')) : @js(__('shell.nav.collapse_sidebar'))"
+                    :title="$store.shell.railCollapsed ? @js(__('shell.nav.expand_sidebar')) : @js(__('shell.nav.collapse_sidebar'))"
                     class="hidden h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-sunk hover:text-ink dark:text-night-muted dark:hover:bg-night-raised dark:hover:text-night-ink lg:flex">
                     <svg class="h-4 w-4 transition-transform duration-300" :class="$store.shell.railCollapsed && 'rotate-180'"
                         viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
@@ -341,11 +341,11 @@
                  next. --}}
             <form method="POST" action="{{ route('logout') }}" data-turbo="false" class="mt-1">
                 @csrf
-                <button type="submit" aria-label="{{ __('agents.nav.logout') }}" data-i18n-al="agents.nav.logout"
+                <button type="submit" aria-label="{{ __('shell.nav.logout') }}" data-i18n-al="shell.nav.logout"
                     :class="$store.shell.railCollapsed && 'lg:justify-center'"
                     class="nav-item w-full">
                     <svg class="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
-                    <span data-i18n="agents.nav.logout" :class="$store.shell.railCollapsed && 'lg:hidden'">{{ __('agents.nav.logout') }}</span>
+                    <span data-i18n="shell.nav.logout" :class="$store.shell.railCollapsed && 'lg:hidden'">{{ __('shell.nav.logout') }}</span>
                 </button>
             </form>
         </div>
@@ -361,7 +361,7 @@
              persisting it anyway avoids an identical bar flashing/re-rendering
              on every navigation on mobile. --}}
         <header id="app-mobile-header" data-turbo-permanent class="flex h-16 items-center gap-3 bg-surface px-4 dark:bg-night-card lg:hidden">
-            <button @click="$store.shell.mobileNavOpen = true" type="button" aria-label="{{ __('agents.nav.open_menu') }}" data-i18n-al="agents.nav.open_menu" class="flex h-10 w-10 items-center justify-center rounded-lg text-ink dark:text-night-ink">
+            <button @click="$store.shell.mobileNavOpen = true" type="button" aria-label="{{ __('shell.nav.open_menu') }}" data-i18n-al="shell.nav.open_menu" class="flex h-10 w-10 items-center justify-center rounded-lg text-ink dark:text-night-ink">
                 <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16"/></svg>
             </button>
             <span data-i18n="common.brand" class="text-sm font-semibold">{{ __('common.brand') }}</span>
@@ -396,9 +396,17 @@
      'notifications' joins them here, not via some page's own
      $i18nExtraNamespaces, because the task bell (partials/task-bell.blade.php)
      is itself part of the chrome — it renders on every dashboard page, the
-     same as the lead bell beside it. --}}
+     same as the lead bell beside it.
+
+     'shell', not 'agents' (PHASE 2 item 13): the sidebar/header only ever
+     use agents.nav.* (now shell.nav.*) — every OTHER key in agents.php is
+     specific to the agent builder/list/detail pages, which add 'agents'
+     themselves via their own $i18nExtraNamespaces (AgentController). Pulling
+     the whole ~70KB-per-locale file onto every CRM/BI/Projects/etc. page
+     for 15 nav strings was the single biggest contributor to this app's
+     page weight — see shell.php's own docblock. --}}
 @include('partials.i18n-bundle', [
-    'i18nNamespaces' => array_merge(['nav', 'common', 'agents', 'onboarding', 'notifications'], $i18nExtraNamespaces ?? []),
+    'i18nNamespaces' => array_merge(['nav', 'common', 'shell', 'onboarding', 'notifications'], $i18nExtraNamespaces ?? []),
     'i18nReload' => true,
 ])
 

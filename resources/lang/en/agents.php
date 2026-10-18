@@ -1,32 +1,9 @@
 <?php
 
 return [
-    'nav' => [
-        'dashboard' => 'Analytics',
-        'agents' => 'Agents',
-        'conversations' => 'Conversations',
-        'crm' => 'CRM',
-        'projects' => 'Tasks',
-        'bi' => 'Data analysis',
-        'leads' => 'Leads',
-        'settings' => 'Settings',
-        'team_section' => 'Team',
-        'logout' => 'Log out',
-        'open_menu' => 'Open menu',
-        'toggle_theme' => 'Toggle theme',
-        'collapse_sidebar' => 'Collapse menu',
-        'expand_sidebar' => 'Expand menu',
-        'teams' => [
-            'switcher_label' => 'Team: :name',
-            'switched' => 'Team switched',
-            'roles' => [
-                'owner' => 'Owner',
-                'admin' => 'Admin',
-                'operator' => 'Operator',
-                'viewer' => 'Viewer',
-            ],
-        ],
-    ],
+    // 'nav' moved to shell.php (PHASE 2 item 13) — the dashboard shell loads
+    // on every page and used to drag the rest of this ~70KB-per-locale file
+    // along with it. Still `shell.nav.*` in every caller, not renamed.
 
     'index' => [
         'title' => 'Agents — Velora Agents',

@@ -26,7 +26,7 @@
 <div x-data="teamSwitcher()" class="shrink-0">
     <button type="button" x-ref="trigger" @click.stop="toggle()" @keydown.down.prevent="open ? focusItem(0) : toggle()"
         :aria-expanded="open ? 'true' : 'false'" aria-haspopup="menu"
-        aria-label="{{ __('agents.nav.teams.switcher_label', ['name' => $__currentTeamName]) }}"
+        aria-label="{{ __('shell.nav.teams.switcher_label', ['name' => $__currentTeamName]) }}"
         class="flex w-full min-w-0 items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-sunk dark:hover:bg-night-raised">
         <span class="icon-circle icon-circle-sm shrink-0 text-xs font-semibold" aria-hidden="true">
             {{ mb_strtoupper(mb_substr($__currentTeamName, 0, 1)) }}

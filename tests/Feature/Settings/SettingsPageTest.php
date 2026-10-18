@@ -78,7 +78,7 @@ class SettingsPageTest extends TestCase
         // assert on the generated link rather than a hand-written path.
         $response->assertSee('href="'.route('settings.index').'"', false);
         // The placeholder badge is gone from the chrome entirely.
-        $response->assertDontSee('data-i18n="agents.nav.soon"', false);
+        $response->assertDontSee('data-i18n="shell.nav.soon"', false);
     }
 
     public function test_the_page_embeds_every_locale_for_the_instant_switch(): void
