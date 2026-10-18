@@ -298,4 +298,25 @@ class TaskTest extends TestCase
         $this->get(route('crm.tasks.index'))->assertRedirect();
         $this->post(route('crm.tasks.store'), ['title' => 'x'])->assertRedirect();
     }
+
+    /**
+     * PHASE 1 item 4: `due_at` is a MySQL TIMESTAMP (1970-01-01 00:00:01 to
+     * 2038-01-19 03:14:07 UTC — Task::DUE_AT_RULES). This CRM form writes
+     * the very same column ProjectTaskController does, through a different
+     * door; a date outside that range used to reach the INSERT and come
+     * back as MySQL error 1292 here too.
+     */
+    public function test_an_out_of_range_due_at_is_a_validation_error_not_a_server_error(): void
+    {
+        $owner = User::factory()->create();
+
+        $this->actingAs($owner)
+            ->post(route('crm.tasks.store'), ['title' => 'x', 'due_at' => '9999-12-31'])
+            ->assertSessionHasErrors(['due_at' => __('crm.tasks.due_at_invalid')]);
+
+        $task = Task::factory()->for($owner)->undated()->create(['title' => 'y']);
+        $this->patch(route('crm.tasks.update', $task), ['due_at' => '1900-01-01'])
+            ->assertSessionHasErrors(['due_at' => __('crm.tasks.due_at_invalid')]);
+        $this->assertNull($task->fresh()->due_at);
+    }
 }

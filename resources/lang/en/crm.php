@@ -211,6 +211,7 @@ return [
         'update_failed' => 'Could not update the task. Check your connection and try again.',
         'customer_invalid' => 'Choose an existing customer from your list.',
         'deal_invalid' => 'Choose an existing deal belonging to this customer.',
+        'due_at_invalid' => 'The due date must be between 1970 and 2038.',
         'save_failed' => 'Could not add the task. Please try again.',
         'title' => 'Tasks — Velora Agents',
         'heading' => 'Tasks',

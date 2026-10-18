@@ -87,7 +87,7 @@ class TaskController extends Controller
 
         $data = $request->validate([
             'title' => ['required', 'string', 'max:255'],
-            'due_at' => ['nullable', 'date'],
+            'due_at' => array_merge(['nullable'], Task::DUE_AT_RULES),
             'customer_id' => ['nullable', 'integer', Rule::exists('customers', 'id')->where('team_id', $teamId)],
             'new_customer_name' => ['nullable', 'string', 'max:255'],
             'deal_id' => ['nullable', 'integer', $dealExists],
@@ -96,6 +96,8 @@ class TaskController extends Controller
         ], [
             'customer_id.exists' => __('crm.tasks.customer_invalid'),
             'deal_id.exists' => __('crm.tasks.deal_invalid'),
+            'due_at.after' => __('crm.tasks.due_at_invalid'),
+            'due_at.before' => __('crm.tasks.due_at_invalid'),
         ]);
 
         $task = DB::transaction(function () use ($request, $data, $teamId): Task {
@@ -172,10 +174,13 @@ class TaskController extends Controller
 
         $data = $request->validate([
             'title' => ['nullable', 'string', 'max:255'],
-            'due_at' => ['nullable', 'date'],
+            'due_at' => array_merge(['nullable'], Task::DUE_AT_RULES),
             'done' => ['nullable', 'boolean'],
             'priority' => ['sometimes', 'required', 'string', Rule::in(Task::PRIORITIES)],
             'type' => ['sometimes', 'required', 'string', Rule::in(Task::TYPES)],
+        ], [
+            'due_at.after' => __('crm.tasks.due_at_invalid'),
+            'due_at.before' => __('crm.tasks.due_at_invalid'),
         ]);
 
         $changes = array_filter([

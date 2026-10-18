@@ -123,6 +123,7 @@ return [
         'column_not_empty' => 'Move tasks out of this stage first.',
         'last_column' => 'Keep at least one open stage and one completion stage.',
         'default_board' => 'The default task board stays active so new CRM reminders have a place to go.',
+        'due_at_range' => 'The due date must be between 1970 and 2038.',
     ],
     'defaults' => [
         'board_name' => 'Tasks',

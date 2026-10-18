@@ -29,6 +29,19 @@ class Task extends Model
 
     public const TYPES = ['follow_up', 'call', 'message', 'meeting', 'internal'];
 
+    /**
+     * `due_at` (here and on `project_checklist_items`, the same physical
+     * constraint) is a MySQL TIMESTAMP, not a DATETIME — its real storable
+     * range is 1970-01-01 00:00:01 to 2038-01-19 03:14:07 UTC. Laravel's own
+     * `date` rule accepts any parseable date, including 9999-12-31 or
+     * 1900-01-01, so those reached the INSERT/UPDATE itself and came back as
+     * MySQL error 1292, which every writer surfaced as a bare 500. after:/
+     * before: catch it before the write; a day of margin on each side so an
+     * app-timezone offset can never slide a borderline value back outside
+     * the real range once Carbon re-parses it in UTC for storage.
+     */
+    public const DUE_AT_RULES = ['date', 'after:1970-01-02', 'before:2038-01-18'];
+
     /** @use HasFactory<TaskFactory> */
     use HasFactory;
 

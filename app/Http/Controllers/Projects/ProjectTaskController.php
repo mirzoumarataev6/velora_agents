@@ -36,7 +36,7 @@ class ProjectTaskController extends Controller
     public function store(Request $request, ProjectBoard $board, ProjectAccess $access, ProjectTaskWorkflow $workflow): RedirectResponse|JsonResponse
     {
         $access->authorize($request->user(), $board, PermissionCatalog::PROJECTS_CREATE);
-        $data = $request->validate($this->taskRules($board, false));
+        $data = $request->validate($this->taskRules($board, false), $this->taskMessages());
         $column = ProjectColumn::where('team_id', $board->team_id)->where('board_id', $board->id)
             ->findOrFail($data['column_id']);
         $this->checkCrmAccess($request, $data);
@@ -83,7 +83,7 @@ class ProjectTaskController extends Controller
     public function update(Request $request, ProjectBoard $board, Task $task, ProjectAccess $access, ProjectTaskWorkflow $workflow): RedirectResponse
     {
         $this->taskOnBoard($request, $board, $task, $access, PermissionCatalog::PROJECTS_EDIT);
-        $data = $request->validate($this->taskRules($board, true));
+        $data = $request->validate($this->taskRules($board, true), $this->taskMessages());
         if ($request->boolean('assignees_present')) {
             $data['assignee_ids'] ??= [];
         }
@@ -162,7 +162,10 @@ class ProjectTaskController extends Controller
     public function storeChecklist(Request $request, ProjectBoard $board, Task $task, ProjectAccess $access): RedirectResponse
     {
         $this->taskOnBoard($request, $board, $task, $access, PermissionCatalog::PROJECTS_EDIT);
-        $data = $request->validate(['title' => ['required', 'string', 'max:255'], 'due_at' => ['nullable', 'date']]);
+        $data = $request->validate([
+            'title' => ['required', 'string', 'max:255'],
+            'due_at' => array_merge(['nullable'], Task::DUE_AT_RULES),
+        ], $this->taskMessages());
         $task->checklistItems()->create([
             'team_id' => $board->team_id,
             'board_id' => $board->id,
@@ -214,7 +217,7 @@ class ProjectTaskController extends Controller
             'column_id' => $partial ? ['prohibited'] : ['required', 'integer', Rule::exists('project_columns', 'id')->where('team_id', $board->team_id)->where('board_id', $board->id)],
             'title' => $partial ? ['sometimes', 'required', 'string', 'max:255'] : ['required', 'string', 'max:255'],
             'description' => ['sometimes', 'nullable', 'string', 'max:20000'],
-            'due_at' => ['sometimes', 'nullable', 'date'],
+            'due_at' => array_merge(['sometimes', 'nullable'], Task::DUE_AT_RULES),
             'priority' => ['sometimes', Rule::in(Task::PRIORITIES)],
             'customer_id' => ['sometimes', 'nullable', 'integer', Rule::exists('customers', 'id')->where('team_id', $board->team_id)],
             'deal_id' => ['sometimes', 'nullable', 'integer', Rule::exists('deals', 'id')->where('team_id', $board->team_id)],
@@ -222,6 +225,22 @@ class ProjectTaskController extends Controller
             'assignee_ids.*' => ['integer', 'distinct', Rule::exists('team_user', 'user_id')->where('team_id', $board->team_id)],
             'label_ids' => ['sometimes', 'array'],
             'label_ids.*' => ['integer', 'distinct', Rule::exists('project_labels', 'id')->where('team_id', $board->team_id)->where('board_id', $board->id)],
+        ];
+    }
+
+    /**
+     * One message for both bounds of Task::DUE_AT_RULES — the owner does not
+     * need to know their date failed because it is past a MySQL TIMESTAMP's
+     * ceiling specifically vs its floor, only that the date they typed is
+     * out of range.
+     *
+     * @return array<string, string>
+     */
+    private function taskMessages(): array
+    {
+        return [
+            'due_at.after' => __('projects.errors.due_at_range'),
+            'due_at.before' => __('projects.errors.due_at_range'),
         ];
     }
 
