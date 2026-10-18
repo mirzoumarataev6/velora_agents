@@ -18,8 +18,20 @@
                             <p style="margin:0 0 16px;">
                                 {{ __('settings.team.mail_greeting', ['inviter' => $inviterName, 'team' => $teamName, 'role' => $roleName]) }}
                             </p>
+                            {{-- Follow-up from PHASE 3 item 20 (teams/partials/
+                            management.blade.php): 'd MMMM Y' is not a valid
+                            format string for Carbon's translatedFormat() — it
+                            reuses PHP's own date() tokens, where 'M' (short
+                            month) is a single-letter token; four in a row are
+                            four independent tokens, not one CLDR-style "MMMM"
+                            token. Rendered as the month name repeated and
+                            mashed together: "18 октябряоктябряоктября 2026".
+                            'd F Y' (full month, one token) is what was
+                            actually meant — same fix, same reasoning, as the
+                            on-screen pending-invitation date this email's own
+                            expiry date describes. --}}
                             <p style="margin:0 0 24px;color:#6b7280;font-size:14px;">
-                                {{ __('settings.team.mail_expires', ['date' => $expiresAt->translatedFormat('d MMMM Y')]) }}
+                                {{ __('settings.team.mail_expires', ['date' => $expiresAt->translatedFormat('d F Y')]) }}
                             </p>
                             <table role="presentation" cellpadding="0" cellspacing="0">
                                 <tr>

@@ -226,7 +226,13 @@ class DealBoard
             'in_stage' => $deal->timeInStage(),
             'last_activity' => $lastActivity?->diffForHumans(),
             'deal_date' => ($deal->deal_date ?? $deal->created_at)?->format('Y-m-d'),
-            'deal_date_label' => ($deal->deal_date ?? $deal->created_at)?->translatedFormat('d MMM Y'),
+            // Follow-up from PHASE 3 item 20: 'd MMM Y' was not a valid
+            // translatedFormat() string — three 'M's are three independent
+            // single-letter "short month" tokens, not one CLDR-style "MMM"
+            // token, and rendered as the month name repeated and mashed
+            // together. 'd M Y' is the actual short-month token, matching
+            // next_task.due_at's own 'd M, H:i' a few lines below.
+            'deal_date_label' => ($deal->deal_date ?? $deal->created_at)?->translatedFormat('d M Y'),
             // Full precision, for the client's own "by date" sort — deal_date
             // above only has day granularity, which would tie two same-day
             // deals and leave their order to chance.
@@ -234,7 +240,7 @@ class DealBoard
             // "Закрыто" — only meaningful, and only ever settable, on Оплата.
             'is_closed' => $deal->closed_at !== null,
             'can_be_closed' => $deal->canBeClosed(),
-            'closed_label' => $deal->closed_at?->translatedFormat('d MMM Y'),
+            'closed_label' => $deal->closed_at?->translatedFormat('d M Y'),
             'next_task' => $nextTask ? [
                 'title' => $nextTask->title,
                 'due_at' => $nextTask->due_at?->translatedFormat('d M, H:i'),

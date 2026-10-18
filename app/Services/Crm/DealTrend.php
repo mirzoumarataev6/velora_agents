@@ -116,7 +116,17 @@ class DealTrend
             $bucketStart = $window === '6m' ? $start->addMonths($i) : $start->addWeeks($i);
             $buckets[] = [
                 'key' => $bucketStart->toDateString(),
-                'label' => $window === '6m' ? $bucketStart->translatedFormat('MMM Y') : $bucketStart->translatedFormat('d MMM'),
+                // Follow-up from PHASE 3 item 20: 'MMM'/'MMM' here were not
+                // valid translatedFormat() tokens — Carbon reuses PHP's own
+                // date() tokens, where 'M' (short month) is a single letter;
+                // two or three in a row are that many independent tokens,
+                // not one CLDR-style "MMM" token, and rendered as the month
+                // name repeated and mashed together (e.g. "октябрьоктябрь10
+                // 2026" for a chart axis label). 'M' and 'd M' are the
+                // actual short-month tokens, matching the compact axis-label
+                // space this chart has — and the same 'd M' already used for
+                // a task due date elsewhere (board.blade.php).
+                'label' => $window === '6m' ? $bucketStart->translatedFormat('M Y') : $bucketStart->translatedFormat('d M'),
                 'new_deals' => 0,
                 'won' => 0,
                 'revenue' => 0.0,
