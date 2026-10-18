@@ -39,6 +39,15 @@ MySQL database, and `RefreshDatabase` runs `migrate:fresh` — which destroyed t
 now refuses to run outside sqlite `:memory:`; read its docblock before changing
 anything about test database setup.
 
+## Deployment
+
+`APP_DEBUG` must be `false` wherever this app is reachable by a customer. A debug
+403/500 page renders file paths and, for a failed query, the SQL itself —
+`config('app.debug')` already falls back to `false` if the env var is unset at all,
+and `.env.example` ships `APP_DEBUG=false` for the same reason: that file is what a
+careless deploy copies verbatim into a real `.env`. Set `APP_DEBUG=true` only in a
+local `.env` that never leaves your machine.
+
 ## Architecture
 
 ### Tenancy — read this first
