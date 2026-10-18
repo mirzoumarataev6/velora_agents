@@ -71,7 +71,32 @@
 @vite(['resources/css/app.css', 'resources/js/app.js'])
 @stack('head')
 </head>
-<body class="page-enter min-h-screen bg-paper text-ink antialiased transition-colors duration-300 dark:bg-night dark:text-night-ink"
+<body
+    {{-- Bare, deliberately empty. Alpine's start() does NOT walk the whole
+         document for directives — it queries only registered ROOT selectors
+         (chiefly `[x-data]`), keeps the non-nested ones, and walks from
+         there (alpinejs/src/lifecycle.js). Every directive below that binds
+         straight to `$store.shell` — the sidebar's own `:class`, the burger
+         button's `@click`, this very `@inbox-focus.window` — has no `x-data`
+         of its own BY DESIGN (see the sidebar's comment on why it is a store
+         and not a local x-data component: it has to survive Turbo without
+         re-running). Before this attribute, NOTHING from <body> down to
+         those elements matched a root selector, so none of them were ever
+         walked — the sidebar never got '-translate-x-full' applied and sat
+         permanently open on mobile; the burger's own click handler never
+         fired either. Nested x-data components (the task bell, the locale
+         switcher) worked the whole time regardless, because THEY matched the
+         root selector independently. `data-turbo-permanent` made the mobile
+         bug survive every later Turbo visit too: a permanent element is
+         never removed and reinserted, so the one unbound node from the very
+         first load just stayed unbound forever. This bare x-data makes
+         <body> itself a root — Alpine now walks everything under it on
+         every real load, including a Turbo-permanent node's FIRST one, which
+         is the only one that matters since it's never re-walked after.
+         Confirmed with a real headless browser; see
+         tests/Feature/Frontend/MobileSidebarAlpineBindingTest.php. --}}
+    x-data
+    class="page-enter min-h-screen bg-paper text-ink antialiased transition-colors duration-300 dark:bg-night dark:text-night-ink"
     {{-- The inbox asks for the rail when a conversation is open, so the
          transcript gets the horizontal space instead of the nav labels.
          Closing it returns to the owner's OWN preference rather than forcing
