@@ -89,7 +89,16 @@
                 <div class="flex items-center gap-2 px-1 pb-3">
                     <span class="h-2.5 w-2.5 rounded-full {{ $column->is_done ? 'bg-success' : 'project-dot' }}" aria-hidden="true"></span>
                     <h2 class="min-w-0 flex-1 truncate text-sm font-bold">{{ $column->name }}</h2>
-                    <span data-column-count class="rounded-full bg-surface px-2 py-0.5 text-xs font-semibold text-muted dark:bg-night-card dark:text-night-muted">{{ $pages[$column->id]->total() }}@if ($column->wip_limit) / {{ $column->wip_limit }}@endif</span>
+                    {{-- PHASE 2 item 14: data-column-total/data-wip-limit are
+                    the source of truth drop() below renders FROM — never the
+                    DOM text content directly (overwriting it lost the " /
+                    limit" suffix, since Blade's @if here emits a plain text
+                    run with no element boundary to target separately) and
+                    never a querySelectorAll() count of loaded cards (a
+                    paginated column only has its FIRST page in the DOM, so
+                    that undercounts the true total the moment a column
+                    passes 50 cards). --}}
+                    <span data-column-count data-column-total="{{ $pages[$column->id]->total() }}" data-wip-limit="{{ $column->wip_limit ?? '' }}" class="rounded-full bg-surface px-2 py-0.5 text-xs font-semibold text-muted dark:bg-night-card dark:text-night-muted">{{ $pages[$column->id]->total() }}@if ($column->wip_limit) / {{ $column->wip_limit }}@endif</span>
                 </div>
                 <div data-project-cards data-has-more-pages="{{ $pages[$column->id]->hasMorePages() ? '1' : '0' }}" class="min-h-20 flex-1 space-y-2">
                     @forelse ($column->tasks as $task)
@@ -235,6 +244,15 @@
                 event.dataTransfer.setData('text/plain', String(id));
             },
             over(event) { event.dataTransfer.dropEffect = 'move'; },
+            /** See the comment at its call site in drop() for why this exists. */
+            renderCount(columnId, delta) {
+                const count = document.querySelector(`[data-project-column="${columnId}"] [data-column-count]`);
+                if (!count) return;
+                const total = Math.max(0, parseInt(count.dataset.columnTotal, 10) + delta);
+                count.dataset.columnTotal = String(total);
+                const limit = count.dataset.wipLimit;
+                count.textContent = limit ? `${total} / ${limit}` : String(total);
+            },
             async drop(event, columnId) {
                 if (!this.dragId || this.busy) return;
                 const card = document.querySelector(`[data-project-task-id="${this.dragId}"]`);
@@ -259,6 +277,7 @@
                 }
                 const previousParent = card.parentElement;
                 const previousNext = card.nextElementSibling;
+                const previousColumnId = previousParent.closest('[data-project-column]')?.dataset.projectColumn;
                 if (before && before.parentElement === lane) lane.insertBefore(card, before);
                 else lane.append(card);
                 this.busy = true;
@@ -269,10 +288,22 @@
                         body: JSON.stringify({ column_id: columnId, before_task_id: beforeId }),
                     });
                     if (!response.ok) throw new Error((await response.json().catch(() => ({}))).message || 'move failed');
-                    document.querySelectorAll('[data-project-column]').forEach((column) => {
-                        const count = column.querySelector('[data-column-count]');
-                        if (count) count.firstChild.textContent = String(column.querySelectorAll('[data-project-task-id]').length);
-                    });
+                    // PHASE 2 item 14: the count span renders from its own
+                    // data-column-total/data-wip-limit, bumped by ±1 here —
+                    // never from a fresh DOM query. A column only has its
+                    // first page of cards in the DOM (see item 12 above), so
+                    // querySelectorAll('[data-project-task-id]').length
+                    // silently undercounts a paginated column after every
+                    // single move; and overwriting the span's text wholesale
+                    // (rather than re-deriving "n / limit" from these two
+                    // attributes) is what dropped the " / limit" suffix
+                    // entirely the moment a card moved.
+                    this.renderCount(columnId, +1);
+                    // String comparison deliberately: columnId arrives as a
+                    // number (interpolated from Blade), previousColumnId
+                    // always as a string (dataset is DOMStringMap) — a
+                    // same-column reorder must not touch the count at all.
+                    if (previousColumnId && String(previousColumnId) !== String(columnId)) this.renderCount(previousColumnId, -1);
                     window.showToast?.(@js(__('projects.messages.task_moved')), 'success');
                 } catch (error) {
                     previousParent.insertBefore(card, previousNext);
