@@ -78,9 +78,18 @@ class BoardController extends Controller
     public function show(Request $request, ProjectBoard $board, ProjectAccess $access): View
     {
         $access->authorize($request->user(), $board);
-        $filter = in_array($request->query('filter'), self::FILTERS, true) ? $request->query('filter') : 'all';
-        $search = trim((string) $request->query('q', ''));
-        $search = mb_substr($search, 0, 100);
+        // Both query('filter') and query('q') can come back as an ARRAY
+        // (?filter[]=x, ?q[]=x) — nothing stops a visitor typing that into
+        // the address bar. `in_array($array, self::FILTERS, true)` below is
+        // harmless (an array is never === a string), but `(string) $array`
+        // for `q` is not: PHP raises "Array to string conversion", which
+        // Laravel's error handler turns into a thrown ErrorException — a
+        // bare 500 for what should just mean "no search term". is_string()
+        // first turns either case into the same safe default instead.
+        $rawFilter = $request->query('filter');
+        $filter = is_string($rawFilter) && in_array($rawFilter, self::FILTERS, true) ? $rawFilter : 'all';
+        $rawSearch = $request->query('q');
+        $search = is_string($rawSearch) ? mb_substr(trim($rawSearch), 0, 100) : '';
 
         $columns = $board->columns()->get();
         $pages = collect();
