@@ -79,6 +79,15 @@ class DealStageAutomation
             'customer_id' => $customer->id,
             'conversation_id' => $conversation->id,
             'agent_id' => $conversation->agent_id,
+            // A new card has no items yet — orderPlaced() fills that in once
+            // there is an order — but every list that shows a deal (CRM
+            // board, Projects' linked-deal picker) needs something to print
+            // the instant the card exists. Customer::displayName() is
+            // already the one place that guarantees a non-empty string for
+            // exactly this reason; defaulting to it here is what keeps
+            // `deals.title` from going out blank in the first place, rather
+            // than papering over it wherever it's displayed.
+            'title' => $customer->displayName(),
             'crm_stage_id' => $initial->id,
             'stage' => $initial->name,
             'stage_role' => $initial->role,
@@ -140,9 +149,18 @@ class DealStageAutomation
         $deal = $this->openDealFor($lead);
 
         if ($deal !== null) {
+            // conversationStarted() now seeds every new card's title with the
+            // customer's display name (never blank — see that method), so a
+            // plain `$deal->title ?: $lead->items` would never be true again
+            // and this card would carry the customer's name forever instead
+            // of what they actually ordered. Replace the title whenever it
+            // is still that seeded placeholder, exactly as the old blank
+            // check did before the placeholder existed; leave it alone once
+            // the owner (or a prior order) has put anything else there.
+            $isPlaceholderTitle = blank($deal->title) || $deal->title === $deal->customer?->displayName();
             $deal->forceFill([
                 'lead_id' => $deal->lead_id ?? $lead->id,
-                'title' => $deal->title ?: $lead->items,
+                'title' => $isPlaceholderTitle ? $lead->items : $deal->title,
             ])->save();
         }
 

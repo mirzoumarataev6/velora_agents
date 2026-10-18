@@ -128,6 +128,21 @@ class Customer extends Model
     }
 
     /**
+     * The last four digits of the phone number, masked. A short dropdown
+     * (Projects' customer picker) has no room for the full number, but two
+     * leads named the same thing are otherwise indistinguishable by name
+     * alone — the tail is enough to tell them apart without printing the
+     * whole thing. Null, not '', when there is no phone at all: callers must
+     * be able to tell "nothing to show" from "an empty mask".
+     */
+    public function maskedPhoneTail(): ?string
+    {
+        $digits = preg_replace('/\D/', '', (string) $this->phone) ?? '';
+
+        return $digits === '' ? null : '•••'.substr($digits, -4);
+    }
+
+    /**
      * Every channel type this person has written from, which is the visible
      * pay-off of the merge: two icons here means two threads became one profile.
      *

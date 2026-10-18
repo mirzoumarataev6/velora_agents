@@ -65,6 +65,7 @@ return [
     'linked_crm' => 'CRM link',
     'customer' => 'Customer',
     'deal' => 'Deal',
+    'deal_untitled' => 'Deal #:id',
     'none' => 'None',
     'save' => 'Save',
     'add' => 'Add',

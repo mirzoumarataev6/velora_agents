@@ -119,23 +119,43 @@ class BoardController extends Controller
         $customers = collect();
         $deals = collect();
         if ($selectedTask !== null && $canViewCrm) {
-            $customers = Customer::where('team_id', $board->team_id)->orderByDesc('id')->limit(100)->get(['id', 'name']);
-            $deals = Deal::where('team_id', $board->team_id)->orderByDesc('id')->limit(100)->get(['id', 'title', 'customer_id']);
+            $customers = Customer::where('team_id', $board->team_id)->orderByDesc('id')->limit(100)->get(['id', 'name', 'phone']);
+            // 'customer:id,name' eager-loaded here, not lazy-loaded per row in
+            // the Blade loop below — deals.title is blank on 23 of 71 real
+            // rows (DealStageAutomation used to leave it null; a lingering
+            // one can still reach this list even after that fix), and the
+            // customer's name is what the fallback label needs to tell two
+            // blank deals apart.
+            $deals = Deal::where('team_id', $board->team_id)->with('customer:id,name')
+                ->orderByDesc('id')->limit(100)->get(['id', 'title', 'customer_id']);
             // A long-lived card can refer to a customer outside the recent
             // dropdown slice. Keep that option visible so saving the card
             // never clears its link merely because newer rows arrived.
             if ($selectedTask->customer_id && ! $customers->contains('id', $selectedTask->customer_id)) {
-                $customer = Customer::withTrashed()->where('team_id', $board->team_id)->find($selectedTask->customer_id);
+                $customer = Customer::withTrashed()->where('team_id', $board->team_id)->find($selectedTask->customer_id, ['id', 'name', 'phone']);
                 if ($customer !== null) {
                     $customers->push($customer);
                 }
             }
             if ($selectedTask->deal_id && ! $deals->contains('id', $selectedTask->deal_id)) {
-                $deal = Deal::withTrashed()->where('team_id', $board->team_id)->find($selectedTask->deal_id);
+                $deal = Deal::withTrashed()->where('team_id', $board->team_id)->with('customer:id,name')
+                    ->where('id', $selectedTask->deal_id)->first(['id', 'title', 'customer_id']);
                 if ($deal !== null) {
                     $deals->push($deal);
                 }
             }
+
+            // Computed once here rather than in the Blade loop: a <select>
+            // option is plain text, and this is the one place that already
+            // knows both the untitled fallback and the eager-loaded
+            // customer, so there's no reason to re-derive the same string
+            // twice from two different layers.
+            $customers->each(fn (Customer $customer) => $customer->display_label = trim(
+                $customer->displayName().($customer->maskedPhoneTail() ? ' · '.$customer->maskedPhoneTail() : '')
+            ));
+            $deals->each(fn (Deal $deal) => $deal->display_label = filled($deal->title)
+                ? $deal->title
+                : trim(__('projects.deal_untitled', ['id' => $deal->id]).($deal->customer ? ' — '.$deal->customer->displayName() : '')));
         }
 
         $canEdit = $board->archived_at === null && $request->user()->can(PermissionCatalog::PROJECTS_EDIT, $board);

@@ -65,6 +65,7 @@ return [
     'linked_crm' => 'Связь с CRM',
     'customer' => 'Клиент',
     'deal' => 'Сделка',
+    'deal_untitled' => 'Сделка №:id',
     'none' => 'Не выбрано',
     'save' => 'Сохранить',
     'add' => 'Добавить',

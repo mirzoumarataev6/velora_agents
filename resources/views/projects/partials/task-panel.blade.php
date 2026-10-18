@@ -40,9 +40,22 @@
                 @endif
                 @if ($labels->isNotEmpty())<fieldset><input type="hidden" name="labels_present" value="1" /><legend class="mb-2 text-sm font-medium">{{ __('projects.labels') }}</legend><div class="flex flex-wrap gap-3">@foreach ($labels as $label)<label class="flex items-center gap-1.5 text-sm"><input type="checkbox" name="label_ids[]" value="{{ $label->id }}" @checked($selectedTask->projectLabels->contains('id', $label->id)) /><span class="project-label project-accent-{{ in_array($label->color, ['blue','violet','emerald','amber','rose'], true) ? $label->color : 'blue' }}">{{ $label->name }}</span></label>@endforeach</div></fieldset>@endif
                 @if ($canViewCrm)
-                    <fieldset class="grid gap-3 sm:grid-cols-2"><legend class="mb-2 text-sm font-medium">{{ __('projects.linked_crm') }}</legend>
-                        <label class="text-xs">{{ __('projects.customer') }}<select name="customer_id" class="field mt-1 w-full px-2 py-2 text-sm"><option value="">{{ __('projects.none') }}</option>@foreach ($customers as $customer)<option value="{{ $customer->id }}" @selected($selectedTask->customer_id === $customer->id)>{{ $customer->name }}</option>@endforeach</select></label>
-                        <label class="text-xs">{{ __('projects.deal') }}<select name="deal_id" class="field mt-1 w-full px-2 py-2 text-sm"><option value="">{{ __('projects.none') }}</option>@foreach ($deals as $deal)<option value="{{ $deal->id }}" @selected($selectedTask->deal_id === $deal->id)>{{ $deal->title }}</option>@endforeach</select></label>
+                    {{-- Its own x-data: customerId/dealId only exist to filter the deal
+                    list below and clear a now-mismatched selection, nothing the rest of
+                    the form needs. A stray deal left over from a different customer is
+                    worse than an empty field — the controller's checkCrmAccess() would
+                    reject the mismatch at save time anyway, but silently, after a
+                    confusing round trip; clearing it here is the same rule, visible
+                    immediately instead of as a validation error. The selected option is
+                    always kept visible (third x-show clause) so switching the customer
+                    dropdown and switching it right back never makes the deal that was
+                    already chosen disappear from its own list. --}}
+                    <fieldset class="grid gap-3 sm:grid-cols-2"
+                        x-data="{ customerId: '{{ (string) ($selectedTask->customer_id ?? '') }}', dealId: '{{ (string) ($selectedTask->deal_id ?? '') }}' }"
+                        x-effect="const chosen = dealId !== '' ? $refs.dealSelect.querySelector(`option[value='${dealId}']`) : null; if (chosen && chosen.dataset.customer !== '' && chosen.dataset.customer !== customerId) { dealId = '' }">
+                        <legend class="mb-2 text-sm font-medium">{{ __('projects.linked_crm') }}</legend>
+                        <label class="text-xs">{{ __('projects.customer') }}<select name="customer_id" x-model="customerId" class="field mt-1 w-full px-2 py-2 text-sm"><option value="">{{ __('projects.none') }}</option>@foreach ($customers as $customer)<option value="{{ $customer->id }}">{{ $customer->display_label }}</option>@endforeach</select></label>
+                        <label class="text-xs">{{ __('projects.deal') }}<select name="deal_id" x-ref="dealSelect" x-model="dealId" class="field mt-1 w-full px-2 py-2 text-sm"><option value="">{{ __('projects.none') }}</option>@foreach ($deals as $deal)<option value="{{ $deal->id }}" data-customer="{{ $deal->customer_id }}" x-show="customerId === '' || $el.dataset.customer === customerId || $el.value === dealId">{{ $deal->display_label }}</option>@endforeach</select></label>
                     </fieldset>
                 @endif
                 <button type="submit" class="btn btn-primary">{{ __('projects.save') }}</button>
