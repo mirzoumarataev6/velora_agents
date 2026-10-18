@@ -28,6 +28,7 @@ return [
     'empty_boards_title' => 'Your team’s work starts here',
     'empty_boards_text' => 'Create a board and organize tasks by stage. Boards work in your personal space too.',
     'open_tasks' => 'Open',
+    'members' => 'Members',
     'total_tasks' => 'Total cards',
     'open_board' => 'Open board',
     'back_boards' => 'All boards',

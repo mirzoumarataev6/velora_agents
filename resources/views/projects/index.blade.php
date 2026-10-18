@@ -23,11 +23,13 @@
         </div>
     </section>
 
+    {{-- PHASE 3 item 17: this used to be the SAME string ("Doards") twice —
+    once as an eyebrow, once as the heading right under it. The archived-
+    boards section below has always had just the one heading with no
+    eyebrow; matched that here instead of inventing a second eyebrow
+    phrase this page doesn't otherwise need. --}}
     <div class="flex items-end justify-between gap-4">
-        <div>
-            <p class="text-xs font-bold uppercase tracking-[.18em] text-muted dark:text-night-muted">{{ __('projects.boards') }}</p>
-            <h2 class="mt-1 font-display text-2xl font-semibold">{{ __('projects.boards') }}</h2>
-        </div>
+        <h2 class="font-display text-2xl font-semibold">{{ __('projects.boards') }}</h2>
         <span class="badge badge-neutral">{{ $boards->count() }}</span>
     </div>
 
@@ -56,9 +58,18 @@
                     </div>
                     <h3 class="relative mt-5 font-display text-lg font-semibold">{{ $board->name }}</h3>
                     <p class="relative mt-1 line-clamp-2 min-h-10 text-sm text-muted dark:text-night-muted">{{ $board->description }}</p>
-                    <div class="relative mt-auto flex items-center justify-between border-t border-hairline pt-4 text-xs dark:border-white/10">
-                        <span class="text-muted dark:text-night-muted">{{ __('projects.open_tasks') }} <strong class="ml-1 text-ink dark:text-night-ink">{{ $board->open_tasks_count }}</strong></span>
-                        <span class="inline-flex items-center gap-1 font-semibold text-brand transition-transform group-hover:translate-x-1">{{ __('projects.open_board') }}<x-icon name="arrow-right" size="h-3.5 w-3.5" /></span>
+                    {{-- PHASE 3 item 17: open task count alone didn't say
+                    whether a board needed attention (overdue work) or who it
+                    even belonged to (member count) — both now ride the same
+                    withCount() pass in BoardController, no extra query per
+                    card. --}}
+                    <div class="relative mt-auto flex flex-wrap items-end justify-between gap-x-3 gap-y-2 border-t border-hairline pt-4 text-xs dark:border-white/10">
+                        <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-muted dark:text-night-muted">
+                            <span>{{ __('projects.open_tasks') }} <strong class="text-ink dark:text-night-ink">{{ $board->open_tasks_count }}</strong></span>
+                            <span class="{{ $board->overdue_tasks_count > 0 ? 'font-semibold text-danger dark:text-danger-light' : '' }}">{{ __('projects.overdue') }} <strong class="{{ $board->overdue_tasks_count > 0 ? '' : 'text-ink dark:text-night-ink' }}">{{ $board->overdue_tasks_count }}</strong></span>
+                            <span>{{ __('projects.members') }} <strong class="text-ink dark:text-night-ink">{{ $board->members_count }}</strong></span>
+                        </div>
+                        <span class="inline-flex shrink-0 items-center gap-1 font-semibold text-brand transition-transform group-hover:translate-x-1">{{ __('projects.open_board') }}<x-icon name="arrow-right" size="h-3.5 w-3.5" /></span>
                     </div>
                 </a>
             @endforeach

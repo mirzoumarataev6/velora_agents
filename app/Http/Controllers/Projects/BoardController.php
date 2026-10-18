@@ -40,12 +40,33 @@ class BoardController extends Controller
             $boards->defaultForTeam($teamId, $request->user()->id);
         }
 
+        // PHASE 3 item 17: a 'team' board's real member count is "everyone
+        // on the team" — `project_board_members` is only ever populated for
+        // a PRIVATE board (ProjectBoards::create(), BoardController::
+        // update()), so counting that pivot for a team board would show 0
+        // or some stale leftover instead. One query, shared across every
+        // 'team' board on the page, rather than one team-membership COUNT
+        // per board card.
+        $teamMemberCount = TeamMembership::where('team_id', $teamId)->count();
+
+        $boards = $access->visibleBoards($request->user())
+            ->withCount([
+                'tasks as open_tasks_count' => fn ($query) => $query->whereNull('done_at')->whereNull('archived_at'),
+                // total_tasks_count removed: computed, never rendered anywhere.
+                'tasks as overdue_tasks_count' => fn ($query) => $query->whereNull('done_at')
+                    ->whereNull('archived_at')->whereNotNull('due_at')->where('due_at', '<', now()),
+                'members as members_count',
+            ])
+            ->orderByDesc('updated_at')->get()
+            ->each(function (ProjectBoard $board) use ($teamMemberCount) {
+                if ($board->visibility === 'team') {
+                    $board->members_count = $teamMemberCount;
+                }
+            });
+
         return view('projects.index', [
             'i18nExtraNamespaces' => ['projects'],
-            'boards' => $access->visibleBoards($request->user())
-                ->withCount(['tasks as open_tasks_count' => fn ($query) => $query->whereNull('done_at')->whereNull('archived_at'),
-                    'tasks as total_tasks_count' => fn ($query) => $query->whereNull('archived_at')])
-                ->orderByDesc('updated_at')->get(),
+            'boards' => $boards,
             'archivedBoards' => $request->user()->can(PermissionCatalog::PROJECTS_MANAGE)
                 ? ProjectBoard::where('team_id', $teamId)->whereNotNull('archived_at')->orderByDesc('archived_at')->get()
                 : collect(),
