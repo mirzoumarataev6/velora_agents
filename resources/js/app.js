@@ -763,6 +763,65 @@ document.addEventListener('turbo:load', () => {
 });
 
 /**
+ * PHASE 2 item 8: opening a task card is a Turbo visit to ?task=ID, and
+ * closing it (X, backdrop or Esc, which clicks the X) is a visit back to
+ * the bare board URL — a real navigation each way, not a client-side modal
+ * toggle, so "return focus to the card that opened it" can't just be a
+ * local variable read at close time; the card that needs refocusing lived
+ * on a PAGE the browser has since replaced. Same two-stage candidate/saved
+ * handoff as the scroll restoration above, and for the identical reason —
+ * a ctrl/cmd/shift/middle click opens a new tab without starting a Turbo
+ * visit at all, and a single-stage version would leave this tab's NEXT,
+ * unrelated visit holding a stale card id to refocus.
+ *
+ * Deliberately keyed off `[data-project-task-id]` (the opening CARD),
+ * never off closing the panel: capturing on every data-preserve-scroll
+ * click would also fire for the panel's own X and backdrop links, which
+ * are the closing action, not the opening one, and have no task id to
+ * remember in the first place.
+ */
+let focusCandidateTaskId = null;
+let savedFocusTaskId = null;
+
+document.addEventListener('click', (event) => {
+    focusCandidateTaskId = null;
+    if (event.defaultPrevented || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+    const link = event.target.closest('a[data-preserve-scroll]');
+    if (!link) return;
+    const card = link.closest('[data-project-task-id]');
+    if (card) focusCandidateTaskId = card.dataset.projectTaskId;
+});
+
+document.addEventListener('turbo:before-visit', () => {
+    // Only PROMOTE a candidate — never clear an existing saved id when this
+    // visit isn't one (the common case: this fires again for the CLOSING
+    // navigation itself, which opened no new card and so has no candidate
+    // of its own). An unconditional assignment here wiped the id the open
+    // click had just saved the instant the close click started its own
+    // visit, one line before turbo:load ever got a chance to consume it.
+    if (focusCandidateTaskId) savedFocusTaskId = focusCandidateTaskId;
+    focusCandidateTaskId = null;
+});
+
+/**
+ * Runs on EVERY board/my-work load, not only ones that just closed a panel
+ * — cheap (two querySelectors, at most) and simpler than threading "did
+ * this visit close a panel" through turbo:before-visit as a third piece of
+ * state. If the new page still shows a task dialog (opened a different
+ * card, or the same one), there is nothing to restore: that dialog gets
+ * its own focus below instead, and the saved id is left alone rather than
+ * consumed, so closing THAT one still returns focus to the original card
+ * that started the chain.
+ */
+document.addEventListener('turbo:load', () => {
+    if (!savedFocusTaskId) return;
+    if (document.querySelector('[aria-labelledby="project-task-title"]')) return;
+    const card = savedFocusTaskId;
+    savedFocusTaskId = null;
+    document.querySelector(`[data-project-task-id="${card}"] a[data-preserve-scroll]`)?.focus();
+});
+
+/**
  * Dashboard summary figures counting up from zero on first paint.
  *
  * The one piece of dashboard motion that cannot be done in CSS — there is no

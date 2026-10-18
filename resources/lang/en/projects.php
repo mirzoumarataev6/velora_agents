@@ -21,6 +21,8 @@ return [
     'archived_boards' => 'Archived boards',
     'archived_tasks' => 'Archived cards',
     'delete_item' => 'Delete checklist item',
+    'checklist_mark_done' => 'Mark ":title" done',
+    'checklist_mark_open' => 'Mark ":title" not done',
     'deleted_user' => 'Former member',
     'create_board' => 'Create board',
     'empty_boards_title' => 'Your team’s work starts here',

@@ -21,6 +21,8 @@ return [
     'archived_boards' => 'Архивные доски',
     'archived_tasks' => 'Архив карточек',
     'delete_item' => 'Удалить пункт чеклиста',
+    'checklist_mark_done' => 'Отметить «:title» выполненным',
+    'checklist_mark_open' => 'Снять отметку с «:title»',
     'deleted_user' => 'Бывший участник',
     'create_board' => 'Создать доску',
     'empty_boards_title' => 'Здесь начнётся работа команды',

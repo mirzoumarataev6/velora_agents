@@ -21,6 +21,8 @@ return [
     'archived_boards' => 'Тахтаҳои бойгонӣ',
     'archived_tasks' => 'Бойгонии кортҳо',
     'delete_item' => 'Нест кардани банди рӯйхат',
+    'checklist_mark_done' => '«:title»-ро иҷрошуда қайд кунед',
+    'checklist_mark_open' => 'Қайди иҷрошавии «:title»-ро бекор кунед',
     'deleted_user' => 'Иштирокчии собиқ',
     'create_board' => 'Сохтани тахта',
     'empty_boards_title' => 'Кори даста аз ин ҷо оғоз мешавад',
