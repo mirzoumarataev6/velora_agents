@@ -57,7 +57,7 @@ class ProjectTaskController extends Controller
                 'customer_id' => $data['customer_id'] ?? null,
                 'deal_id' => $data['deal_id'] ?? null,
             ]);
-            $newlyAssigned = $this->syncAssignees($task, $data['assignee_ids'] ?? []);
+            [$newlyAssigned] = $this->syncAssignees($task, $data['assignee_ids'] ?? []);
             // Where in this transaction notifyNewAssignees() is called doesn't
             // affect whether a later failure can undo it: DB::afterCommit
             // queues its callback onto the CURRENT transaction regardless of
@@ -104,18 +104,35 @@ class ProjectTaskController extends Controller
                 }
             }
             $task->forceFill($changes)->save();
+            $eventDetails = ['fields' => array_keys($changes)];
             $newlyAssigned = [];
             if (array_key_exists('assignee_ids', $data)) {
-                $newlyAssigned = $this->syncAssignees($task, $data['assignee_ids']);
+                [$newlyAssigned, $unassigned] = $this->syncAssignees($task, $data['assignee_ids']);
                 // See store() above: called here for locality with the write
                 // it reports on, not because the position within this
                 // transaction changes DB::afterCommit's rollback behaviour.
                 $this->notifyNewAssignees($task, $board, $newlyAssigned, $request->user());
+                // User ids, not names: the activity log resolves them to
+                // CURRENT names at render time (same as actor_id already
+                // does), so a renamed or deleted account never leaves a
+                // stale name frozen in old history.
+                if ($newlyAssigned !== []) {
+                    $eventDetails['assignees_added'] = $newlyAssigned;
+                }
+                if ($unassigned !== []) {
+                    $eventDetails['assignees_removed'] = $unassigned;
+                }
             }
             if (array_key_exists('label_ids', $data)) {
-                $this->syncLabels($task, $data['label_ids']);
+                [$labelsAdded, $labelsRemoved] = $this->syncLabels($task, $data['label_ids']);
+                if ($labelsAdded !== []) {
+                    $eventDetails['labels_added'] = $labelsAdded;
+                }
+                if ($labelsRemoved !== []) {
+                    $eventDetails['labels_removed'] = $labelsRemoved;
+                }
             }
-            $workflow->record($task, $request->user(), 'updated', null, ['fields' => array_keys($changes)]);
+            $workflow->record($task, $request->user(), 'updated', null, $eventDetails);
         });
 
         return back()->with('status', __('projects.messages.task_saved'));
@@ -275,7 +292,9 @@ class ProjectTaskController extends Controller
 
     /**
      * @param  list<int>  $ids
-     * @return list<int> ids present in $ids but not in the set this write replaces
+     * @return array{0: list<int>, 1: list<int>} [added ids, removed ids] — ids
+     *                                            present only in the new set,
+     *                                            and ids present only in the old
      */
     private function syncAssignees(Task $task, array $ids): array
     {
@@ -296,7 +315,12 @@ class ProjectTaskController extends Controller
         // Diffing the before/after sets is the only way to tell "just
         // assigned" apart from "already was, still is": without it, editing
         // a task's title would silently re-notify everyone already on it.
-        return array_values(array_diff($ids, $previousIds));
+        // The same diff doubles as the activity log's assignees_added/
+        // assignees_removed (see update() above).
+        return [
+            array_values(array_diff($ids, $previousIds)),
+            array_values(array_diff($previousIds, $ids)),
+        ];
     }
 
     /**
@@ -362,8 +386,14 @@ class ProjectTaskController extends Controller
         });
     }
 
-    private function syncLabels(Task $task, array $ids): void
+    /**
+     * @param  list<int>  $ids
+     * @return array{0: list<int>, 1: list<int>} [added label ids, removed label ids]
+     */
+    private function syncLabels(Task $task, array $ids): array
     {
+        $previousIds = DB::table('project_task_labels')->where('task_id', $task->id)->pluck('label_id')->all();
+
         DB::table('project_task_labels')->where('task_id', $task->id)->delete();
         if ($ids !== []) {
             DB::table('project_task_labels')->insert(array_map(fn (int $id) => [
@@ -371,5 +401,10 @@ class ProjectTaskController extends Controller
                 'task_id' => $task->id, 'label_id' => $id,
             ], $ids));
         }
+
+        return [
+            array_values(array_diff($ids, $previousIds)),
+            array_values(array_diff($previousIds, $ids)),
+        ];
     }
 }

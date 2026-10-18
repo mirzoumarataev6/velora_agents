@@ -14,6 +14,44 @@
         \Illuminate\Support\Arr::except(request()->query(), ['board', 'task']),
         ['board' => $board, 'task' => $selectedTask]
     ));
+
+    // One line of translated detail per thing an 'updated'/'moved' event
+    // actually changed — "updated the task" alone forced a reader to open
+    // the task's edit history elsewhere to find out what. ids in `details`
+    // (assignees/labels) resolve through $eventUserNames/$eventLabelNames,
+    // batched once in BoardController rather than queried per event here;
+    // a stray id whose row has since been deleted falls back to
+    // deleted_user/deleted_label, the same convention already used for a
+    // departed actor.
+    $eventDetailLines = function ($event) use ($columns, $eventUserNames, $eventLabelNames) {
+        $details = $event->details ?? [];
+        $lines = [];
+        if ($event->kind === 'updated') {
+            if (! empty($details['fields'])) {
+                $fields = array_map(fn ($field) => __('projects.activity_fields.'.$field), $details['fields']);
+                $lines[] = __('projects.activity_log.changed_fields', ['fields' => implode(', ', $fields)]);
+            }
+            foreach (['assignees_added', 'assignees_removed'] as $key) {
+                if (! empty($details[$key])) {
+                    $names = array_map(fn ($id) => $eventUserNames[$id] ?? __('projects.deleted_user'), $details[$key]);
+                    $lines[] = __('projects.activity_log.'.$key, ['names' => implode(', ', $names)]);
+                }
+            }
+            foreach (['labels_added', 'labels_removed'] as $key) {
+                if (! empty($details[$key])) {
+                    $names = array_map(fn ($id) => $eventLabelNames[$id] ?? __('projects.deleted_label'), $details[$key]);
+                    $lines[] = __('projects.activity_log.'.$key, ['names' => implode(', ', $names)]);
+                }
+            }
+        } elseif ($event->kind === 'moved') {
+            $lines[] = __('projects.activity_log.moved_columns', [
+                'from' => $columns->firstWhere('id', $details['from_column_id'] ?? null)?->name ?? '—',
+                'to' => $columns->firstWhere('id', $details['to_column_id'] ?? null)?->name ?? '—',
+            ]);
+        }
+
+        return $lines;
+    };
 @endphp
 <div class="fixed inset-0 z-[80] flex justify-end" x-data @keydown.escape.window="$refs.closePanel.click()">
     {{-- Esc, the X and the backdrop all resolve to the one $boardLink() href
@@ -78,7 +116,7 @@
         <section class="mt-8 border-t border-hairline pt-6 dark:border-white/10">
             <h3 class="font-display text-lg font-semibold">{{ __('projects.activity') }}</h3>
             @if ($canComment && ! $selectedTask->archived_at)<form method="POST" action="{{ route('projects.comments.store', [$board, $selectedTask]) }}" class="mt-4 space-y-2">@csrf<textarea name="body" required maxlength="10000" rows="3" placeholder="{{ __('projects.comment') }}" class="field w-full px-3 py-2 text-sm"></textarea><button type="submit" class="btn btn-primary btn-sm">{{ __('projects.send_comment') }}</button></form>@endif
-            <div class="mt-5 space-y-4">@foreach ($selectedTask->projectEvents as $event)<div class="border-l-2 border-brand/30 pl-3 text-sm"><p><strong>{{ $event->actor?->name ?? __('projects.deleted_user') }}</strong> @if ($event->kind !== 'comment'){{ __('projects.event_'.$event->kind) }}@endif <span class="text-xs text-muted dark:text-night-muted">· {{ $event->created_at?->diffForHumans() }}</span></p>@if ($event->body)<p class="mt-1 whitespace-pre-wrap break-words">{{ $event->body }}</p>@endif</div>@endforeach</div>
+            <div class="mt-5 space-y-4">@foreach ($selectedTask->projectEvents as $event)<div class="border-l-2 border-brand/30 pl-3 text-sm"><p><strong>{{ $event->actor?->name ?? __('projects.deleted_user') }}</strong> @if ($event->kind !== 'comment'){{ __('projects.event_'.$event->kind) }}@endif <span class="text-xs text-muted dark:text-night-muted">· {{ $event->created_at?->diffForHumans() }}</span></p>@if ($event->body)<p class="mt-1 whitespace-pre-wrap break-words">{{ $event->body }}</p>@endif @foreach ($eventDetailLines($event) as $line)<p class="mt-1 text-xs text-muted dark:text-night-muted">{{ $line }}</p>@endforeach</div>@endforeach</div>
         </section>
     </aside>
 </div>

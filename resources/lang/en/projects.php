@@ -101,6 +101,23 @@ return [
     'event_moved' => 'moved the task',
     'event_archived' => 'archived the task',
     'event_restored' => 'restored the task',
+    'deleted_label' => 'Deleted label',
+    'activity_fields' => [
+        'title' => 'title',
+        'description' => 'description',
+        'priority' => 'priority',
+        'due_at' => 'due date',
+        'customer_id' => 'customer',
+        'deal_id' => 'deal',
+    ],
+    'activity_log' => [
+        'changed_fields' => 'Changed: :fields',
+        'assignees_added' => 'Assigned: :names',
+        'assignees_removed' => 'Unassigned: :names',
+        'labels_added' => 'Label added: :names',
+        'labels_removed' => 'Label removed: :names',
+        'moved_columns' => 'Moved: :from → :to',
+    ],
     'messages' => [
         'board_created' => 'Board created.',
         'board_saved' => 'Board updated.',

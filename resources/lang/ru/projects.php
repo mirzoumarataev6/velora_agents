@@ -101,6 +101,23 @@ return [
     'event_moved' => 'переместил(а) задачу',
     'event_archived' => 'архивировал(а) задачу',
     'event_restored' => 'вернул(а) задачу',
+    'deleted_label' => 'Удалённая метка',
+    'activity_fields' => [
+        'title' => 'название',
+        'description' => 'описание',
+        'priority' => 'приоритет',
+        'due_at' => 'срок',
+        'customer_id' => 'клиент',
+        'deal_id' => 'сделка',
+    ],
+    'activity_log' => [
+        'changed_fields' => 'Изменено: :fields',
+        'assignees_added' => 'Назначено: :names',
+        'assignees_removed' => 'Снято назначение: :names',
+        'labels_added' => 'Добавлена метка: :names',
+        'labels_removed' => 'Убрана метка: :names',
+        'moved_columns' => 'Перемещено: :from → :to',
+    ],
     'messages' => [
         'board_created' => 'Доска создана.',
         'board_saved' => 'Доска обновлена.',

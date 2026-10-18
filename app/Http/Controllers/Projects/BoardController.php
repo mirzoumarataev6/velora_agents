@@ -10,6 +10,7 @@ use App\Models\ProjectColumn;
 use App\Models\ProjectLabel;
 use App\Models\Task;
 use App\Models\TeamMembership;
+use App\Models\User;
 use App\Services\Permissions\PermissionCatalog;
 use App\Services\Projects\ProjectAccess;
 use App\Services\Projects\ProjectBoards;
@@ -109,6 +110,31 @@ class BoardController extends Controller
                 'customer:id,name', 'deal:id,title'])
             ->firstOrFail();
 
+        // The activity log's `details` JSON stores raw ids (assignees_added/
+        // _removed, labels_added/_removed) rather than names, the same
+        // choice already made for `actor_id` — a renamed or later-deleted
+        // user/label must not leave a name frozen in old history. Resolved
+        // here in two batched queries (not per-event in the Blade loop,
+        // which would be an id per event — up to 40 of them) into a flat
+        // id => name map; a stray id from an account/label deleted since
+        // falls through to deleted_user/deleted_label at render time.
+        $eventUserNames = collect();
+        $eventLabelNames = collect();
+        if ($selectedTask !== null) {
+            $referencedUserIds = $selectedTask->projectEvents
+                ->flatMap(fn ($event) => array_merge($event->details['assignees_added'] ?? [], $event->details['assignees_removed'] ?? []))
+                ->unique()->values();
+            if ($referencedUserIds->isNotEmpty()) {
+                $eventUserNames = User::whereIn('id', $referencedUserIds)->pluck('name', 'id');
+            }
+            $referencedLabelIds = $selectedTask->projectEvents
+                ->flatMap(fn ($event) => array_merge($event->details['labels_added'] ?? [], $event->details['labels_removed'] ?? []))
+                ->unique()->values();
+            if ($referencedLabelIds->isNotEmpty()) {
+                $eventLabelNames = ProjectLabel::where('board_id', $board->id)->whereIn('id', $referencedLabelIds)->pluck('name', 'id');
+            }
+        }
+
         $memberships = TeamMembership::where('team_id', $board->team_id)->with(['user:id,name,email', 'role:id,team_id,is_owner'])->get();
         $viewRoleIds = DB::table('role_permission')->whereIn('role_id', $memberships->pluck('role_id'))
             ->where('permission', PermissionCatalog::PROJECTS_VIEW)->pluck('role_id')->all();
@@ -171,6 +197,8 @@ class BoardController extends Controller
             'labels' => $board->labels()->orderBy('name')->get(),
             'members' => $members,
             'selectedTask' => $selectedTask,
+            'eventUserNames' => $eventUserNames,
+            'eventLabelNames' => $eventLabelNames,
             'archivedCount' => Task::where('team_id', $board->team_id)
                 ->where('project_board_id', $board->id)->whereNotNull('archived_at')->count(),
             'filter' => $filter,

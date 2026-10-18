@@ -101,6 +101,23 @@ return [
     'event_moved' => 'вазифаро ҷойиваз кард',
     'event_archived' => 'вазифаро ба бойгонӣ гузошт',
     'event_restored' => 'вазифаро баргардонд',
+    'deleted_label' => 'Нишонаи нест кардашуда',
+    'activity_fields' => [
+        'title' => 'ном',
+        'description' => 'тавсиф',
+        'priority' => 'афзалият',
+        'due_at' => 'муҳлат',
+        'customer_id' => 'муштарӣ',
+        'deal_id' => 'муомила',
+    ],
+    'activity_log' => [
+        'changed_fields' => 'Тағйир ёфт: :fields',
+        'assignees_added' => 'Таъин шуд: :names',
+        'assignees_removed' => 'Таъинот бекор шуд: :names',
+        'labels_added' => 'Нишона илова шуд: :names',
+        'labels_removed' => 'Нишона хориҷ шуд: :names',
+        'moved_columns' => 'Гузаронида шуд: :from → :to',
+    ],
     'messages' => [
         'board_created' => 'Тахта сохта шуд.',
         'board_saved' => 'Тахта нав карда шуд.',
