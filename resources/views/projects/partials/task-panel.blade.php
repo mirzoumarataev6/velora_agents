@@ -126,7 +126,21 @@
                     <label class="text-sm font-medium">{{ __('projects.due_at') }}<input type="datetime-local" name="due_at" value="{{ $selectedTask->due_at?->format('Y-m-d\TH:i') }}" class="field mt-1.5 w-full px-3 py-2" /></label>
                 </div>
                 @if ($canAssign)
-                    <fieldset><input type="hidden" name="assignees_present" value="1" /><legend class="mb-2 text-sm font-medium">{{ __('projects.assignees') }}</legend><div class="grid max-h-32 gap-2 overflow-y-auto rounded-xl border border-hairline p-3 dark:border-hairline sm:grid-cols-2">@foreach ($members as $membership) @if ($board->visibility === 'team' || $board->created_by === $membership->user_id || $board->members->contains('id', $membership->user_id))<label class="flex items-center gap-2 text-sm"><input type="checkbox" name="assignee_ids[]" value="{{ $membership->user_id }}" @checked($selectedTask->assignees->contains('id', $membership->user_id)) />{{ $membership->user?->name }}</label>@endif @endforeach</div></fieldset>
+                    {{-- PHASE 3 item 19: no max-h-32/overflow-y-auto — the
+                    whole <aside> is already its own scroll region (see its
+                    own overflow-y-auto above), so a long member list used to
+                    sit in a scrollbar nested inside a scrollbar, mostly
+                    hidden either way. Letting it flow with the rest of the
+                    panel means a long list is still fully reachable (just
+                    by scrolling the panel like everything else in it)
+                    instead of fighting its parent for scroll gestures.
+                    dark:border-white/10, not dark:border-hairline — the
+                    latter resolves to the SAME light-mode-tuned grey in the
+                    dark theme too (there is no dark override for
+                    --color-hairline), nearly invisible against the dark
+                    card surface; border-white/10 is what every OTHER
+                    bordered divider in this same file already uses. --}}
+                    <fieldset><input type="hidden" name="assignees_present" value="1" /><legend class="mb-2 text-sm font-medium">{{ __('projects.assignees') }}</legend><div class="grid gap-2 rounded-xl border border-hairline p-3 dark:border-white/10 sm:grid-cols-2">@foreach ($members as $membership) @if ($board->visibility === 'team' || $board->created_by === $membership->user_id || $board->members->contains('id', $membership->user_id))<label class="flex items-center gap-2 text-sm"><input type="checkbox" name="assignee_ids[]" value="{{ $membership->user_id }}" @checked($selectedTask->assignees->contains('id', $membership->user_id)) />{{ $membership->user?->name }}</label>@endif @endforeach</div></fieldset>
                 @endif
                 @if ($labels->isNotEmpty())<fieldset><input type="hidden" name="labels_present" value="1" /><legend class="mb-2 text-sm font-medium">{{ __('projects.labels') }}</legend><div class="flex flex-wrap gap-3">@foreach ($labels as $label)<label class="flex items-center gap-1.5 text-sm"><input type="checkbox" name="label_ids[]" value="{{ $label->id }}" @checked($selectedTask->projectLabels->contains('id', $label->id)) /><span class="project-label project-accent-{{ in_array($label->color, ['blue','violet','emerald','amber','rose'], true) ? $label->color : 'blue' }}">{{ $label->name }}</span></label>@endforeach</div></fieldset>@endif
                 @if ($canViewCrm)
