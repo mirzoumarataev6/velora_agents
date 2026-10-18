@@ -236,14 +236,22 @@ What the suite is expected to cover, and where the bar is:
 
 ## House style
 
-The thing that most distinguishes this codebase: **comments explain WHY, including
-what was tried and rejected, and what a decision costs.** Several say "this is
-deliberately not X, because Y" or record a specific incident. Match that. A comment
-restating the code is worse than none; a comment recording why a tempting simpler
-approach is wrong is the most valuable thing in the file.
+**Comments are short Russian notes: what the code does and where it is used, 1-2
+lines, plain and direct — as if the owner wrote them for themselves.** Add one above
+every class and every non-trivial function/method that has none; skip trivial
+getters/setters/constructors.
 
-Also: Russian and English comments coexist (newer code is English). Blade views carry
-substantial design rationale in `{{-- --}}` blocks — read them before restyling.
-Honest over convenient: prefer telling the owner what went wrong and what it cost
-(rows skipped, values rejected, a format assumed) over quietly producing something
-that looks fine.
+The thing that most distinguishes this codebase: **comments explain WHY, including
+what was tried and rejected, and what a decision costs.** Preserve that fact in a
+single line starting with "Почему так:" — a rejected alternative, an incident, a
+security property, a cost. A comment restating the code is worse than none; a
+comment recording why a tempting simpler approach is wrong is the most valuable
+thing in the file. (Example: `tests/TestCase::guardAgainstRunningOnARealDatabase()`
+exists because bare `php artisan test` once wiped the local database — that fact
+must survive any rewrite.)
+
+Blade views carry substantial design rationale in `{{-- --}}` blocks — read them
+before restyling; keep the "Почему так:" facts even when trimming the prose around
+them. Honest over convenient: prefer telling the owner what went wrong and what it
+cost (rows skipped, values rejected, a format assumed) over quietly producing
+something that looks fine.
