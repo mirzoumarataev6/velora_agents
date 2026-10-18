@@ -1,8 +1,9 @@
 # Projects hardening — final report
 
 Branch: `codex/projects-hardening`, pushed, **not merged**. All 21 items are
-done. Each item is one commit; `composer run test` is green after every
-commit (full suite, 2605 tests as of the last one).
+done, plus a follow-up fixing the same date-format bug in four more places
+outside Projects (see below). Each item is one commit; `composer run test`
+is green after every commit (full suite, 2608 tests as of the last one).
 
 ## Final report: item → commit → test → what I saw in the browser
 
@@ -30,19 +31,22 @@ commit (full suite, 2605 tests as of the last one).
 | 20 | Garbled invitation date; invite form defaults to Owner | `98aaabf` | `TeamInvitePageTest` | **Yes.** Reproduced the garbled date directly against Carbon before fixing (`now()->translatedFormat('d MMM Y')` → `"18 октябряоктября10 2026"`). Screenshotted the team page after: "Истекает 23 октября 2026" (clean), and the invite role `<select>` defaulting to "Наблюдатель" (Viewer), confirmed via the DOM's `option:checked`. |
 | 21 | Zero-width/invisible characters in names | `0a07247` | `InvisibleCharactersTest`, `ProjectInvisibleCharactersTest` | Not browser-tested (a paste-based repro has no reliable headless-Chromium equivalent); covered by direct unit tests against the stripping function (11 invisible-character variants) and feature tests against all 7 write paths (task/board/column/label, create and update). |
 
-## Found but explicitly out of scope — not fixed
+## Follow-up (done): the same date-format bug elsewhere
 
 While fixing item 20's garbled-date bug, grepped for the same broken
-`translatedFormat('d MMM...')` pattern elsewhere and found it in **four more
-places**, none of them under Projects:
+`translatedFormat('d MMM...')` pattern elsewhere and found it in four more
+places, none of them under Projects — initially left alone and flagged here
+as out of scope. Asked to continue in a later turn, with nothing else left
+on the original 21-item list, so fixed these too: commit `128f191`,
+`tests/Feature/Crm/DateFormatFollowUpTest.php`. Reproduced each directly
+against Carbon before fixing (see the commit message for the exact garbled
+output); confirmed via `grep` afterward that no
+`translatedFormat('...MMM...'/'...DD...'/'...YYYY...')` instance remains
+anywhere in the codebase.
 
-- `resources/views/emails/team-invitation.blade.php:22` — `'d MMMM Y'`
-- `app/Services/Crm/DealTrend.php:119` — `'MMM Y'` and `'d MMM'` (two bugs on one line)
-- `app/Services/Crm/DealBoard.php:229` and `:237` — `'d MMM Y'`
-
-Same bug, same fix (`'d F Y'` / `'d MMMM'` → `'d F'`), but these are CRM
-code, outside this pass's stated scope (Projects hardening). Left alone;
-flagging here rather than silently expanding scope.
+- `resources/views/emails/team-invitation.blade.php` — `'d MMMM Y'` → `'d F Y'`
+- `app/Services/Crm/DealTrend.php` — `'MMM Y'` → `'M Y'`, `'d MMM'` → `'d M'`
+- `app/Services/Crm/DealBoard.php` (×2) — `'d MMM Y'` → `'d M Y'`
 
 ## Notes for whoever picks this up
 
