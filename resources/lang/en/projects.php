@@ -145,6 +145,7 @@ return [
         'due_at_range' => 'The due date must be between 1970 and 2038.',
         'duplicate_column_name' => 'This board already has a stage with that name.',
         'duplicate_label_name' => 'This board already has a label with that name.',
+        'drop_needs_target' => 'This stage has more cards on later pages — drop the card on a specific card, not empty space.',
     ],
     'defaults' => [
         'board_name' => 'Tasks',

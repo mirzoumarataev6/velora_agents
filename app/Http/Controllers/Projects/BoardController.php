@@ -201,8 +201,23 @@ class BoardController extends Controller
             'board' => $board,
             'columns' => $columns,
             'pages' => $pages,
-            'dragEnabled' => $filter === 'all' && $search === ''
-                && $pages->every(fn ($page) => $page->total() <= self::CARDS_PER_COLUMN),
+            // PHASE 2 item 12: drag used to turn off for the WHOLE board the
+            // moment any one column passed 50 cards, even for a visitor who
+            // never scrolls past page 1 of that column. The real hazard was
+            // never "more than 50 cards exist" — it's dropping into a
+            // column's EMPTY tail space when more pages of it are hidden,
+            // where the server (which sees the true full-column order, not
+            // just this page) would place the card at the column's actual
+            // end rather than where it visually landed. That one case is
+            // guarded client-side instead (board.blade.php's drop(), keyed
+            // off data-has-more-pages) — dropping ONTO a visible card is
+            // exact regardless of how many more are hidden beyond it, so
+            // disabling the rest of the board for that was punishing moves
+            // that were always going to be correct. filter/search are the
+            // one case still disabled outright: the visible set doesn't
+            // match the column's on-screen order at all then (PRJ's own
+            // move_hint already explains why).
+            'dragEnabled' => $filter === 'all' && $search === '',
             'labels' => $board->labels()->orderBy('name')->get(),
             'members' => $members,
             'selectedTask' => $selectedTask,

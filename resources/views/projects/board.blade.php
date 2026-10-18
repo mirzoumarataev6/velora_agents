@@ -91,7 +91,7 @@
                     <h2 class="min-w-0 flex-1 truncate text-sm font-bold">{{ $column->name }}</h2>
                     <span data-column-count class="rounded-full bg-surface px-2 py-0.5 text-xs font-semibold text-muted dark:bg-night-card dark:text-night-muted">{{ $pages[$column->id]->total() }}@if ($column->wip_limit) / {{ $column->wip_limit }}@endif</span>
                 </div>
-                <div data-project-cards class="min-h-20 flex-1 space-y-2">
+                <div data-project-cards data-has-more-pages="{{ $pages[$column->id]->hasMorePages() ? '1' : '0' }}" class="min-h-20 flex-1 space-y-2">
                     @forelse ($column->tasks as $task)
                         <article data-project-task-id="{{ $task->id }}" data-move-url="{{ route('projects.tasks.move', [$board, $task]) }}"
                             @if ($canEdit && $dragEnabled) draggable="true" @dragstart="start($event, {{ $task->id }})" @dragend="dragId = null" @endif
@@ -242,6 +242,21 @@
                 const before = event.target.closest('[data-project-task-id]');
                 if (!card || !lane || before === card) return;
                 const beforeId = before?.parentElement === lane ? before.dataset.projectTaskId : null;
+                // PHASE 2 item 12: dropping onto a specific visible card is
+                // exact no matter how many more cards this column has beyond
+                // the current page — the server resolves position among the
+                // column's REAL full sibling order, not just what's on
+                // screen. Dropping into the lane's empty TAIL space (no
+                // specific card under the cursor) is only as exact as "the
+                // end of the column" — true when this is the column's last
+                // page, wrong (silently jumps past every hidden card) when
+                // it isn't. Rejected rather than guessed; the visible pages
+                // this board already supports (the column's own pagination
+                // links) are how to reach a column's true end to drop there.
+                if (beforeId === null && lane.dataset.hasMorePages === '1') {
+                    window.showToast?.(@js(__('projects.errors.drop_needs_target')), 'error');
+                    return;
+                }
                 const previousParent = card.parentElement;
                 const previousNext = card.nextElementSibling;
                 if (before && before.parentElement === lane) lane.insertBefore(card, before);

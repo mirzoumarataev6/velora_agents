@@ -251,12 +251,22 @@ class ProjectBoardTest extends TestCase
         $this->assertStringContainsString('Card 01', $first->getContent());
         $this->assertStringNotContainsString('Card 55', $first->getContent());
         $this->assertSame(50, substr_count($first->getContent(), '<article data-project-task-id='));
-        $this->assertStringNotContainsString('draggable="true"', $first->getContent());
-        $this->assertStringContainsString(__('projects.move_hint'), $first->getContent());
+        // PHASE 2 item 12: a column over 50 cards used to turn drag off for
+        // the WHOLE board. Dropping onto a specific visible card is exact
+        // regardless of how many more are hidden beyond it — only the
+        // column's own empty tail space is ambiguous once it's paginated,
+        // and that is guarded client-side (data-has-more-pages) rather than
+        // by disabling drag outright. See ProjectBoardDragPaginationTest.
+        $this->assertStringContainsString('draggable="true"', $first->getContent());
+        $this->assertStringContainsString('data-has-more-pages="1"', $first->getContent());
+        $this->assertStringContainsString(__('projects.drag_hint'), $first->getContent());
 
         $second = $this->get(route('projects.boards.show', [$board, 'column_'.$column->id => 2]))->assertOk();
         $this->assertStringContainsString('Card 55', $second->getContent());
         $this->assertStringNotContainsString('Card 01', $second->getContent());
+        // Page 2 is this column's LAST page — nothing is hidden beyond its
+        // own tail, so dropping into its empty space is unambiguous.
+        $this->assertStringContainsString('data-has-more-pages="0"', $second->getContent());
     }
 
     public function test_manager_can_reorder_stages_without_changing_task_links(): void
