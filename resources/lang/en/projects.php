@@ -98,6 +98,7 @@ return [
     'my_work_empty' => 'No open tasks created by you or assigned to you yet.',
     'drag_hint' => 'Drag cards between stages or choose a stage inside a card.',
     'move_hint' => 'Open a card to change its stage. Dragging is available when all cards are visible without filters.',
+    'unsaved_changes_confirm' => 'You have unsaved changes. Close this card without saving?',
     'event_created' => 'created the task',
     'event_updated' => 'updated the task',
     'event_moved' => 'moved the task',

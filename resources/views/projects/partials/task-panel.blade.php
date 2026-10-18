@@ -79,22 +79,45 @@
             if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
             else if (! event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
         },
+        // PHASE 2 item 16: a confirm() prompt, not autosave-on-blur. This
+        // form saves as ONE PATCH on an explicit Save click (see its own
+        // action below), and autosave would mean deciding what a partial,
+        // field-by-field save means for the single workflow 'updated'
+        // event PHASE 2 item 7 just taught to describe what changed in
+        // one coherent sentence, and for the assignee-notification diff
+        // (ProjectTaskController::syncAssignees) that already depends on
+        // comparing a full before/after set — both would need to become
+        // per-field instead. A confirm() is the smaller, already-idiomatic
+        // change (see teams/index.blade.php, leads/index.blade.php, and
+        // others for the same pattern elsewhere in this app) that still
+        // answers the actual complaint: closing by accident must not
+        // silently discard what was typed. dirty is set by the edit
+        // form's own @input/@change below — never reset on a cancelled
+        // close, since the edits really are still sitting there unsaved.
+        dirty: false,
+        confirmClose(event) {
+            if (this.dirty && ! confirm(@js(__('projects.unsaved_changes_confirm')))) {
+                event.preventDefault();
+            }
+        },
     }"
     x-init="$nextTick(() => $refs.closePanel.focus())"
     @keydown.escape.window="$refs.closePanel.click()"
     @keydown.tab="trap($event)">
     {{-- Esc, the X and the backdrop all resolve to the one $boardLink() href
     (board.blade.php) and the X link below, so Esc clicks that real <a> and
-    gets Turbo's fast visit — PRJ-006 — rather than forcing a full page reload. --}}
-    <a href="{{ $boardLink() }}" data-preserve-scroll class="absolute inset-0 bg-ink/60 backdrop-blur-[2px]" aria-label="{{ __('projects.close') }}"></a>
+    gets Turbo's fast visit — PRJ-006 — rather than forcing a full page reload.
+    confirmClose() runs on both (and therefore on Esc too, which clicks the X)
+    before either is allowed to actually navigate. --}}
+    <a href="{{ $boardLink() }}" data-preserve-scroll @click="confirmClose($event)" class="absolute inset-0 bg-ink/60 backdrop-blur-[2px]" aria-label="{{ __('projects.close') }}"></a>
     <aside role="dialog" aria-modal="true" aria-labelledby="project-task-title" class="relative flex h-full w-full max-w-2xl flex-col overflow-y-auto bg-surface p-5 shadow-2xl dark:bg-night-card sm:p-8">
         <div class="flex items-start justify-between gap-4">
             <div class="min-w-0"><p class="text-xs font-bold uppercase tracking-[.16em] text-brand">{{ $board->name }} / {{ $selectedTask->projectColumn?->name }}</p><h2 id="project-task-title" class="mt-2 break-words font-display text-2xl font-semibold">{{ $selectedTask->title }}</h2></div>
-            <a x-ref="closePanel" href="{{ $boardLink() }}" data-preserve-scroll class="btn btn-ghost btn-sm" aria-label="{{ __('projects.close') }}"><x-icon name="close" size="h-4 w-4" /></a>
+            <a x-ref="closePanel" href="{{ $boardLink() }}" data-preserve-scroll @click="confirmClose($event)" class="btn btn-ghost btn-sm" aria-label="{{ __('projects.close') }}"><x-icon name="close" size="h-4 w-4" /></a>
         </div>
 
         @if ($canEdit && ! $selectedTask->archived_at)
-            <form method="POST" action="{{ route('projects.tasks.update', [$board, $selectedTask]) }}" class="mt-6 space-y-5">
+            <form method="POST" action="{{ route('projects.tasks.update', [$board, $selectedTask]) }}" class="mt-6 space-y-5" @input="dirty = true" @change="dirty = true">
                 @csrf @method('PATCH')
                 <label class="block text-sm font-medium">{{ __('projects.task_title') }}<input name="title" value="{{ $selectedTask->title }}" required maxlength="255" class="field mt-1.5 w-full px-3 py-2" /></label>
                 <label class="block text-sm font-medium">{{ __('projects.task_description') }}<textarea name="description" rows="5" maxlength="20000" class="field mt-1.5 w-full px-3 py-2">{{ $selectedTask->description }}</textarea></label>
