@@ -64,9 +64,14 @@
             </div>
             <div class="w-40 shrink-0">
                 <label for="team-invite-role" class="sr-only" data-i18n="settings.team.role_label">{{ __('settings.team.role_label') }}</label>
+                {{-- PHASE 3 item 20: old('role_id') is null on a fresh load
+                (nothing has been submitted yet), and (int) null === an id
+                is never true — so without a fallback, no <option> here
+                carries `selected` and the browser silently defaults to
+                whichever is FIRST in the list, which used to be Owner. --}}
                 <select id="team-invite-role" name="role_id" required class="field w-full px-3 py-2.5 text-sm">
                     @foreach ($teamRoles as $roleOption)
-                        <option value="{{ $roleOption->id }}" @selected((int) old('role_id') === $roleOption->id)>
+                        <option value="{{ $roleOption->id }}" @selected(old('role_id') !== null ? (int) old('role_id') === $roleOption->id : $roleOption->id === $defaultInviteRoleId)>
                             {{ $roleOption->displayName() }}
                         </option>
                     @endforeach
@@ -95,7 +100,18 @@
                             </p>
                             <p class="mt-0.5 text-xs text-muted dark:text-night-muted">
                                 {{ __('settings.team.pending_invited_by', ['name' => $invitation->inviter?->name ?? '—']) }}
-                                · {{ __('settings.team.pending_expires', ['date' => $invitation->expires_at->translatedFormat('d MMM Y')]) }}
+                                {{-- PHASE 3 item 20: 'd MMM Y' isn't a valid
+                                format string for Carbon's translatedFormat()
+                                — it reuses PHP's own date() tokens, where
+                                'M' (short month) is a SINGLE letter; three
+                                in a row is three independent "short month"
+                                tokens back to back, not one "MMM" token the
+                                way an ICU/CLDR pattern would read it. That
+                                rendered as the month name repeated, mashed
+                                together: "20 октябряоктября10 2026".
+                                'd F Y' (full month, one token) is what was
+                                actually meant. --}}
+                                · {{ __('settings.team.pending_expires', ['date' => $invitation->expires_at->translatedFormat('d F Y')]) }}
                             </p>
                         </div>
                         <form method="POST" action="{{ route('teams.invitations.destroy', $invitation) }}">

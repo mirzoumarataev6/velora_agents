@@ -24,14 +24,29 @@ class TeamController extends Controller
         $canInvite = $collaborative && $user->can('team.members.invite');
         $canManageRoles = $collaborative && $user->can('team.roles.manage');
 
+        $teamRoles = ($canInvite || $canManageRoles)
+            ? Role::where('team_id', $team->id)->orderBy('id')->get()
+                ->filter(fn (Role $role) => app(AuthorizesRoleGrants::class)->canGrant($user, $role))
+            : collect();
+
         return view('teams.index', [
             'i18nExtraNamespaces' => ['settings'],
             'activeTeam' => $team,
             'canViewTeam' => $collaborative && ($canViewMembers || $canInvite || $user->can('team.roles.view')),
-            'teamRoles' => ($canInvite || $canManageRoles)
-                ? Role::where('team_id', $team->id)->orderBy('id')->get()
-                    ->filter(fn (Role $role) => app(AuthorizesRoleGrants::class)->canGrant($user, $role))
-                : collect(),
+            'teamRoles' => $teamRoles,
+            // PHASE 3 item 20: with nothing ever marked `selected`, the
+            // invite form's <select> fell back to the browser's own
+            // default — whichever <option> happens to be FIRST in the DOM,
+            // which is Owner (roles are queried `orderBy('id')`, and Owner
+            // is always the first role a team gets). Handing out the most
+            // privileged role as the silent default on every single invite
+            // is backwards; least-privileged — fewest permissions, Owner
+            // itself excluded outright rather than relying on it never
+            // having the fewest — is what a manager who doesn't change the
+            // dropdown should actually send.
+            'defaultInviteRoleId' => $teamRoles->reject(fn (Role $role) => $role->is_owner)
+                ->sortBy(fn (Role $role) => count($role->permissionKeys()))
+                ->first()?->id ?? $teamRoles->first()?->id,
             'teamMembers' => $canViewMembers
                 ? TeamMembership::where('team_id', $team->id)->with(['user', 'role'])->orderBy('id')->get()
                 : collect(),
