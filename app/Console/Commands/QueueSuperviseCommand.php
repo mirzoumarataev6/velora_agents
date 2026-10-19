@@ -7,7 +7,9 @@ use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Log;
 use Symfony\Component\Process\Process;
+use Throwable;
 
 /**
  * Supervisor for the queue workers, for environments that have no Supervisor:
@@ -90,15 +92,27 @@ class QueueSuperviseCommand extends Command
         while (! $this->stopping) {
             usleep(500_000);
 
-            foreach ($pools as $pool) {
-                // Each pool is judged against its OWN heartbeat: a hung import
-                // must not be read as the customer-facing worker being hung, and
-                // vice versa.
-                $this->superviseChild($pool, WorkerHeartbeat::for($pool));
-            }
+            // Почему так: не ловить исключения тут означало, что переходная
+            // ошибка БД (например, таблица cache на секунду отсутствует во
+            // время migrate:fresh) убивала весь supervise-процесс целиком —
+            // оба воркера молча умирали, и источники знаний зависали в
+            // "pending" навсегда, потому что job просто не подхватывался.
+            try {
+                foreach ($pools as $pool) {
+                    // Each pool is judged against its OWN heartbeat: a hung import
+                    // must not be read as the customer-facing worker being hung, and
+                    // vice versa.
+                    $this->superviseChild($pool, WorkerHeartbeat::for($pool));
+                }
 
-            $this->restartOnCodeChange();
-            $this->runWatchdogPeriodically();
+                $this->restartOnCodeChange();
+                $this->runWatchdogPeriodically();
+            } catch (Throwable $e) {
+                Log::error('queue:supervise tick failed, continuing', [
+                    'exception' => $e,
+                ]);
+                $this->components->error('Supervisor tick failed: '.$e->getMessage().' — continuing.');
+            }
         }
 
         $this->stopWorkers();
