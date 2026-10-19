@@ -1534,6 +1534,13 @@ footer { border-top: 1px solid var(--line); padding: 3rem 0 2.2rem; background: 
                     <li><a href="{{ route('register', ['locale' => $__locale]) }}" data-i18n="landing.footer.register">{{ __('landing.footer.register') }}</a></li>
                 </ul>
             </div>
+            <div class="foot-col">
+                <h2 data-i18n="landing.footer.legal">{{ __('landing.footer.legal') }}</h2>
+                <ul>
+                    <li><a href="{{ route('legal.terms', ['locale' => $__locale]) }}" data-i18n="landing.footer.terms">{{ __('landing.footer.terms') }}</a></li>
+                    <li><a href="{{ route('legal.privacy', ['locale' => $__locale]) }}" data-i18n="landing.footer.privacy">{{ __('landing.footer.privacy') }}</a></li>
+                </ul>
+            </div>
         </div>
         <div class="foot-bottom">
             <span>© {{ date('Y') }} Velora Agents</span>

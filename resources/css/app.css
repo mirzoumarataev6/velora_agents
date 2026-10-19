@@ -2760,6 +2760,95 @@ html.dark {
     text-decoration-color: currentColor;
 }
 
+/* The auth pages are intentionally one column. Depth belongs to the canvas and
+   the card edge; the controls stay quiet so the next action is always obvious. */
+.auth-canvas {
+    isolation: isolate;
+}
+.auth-canvas::before {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background:
+        radial-gradient(circle at 12% 18%, color-mix(in srgb, var(--color-brand) 10%, transparent), transparent 32rem),
+        radial-gradient(circle at 88% 82%, color-mix(in srgb, var(--color-brand) 7%, transparent), transparent 30rem),
+        radial-gradient(color-mix(in srgb, var(--color-ink) 7%, transparent) 0.7px, transparent 0.7px);
+    background-size: auto, auto, 28px 28px;
+    content: '';
+}
+.dark .auth-canvas::before {
+    background:
+        radial-gradient(circle at 12% 18%, color-mix(in srgb, var(--color-brand-light) 12%, transparent), transparent 32rem),
+        radial-gradient(circle at 88% 82%, color-mix(in srgb, var(--color-brand-light) 7%, transparent), transparent 30rem),
+        radial-gradient(color-mix(in srgb, var(--color-night-ink) 7%, transparent) 0.7px, transparent 0.7px);
+    background-size: auto, auto, 28px 28px;
+}
+.auth-panel {
+    isolation: isolate;
+}
+.auth-panel::before {
+    position: absolute;
+    inset: 0 0 auto;
+    height: 3px;
+    background: linear-gradient(90deg, transparent, var(--color-brand), transparent);
+    content: '';
+}
+.auth-panel::after {
+    position: absolute;
+    top: -10rem;
+    right: -7rem;
+    z-index: -1;
+    width: 19rem;
+    height: 19rem;
+    border: 1px solid color-mix(in srgb, var(--color-brand) 11%, transparent);
+    border-radius: 50%;
+    box-shadow: 0 0 0 3.25rem color-mix(in srgb, var(--color-brand) 3%, transparent);
+    pointer-events: none;
+    content: '';
+}
+.dark .auth-panel::after {
+    border-color: color-mix(in srgb, var(--color-brand-light) 17%, transparent);
+    box-shadow: 0 0 0 3.25rem color-mix(in srgb, var(--color-brand-light) 4%, transparent);
+}
+.auth-kicker {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.625rem;
+    color: var(--color-brand-strong);
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+}
+.dark .auth-kicker {
+    color: var(--color-brand-light);
+}
+.auth-kicker-dot {
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    background: var(--color-brand);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-brand) 11%, transparent);
+}
+.auth-panel .field {
+    min-height: 3rem;
+}
+.auth-submit {
+    min-height: 3.25rem;
+    background: linear-gradient(110deg, var(--color-brand-strong), var(--color-azure-700));
+    box-shadow: 0 8px 22px -10px color-mix(in srgb, var(--color-brand) 46%, transparent);
+    transition: transform 180ms ease, box-shadow 180ms ease, background-color 180ms ease;
+}
+.auth-submit:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 12px 26px -10px color-mix(in srgb, var(--color-brand) 55%, transparent);
+}
+@media (prefers-reduced-motion: reduce) {
+    .auth-submit { transition: none; }
+    .auth-submit:hover:not(:disabled) { transform: none; }
+}
+
 /* Auth is the bridge from the landing's signal motif to a quiet working form.
    Keep the expressive treatment in this single panel, not behind input fields. */
 .auth-story {

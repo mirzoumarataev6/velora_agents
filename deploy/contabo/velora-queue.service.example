@@ -1,0 +1,17 @@
+[Unit]
+Description=Velora queue supervisor
+After=network-online.target mysql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=velora
+Group=www-data
+WorkingDirectory=__APP_ROOT__
+ExecStart=/usr/bin/php artisan queue:supervise
+Restart=always
+RestartSec=5
+TimeoutStopSec=1000
+
+[Install]
+WantedBy=multi-user.target

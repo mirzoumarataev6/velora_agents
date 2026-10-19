@@ -32,12 +32,27 @@ class LocaleTest extends TestCase
         $this->get('/ru/login')
             ->assertOk()
             ->assertSee('href="/en/login"', false)
-            ->assertSee('href="/tg/login"', false);
+            ->assertSee('href="/tg/login"', false)
+            ->assertDontSee('data-locale-link', false);
 
         $this->get('/en/register')
             ->assertOk()
             ->assertSee('href="/ru/register"', false)
-            ->assertSee('href="/tg/register"', false);
+            ->assertSee('href="/tg/register"', false)
+            ->assertDontSee('data-locale-link', false);
+    }
+
+    public function test_auth_language_links_render_the_entire_form_in_the_selected_locale(): void
+    {
+        foreach (['login', 'register'] as $page) {
+            foreach (['ru', 'tg', 'en'] as $locale) {
+                $this->get("/{$locale}/{$page}")
+                    ->assertOk()
+                    ->assertSee('<html lang="'.$locale.'">', false)
+                    ->assertSee(__('auth.'.$page.'.title', [], $locale))
+                    ->assertSee(__('auth.'.$page.'.submit', [], $locale));
+            }
+        }
     }
 
     public function test_unsupported_locale_redirects_to_default(): void
@@ -220,6 +235,7 @@ class LocaleTest extends TestCase
             'email' => 'azim@example.com',
             'password' => 'password123',
             'password_confirmation' => 'password123',
+            'terms_accepted' => '1',
         ])->assertRedirect();
 
         $this->assertSame('tg', User::where('email', 'azim@example.com')->first()->locale);
@@ -241,6 +257,7 @@ class LocaleTest extends TestCase
             'email' => 'azim@example.com',
             'password' => 'password123',
             'password_confirmation' => 'password123',
+            'terms_accepted' => '1',
         ])->assertRedirect();
 
         $this->assertSame(SetLocale::DEFAULT_LOCALE, User::where('email', 'azim@example.com')->first()->locale);
@@ -263,6 +280,7 @@ class LocaleTest extends TestCase
             'email' => 'azim@example.com',
             'password' => 'password123',
             'password_confirmation' => 'password123',
+            'terms_accepted' => '1',
         ])->assertRedirect();
 
         $this->assertSame(SetLocale::DEFAULT_LOCALE, User::where('email', 'azim@example.com')->first()->locale);

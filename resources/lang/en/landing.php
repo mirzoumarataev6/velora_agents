@@ -196,5 +196,8 @@ return [
         'login' => 'Log in',
         'register' => 'Create account',
         'built' => 'Built in Dushanbe · answering in three languages',
+        'legal' => 'Legal',
+        'terms' => 'Terms of Service',
+        'privacy' => 'Privacy Policy',
     ],
 ];

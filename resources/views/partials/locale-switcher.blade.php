@@ -1,10 +1,9 @@
 @php
     $__switcherSegments = request()->segments();
     $__flags = ['ru' => '🇷🇺', 'tg' => '🇹🇯', 'en' => '🇬🇧'];
-    // When true (default: auth pages), each item carries data-locale so the
-    // i18n engine intercepts the click and swaps in place. When false (the
-    // landing page), the items are plain <a href> links that navigate normally
-    // — a full page reload, which the heavy hero/Swiper/scroll visuals prefer.
+    // When true, each item carries data-locale so the i18n engine swaps tagged
+    // text in place. Auth pages pass false: their validation messages and other
+    // form text are rendered by Blade and must change together on navigation.
     // The chosen locale still persists: the /{locale}/… navigation runs the
     // SetLocale middleware, which writes it to the session (and user record).
     $instantSwitch = $instantSwitch ?? true;

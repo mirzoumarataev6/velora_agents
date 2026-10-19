@@ -118,6 +118,7 @@ class OnboardingTest extends TestCase
             'email' => 'nadia@example.test',
             'password' => 'secret-password',
             'password_confirmation' => 'secret-password',
+            'terms_accepted' => '1',
         ]);
 
         // A brand-new account has no agent yet, so HomeDestination sends it
@@ -141,6 +142,7 @@ class OnboardingTest extends TestCase
             'email' => 'nadia@example.test',
             'password' => 'secret-password',
             'password_confirmation' => 'secret-password',
+            'terms_accepted' => '1',
         ])->assertSessionHas(AuthController::GREETING_SESSION_KEY, AuthController::GREETING_WELCOME);
     }
 
@@ -194,6 +196,7 @@ class OnboardingTest extends TestCase
             'email' => 'nadia@example.test',
             'password' => 'secret-password',
             'password_confirmation' => 'secret-password',
+            'terms_accepted' => '1',
         ], $xhr);
 
         // The hops fetch() follows and throws away.
@@ -274,6 +277,7 @@ class OnboardingTest extends TestCase
             'email' => Str::slug($name).'@example.test',
             'password' => 'secret-password',
             'password_confirmation' => 'secret-password',
+            'terms_accepted' => '1',
         ], $xhr);
 
         $this->get('/home', $xhr);
@@ -529,6 +533,7 @@ class OnboardingTest extends TestCase
             'email' => 'nadia@example.test',
             'password' => 'secret-password',
             'password_confirmation' => 'secret-password',
+            'terms_accepted' => '1',
         ])->assertRedirect(route('agents.index'));
 
         $this->assertTrue(session(AuthController::ONBOARDING_SESSION_KEY));
@@ -594,6 +599,7 @@ class OnboardingTest extends TestCase
             'email' => 'nadia@example.test',
             'password' => 'secret-password',
             'password_confirmation' => 'secret-password',
+            'terms_accepted' => '1',
         ])->assertRedirect(route('agents.index'));
 
         $this->get(route('agents.index'))->assertSee(__('onboarding.checklist.title'), false);

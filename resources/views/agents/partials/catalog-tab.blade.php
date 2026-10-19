@@ -190,7 +190,7 @@
                                 <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
                                 {{ __('agents.catalog.status_update') }}
                             </button>
-                            <button type="button" @click="destroy()" :disabled="deleting"
+                            <button type="button" @click="deleteCatalog()" :disabled="deleting"
                                 class="flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium text-danger transition-all disabled:opacity-60">
                                 {{ __('agents.catalog.status_delete') }}
                             </button>
@@ -1087,10 +1087,12 @@
                 [...this.photoRemovals].forEach((removal) => this.commitPhotoRemoval(removal.id));
             },
 
-            async destroy() {
+            // Alpine reserves destroy() as a teardown hook. A delete action
+            // with that name runs when navigation removes this component.
+            async deleteCatalog() {
                 if (!confirm(@json(__('agents.catalog.toasts.delete_confirm')))) return;
 
-                // destroy() is about to delete every product (and so every
+                // deleteCatalog() is about to delete every product (and so every
                 // photo) for this agent in one bulk pass. Sending each
                 // pending removal's own DELETE first would just race it —
                 // and arrive after its product/image row is already gone,

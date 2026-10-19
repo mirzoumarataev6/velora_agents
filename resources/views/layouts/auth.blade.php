@@ -88,18 +88,21 @@
     }
 </style>
 </head>
-<body class="page-enter flex min-h-screen flex-col bg-paper text-ink antialiased transition-colors duration-300 dark:bg-night dark:text-night-ink">
+<body class="auth-canvas page-enter flex min-h-screen flex-col bg-paper text-ink antialiased transition-colors duration-300 dark:bg-night dark:text-night-ink">
 
 <a href="#main-content" class="btn btn-primary skip-link">{{ __('common.skip_to_content') }}</a>
 
 {{-- Slim top bar: logo on the left, locale switcher + theme toggle on the right. --}}
-<header class="flex h-16 shrink-0 items-center justify-between px-4 sm:px-6">
-    <a href="{{ route('welcome') }}" data-transition aria-label="{{ __('common.brand') }}" class="flex items-center">
+{{-- The open locale menu extends below the header. Keep the whole header above
+     main's stacking context so the form area cannot intercept menu clicks. --}}
+<header class="relative z-20 flex h-18 shrink-0 items-center justify-between px-5 sm:px-10">
+    <a href="{{ route('welcome') }}" data-transition aria-label="{{ __('common.brand') }}" class="flex items-center gap-2.5">
         <img src="{{ asset('images/brand/gen/mark.webp') }}?v={{ config('agent.brand_mark_version') }}" width="32" height="32" alt="{{ __('common.brand') }}" class="h-8 w-8" decoding="async" />
+        <span class="font-display text-sm font-semibold tracking-tight">{{ __('common.brand') }}</span>
     </a>
 
     <div class="flex items-center gap-2">
-        @include('partials.locale-switcher')
+        @include('partials.locale-switcher', ['instantSwitch' => false])
         <button id="theme-toggle" type="button" aria-label="{{ __('common.toggle_theme') }}" aria-pressed="false"
             class="flex h-9 w-9 items-center justify-center rounded-full bg-white/70 text-ink backdrop-blur-xl transition-all dark:bg-night-raised dark:text-night-ink">
             <svg class="h-4 w-4 dark:hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
@@ -112,15 +115,17 @@
 
 {{-- Single centered column. flex-1 + justify-center vertically centers the card in
      whatever space the top bar leaves, and py-* keeps it scrollable on short viewports. --}}
-<main id="main-content" class="flex flex-1 items-center justify-center px-4 py-10 sm:px-6">
-    <div class="reveal w-full max-w-md">
+<main id="main-content" class="relative z-10 flex flex-1 items-center justify-center px-4 py-10 sm:px-6 sm:py-14">
+    <div class="reveal w-full {{ $cardWidth ?? 'max-w-lg' }}">
         @if (session('status'))
             <div class="mb-6 rounded-2xl border-brand/20 bg-azure-50 px-4 py-3 text-sm font-medium text-brand-strong" role="status">
                 {{ session('status') }}
             </div>
         @endif
 
-        @yield('card')
+        <section class="auth-panel relative overflow-hidden rounded-3xl border border-hairline/70 bg-surface p-6 shadow-e2 sm:p-10 dark:border-night-raised dark:bg-night-card">
+            @yield('card')
+        </section>
     </div>
 </main>
 
@@ -328,7 +333,6 @@
         }, 4000);
     }
 </script>
-@include('partials.i18n-bundle', ['i18nNamespaces' => ['auth', 'nav', 'common']])
 @stack('scripts')
 </body>
 </html>

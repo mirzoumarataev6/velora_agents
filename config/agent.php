@@ -18,6 +18,18 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Providers a team may select in Settings → AI Provider
+    |--------------------------------------------------------------------------
+    |
+    | Kept here (not only in LlmProviderFactory::PROVIDERS) so the settings
+    | FormRequest can validate against it without reaching into a service
+    | class.
+    |
+    */
+    'llm_providers' => ['openai', 'gemini', 'ollama'],
+
+    /*
+    |--------------------------------------------------------------------------
     | Brand mark cache-busting version
     |--------------------------------------------------------------------------
     |
@@ -99,6 +111,28 @@ return [
         'retry_times' => env('GEMINI_RETRY_TIMES', 3),
         'retry_delay_ms' => env('GEMINI_RETRY_DELAY_MS', 500),
         'embedding_batch_size' => env('GEMINI_EMBEDDING_BATCH_SIZE', 20),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Ollama (local models)
+    |--------------------------------------------------------------------------
+    |
+    | No api_key: a local/self-hosted install has nothing to authenticate with.
+    | base_url and chat_model are the two fields a team can override from
+    | Settings → AI Provider (see teams.ai_model / teams.ollama_base_url);
+    | everything else is an operator-level default.
+    |
+    */
+    'ollama' => [
+        'base_url' => env('OLLAMA_BASE_URL', 'http://localhost:11434'),
+        'chat_model' => env('OLLAMA_CHAT_MODEL', 'llama3.1'),
+        'embedding_model' => env('OLLAMA_EMBEDDING_MODEL', 'nomic-embed-text'),
+        'timeout' => env('OLLAMA_TIMEOUT', 30),
+        'connect_timeout' => env('OLLAMA_CONNECT_TIMEOUT', 5),
+        'retry_times' => env('OLLAMA_RETRY_TIMES', 1),
+        'retry_delay_ms' => env('OLLAMA_RETRY_DELAY_MS', 500),
+        'embedding_batch_size' => env('OLLAMA_EMBEDDING_BATCH_SIZE', 20),
     ],
 
     /*

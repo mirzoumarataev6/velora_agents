@@ -29,6 +29,7 @@ class RegisterIntendedRedirectTest extends TestCase
             'email' => 'azim@example.com',
             'password' => 'password123',
             'password_confirmation' => 'password123',
+            'terms_accepted' => '1',
         ]);
 
         $response->assertRedirect(route('settings.index'));
@@ -46,6 +47,7 @@ class RegisterIntendedRedirectTest extends TestCase
             'email' => 'azim@example.com',
             'password' => 'password123',
             'password_confirmation' => 'password123',
+            'terms_accepted' => '1',
         ]);
 
         $response->assertRedirect(route('agents.index'));

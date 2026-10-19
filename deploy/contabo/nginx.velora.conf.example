@@ -1,0 +1,54 @@
+# Replace __DOMAIN__ and __APP_ROOT__ before installing this file on the VPS.
+# Certbot adds the HTTPS listener after DNS points at the server.
+server {
+    listen 80;
+    listen [::]:80;
+    server_name __DOMAIN__;
+    root __APP_ROOT__/public;
+    index index.php;
+
+    # BI accepts files up to 100 MB. Leave room for multipart overhead.
+    client_max_body_size 110m;
+    client_body_timeout 300s;
+
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    # The helper route is reachable only through the loopback listener below.
+    location ^~ /internal/ { return 404; }
+
+    location = /index.php {
+        include fastcgi_params;
+        fastcgi_param SCRIPT_FILENAME $realpath_root/index.php;
+        fastcgi_param DOCUMENT_ROOT $realpath_root;
+        # Laravel currently trusts proxy headers for ngrok in development.
+        # Replace client-supplied values at the public edge on this VPS.
+        fastcgi_param HTTP_X_FORWARDED_PROTO $scheme;
+        fastcgi_param HTTP_X_FORWARDED_HOST $server_name;
+        fastcgi_param HTTP_X_FORWARDED_FOR $remote_addr;
+        fastcgi_pass unix:/run/php/php8.5-fpm.sock;
+    }
+
+    location ~ \.php$ { return 404; }
+    location ~ /\.(?!well-known).* { deny all; }
+}
+
+# Instagram's private-API poller must call Laravel from loopback. Keeping this
+# listener on 127.0.0.1 preserves RestrictToLocalhost's REMOTE_ADDR invariant.
+server {
+    listen 127.0.0.1:8000;
+    server_name localhost;
+    root __APP_ROOT__/public;
+
+    location = /internal/instagram/incoming {
+        client_max_body_size 1m;
+        include fastcgi_params;
+        fastcgi_param SCRIPT_FILENAME $realpath_root/index.php;
+        fastcgi_param SCRIPT_NAME /index.php;
+        fastcgi_param DOCUMENT_ROOT $realpath_root;
+        fastcgi_pass unix:/run/php/php8.5-fpm.sock;
+    }
+
+    location / { return 404; }
+}

@@ -17,7 +17,7 @@ use Illuminate\Support\Str;
  * yet read by anything (Stage 1 is schema-only; a later stage wires
  * Policies to it).
  */
-#[Fillable(['name', 'slug', 'created_by', 'is_personal'])]
+#[Fillable(['name', 'slug', 'created_by', 'is_personal', 'ai_provider', 'ai_model', 'ollama_base_url'])]
 class Team extends Model
 {
     /** @use HasFactory<TeamFactory> */

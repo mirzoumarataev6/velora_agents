@@ -18,11 +18,12 @@
     $initialTab = match (true) {
         $errors->getBag('password')->any(), $errors->getBag('sessions')->any() => 'security',
         $errors->getBag('preferences')->any() => 'preferences',
+        $errors->getBag('ai_provider')->any() => 'ai_provider',
         $errors->getBag('team')->any() => 'team',
         $errors->getBag('account')->any() => 'account',
         default => session('settings_tab', 'profile'),
     };
-    $tabs = ['profile', 'security', 'preferences', 'team', 'account'];
+    $tabs = ['profile', 'security', 'preferences', 'ai_provider', 'team', 'account'];
 @endphp
 
 {{-- Narrower than the 1600px shell on purpose: this page is a column of
@@ -299,6 +300,116 @@
                 </div>
             </section>
 
+            {{-- ══════════════ AI PROVIDER ══════════════ --}}
+            <section x-show="tab === 'ai_provider'" x-cloak class="space-y-6" x-data="aiProviderPanel({
+                    provider: {{ Js::from(old('ai_provider', $activeTeam?->ai_provider ?? config('agent.llm_provider'))) }},
+                    model: {{ Js::from(old('ai_model', $activeTeam?->ai_model ?? '')) }},
+                    ollamaBaseUrl: {{ Js::from(old('ollama_base_url', $activeTeam?->ollama_base_url ?? config('agent.ollama.base_url'))) }},
+                    modelsUrl: {{ Js::from(route('settings.ai-provider.ollama-models')) }},
+                    testUrl: {{ Js::from(route('settings.ai-provider.test')) }},
+                })">
+                <div class="card p-5 sm:p-6">
+                    <h2 class="font-display text-lg font-semibold" data-i18n="settings.ai_provider.heading">{{ __('settings.ai_provider.heading') }}</h2>
+                    <p class="mt-1 text-sm text-muted dark:text-night-muted" data-i18n="settings.ai_provider.description">{{ __('settings.ai_provider.description') }}</p>
+
+                    @if (! $canManageAiProvider)
+                        <p class="mt-4 rounded-xl bg-sunk px-4 py-3 text-sm text-muted dark:bg-night-raised dark:text-night-muted" data-i18n="settings.ai_provider.not_allowed">{{ __('settings.ai_provider.not_allowed') }}</p>
+                    @else
+                        <form method="POST" action="{{ route('settings.ai-provider') }}" class="mt-6 space-y-5">
+                            @csrf
+                            @method('PATCH')
+
+                            <div>
+                                <label for="ai-provider-select" class="block text-sm font-medium" data-i18n="settings.ai_provider.provider_label">{{ __('settings.ai_provider.provider_label') }}</label>
+                                <select id="ai-provider-select" name="ai_provider" x-model="provider" @change="onProviderChange()"
+                                    class="field mt-1.5 w-full px-4 py-2.5 text-sm">
+                                    @foreach ($llmProviders as $providerKey)
+                                        <option value="{{ $providerKey }}">{{ __("settings.ai_provider.providers.$providerKey") }}</option>
+                                    @endforeach
+                                </select>
+                                @error('ai_provider', 'ai_provider')
+                                    <p class="mt-1.5 text-sm text-danger dark:text-danger-light">{{ $message }}</p>
+                                @enderror
+                            </div>
+
+                            {{-- Ollama-only: base URL, plus a model dropdown fed from GET
+                                 ai-provider/ollama-models — falling back to free text when
+                                 that server can't be reached.
+
+                                 Почему так: x-if, not x-show — the two provider branches
+                                 share a field name (ai_model), and x-show only hides with
+                                 CSS, leaving the inactive branch's input in the DOM where a
+                                 browser would still submit it alongside the visible one. --}}
+                            <template x-if="provider === 'ollama'">
+                            <div class="space-y-5 border-l-2 border-hairline pl-4 dark:border-white/10">
+                                <div>
+                                    <label for="ollama-base-url" class="block text-sm font-medium" data-i18n="settings.ai_provider.ollama_base_url_label">{{ __('settings.ai_provider.ollama_base_url_label') }}</label>
+                                    <input id="ollama-base-url" name="ollama_base_url" type="url" x-model="ollamaBaseUrl" @change="fetchModels()"
+                                        placeholder="{{ __('settings.ai_provider.ollama_base_url_placeholder') }}"
+                                        class="field mt-1.5 w-full px-4 py-2.5 text-sm" />
+                                    <p class="mt-1.5 text-xs text-muted dark:text-night-muted" data-i18n="settings.ai_provider.ollama_base_url_help">{{ __('settings.ai_provider.ollama_base_url_help') }}</p>
+                                    @error('ollama_base_url', 'ai_provider')
+                                        <p class="mt-1.5 text-sm text-danger dark:text-danger-light">{{ $message }}</p>
+                                    @enderror
+                                </div>
+
+                                <div>
+                                    <label for="ollama-model-select" class="block text-sm font-medium" data-i18n="settings.ai_provider.model_label">{{ __('settings.ai_provider.model_label') }}</label>
+
+                                    <template x-if="modelsReachable && models.length > 0">
+                                        <select id="ollama-model-select" name="ai_model" x-model="model"
+                                            class="field mt-1.5 w-full px-4 py-2.5 text-sm">
+                                            <option value="">{{ __('settings.ai_provider.model_placeholder') }}</option>
+                                            <template x-for="m in models" :key="m">
+                                                <option :value="m" x-text="m"></option>
+                                            </template>
+                                        </select>
+                                    </template>
+                                    <template x-if="!(modelsReachable && models.length > 0)">
+                                        <input id="ollama-model-select" name="ai_model" type="text" x-model="model"
+                                            placeholder="{{ __('settings.ai_provider.model_placeholder') }}"
+                                            class="field mt-1.5 w-full px-4 py-2.5 text-sm" />
+                                    </template>
+
+                                    <p class="mt-1.5 text-xs text-muted dark:text-night-muted">
+                                        <span x-show="loadingModels" data-i18n="settings.ai_provider.ollama_model_loading">{{ __('settings.ai_provider.ollama_model_loading') }}</span>
+                                        <span x-show="!loadingModels && !modelsReachable" data-i18n="settings.ai_provider.ollama_model_unavailable">{{ __('settings.ai_provider.ollama_model_unavailable') }}</span>
+                                        <span x-show="!loadingModels && modelsReachable && models.length === 0" data-i18n="settings.ai_provider.ollama_model_empty">{{ __('settings.ai_provider.ollama_model_empty') }}</span>
+                                    </p>
+                                </div>
+                            </div>
+                            </template>
+
+                            {{-- OpenAI/Gemini: just the model override, same field, no base URL. --}}
+                            <template x-if="provider !== 'ollama'">
+                            <div>
+                                <label for="ai-model-input" class="block text-sm font-medium" data-i18n="settings.ai_provider.model_label">{{ __('settings.ai_provider.model_label') }}</label>
+                                <input id="ai-model-input" name="ai_model" type="text" x-model="model"
+                                    placeholder="{{ __('settings.ai_provider.model_placeholder') }}"
+                                    class="field mt-1.5 w-full px-4 py-2.5 text-sm" />
+                                <p class="mt-1.5 text-xs text-muted dark:text-night-muted" data-i18n="settings.ai_provider.model_help">{{ __('settings.ai_provider.model_help') }}</p>
+                                @error('ai_model', 'ai_provider')
+                                    <p class="mt-1.5 text-sm text-danger dark:text-danger-light">{{ $message }}</p>
+                                @enderror
+                            </div>
+                            </template>
+
+                            <div class="flex flex-wrap items-center gap-3 pt-1">
+                                <button type="submit" class="btn btn-primary">
+                                    <span data-i18n="settings.actions.save">{{ __('settings.actions.save') }}</span>
+                                </button>
+                                <button type="button" @click="testConnection()" :disabled="testing"
+                                    class="rounded-xl px-5 py-2.5 text-sm font-semibold transition-colors hover:bg-sunk disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-night-raised">
+                                    <span x-show="!testing" data-i18n="settings.ai_provider.test_connection_button">{{ __('settings.ai_provider.test_connection_button') }}</span>
+                                    <span x-show="testing" data-i18n="settings.ai_provider.testing">{{ __('settings.ai_provider.testing') }}</span>
+                                </button>
+                                <span x-show="testResult" :class="testOk ? 'text-success' : 'text-danger dark:text-danger-light'" x-text="testResult" class="text-sm"></span>
+                            </div>
+                        </form>
+                    @endif
+                </div>
+            </section>
+
             {{-- Team work lives on its own page so account preferences stay about this person. --}}
             <section x-show="tab === 'team'" x-cloak class="space-y-6">
                 <div class="card p-5 sm:p-6">
@@ -401,6 +512,82 @@
 
 @push('scripts')
 <script>
+    function aiProviderPanel({ provider, model, ollamaBaseUrl, modelsUrl, testUrl }) {
+        return {
+            provider,
+            model,
+            ollamaBaseUrl,
+            models: [],
+            modelsReachable: false,
+            loadingModels: false,
+            testing: false,
+            testResult: '',
+            testOk: false,
+
+            init() {
+                if (this.provider === 'ollama') this.fetchModels();
+            },
+
+            onProviderChange() {
+                this.testResult = '';
+                if (this.provider === 'ollama' && this.models.length === 0) this.fetchModels();
+            },
+
+            // GET rather than a form submit: this only reads what Ollama has
+            // installed, nothing is saved by looking.
+            async fetchModels() {
+                this.loadingModels = true;
+                this.modelsReachable = false;
+
+                try {
+                    const url = new URL(modelsUrl, window.location.origin);
+                    if (this.ollamaBaseUrl) url.searchParams.set('ollama_base_url', this.ollamaBaseUrl);
+
+                    const response = await fetch(url, { headers: { 'Accept': 'application/json' } });
+                    const data = await response.json();
+
+                    this.models = data.models ?? [];
+                    this.modelsReachable = !!data.reachable;
+                } catch (e) {
+                    this.models = [];
+                    this.modelsReachable = false;
+                } finally {
+                    this.loadingModels = false;
+                }
+            },
+
+            async testConnection() {
+                this.testing = true;
+                this.testResult = '';
+
+                try {
+                    const response = await fetch(testUrl, {
+                        method: 'POST',
+                        headers: {
+                            'Accept': 'application/json',
+                            'Content-Type': 'application/json',
+                            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content ?? '',
+                        },
+                        body: JSON.stringify({
+                            ai_provider: this.provider,
+                            ai_model: this.model,
+                            ollama_base_url: this.ollamaBaseUrl,
+                        }),
+                    });
+
+                    const data = await response.json();
+                    this.testOk = response.ok && data.ok;
+                    this.testResult = data.message;
+                } catch (e) {
+                    this.testOk = false;
+                    this.testResult = {{ Js::from(__('settings.ai_provider.test_failed', ['error' => '—'])) }};
+                } finally {
+                    this.testing = false;
+                }
+            },
+        };
+    }
+
     function settingsPage({ initialTab, deleteOpen, flash }) {
         return {
             tab: initialTab,

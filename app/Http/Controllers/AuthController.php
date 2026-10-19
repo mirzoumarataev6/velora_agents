@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Middleware\SetLocale;
+use App\Http\Requests\RegisterRequest;
 use App\Models\User;
 use App\Services\Teams\HomeDestination;
 use Illuminate\Http\RedirectResponse;
@@ -39,15 +40,9 @@ class AuthController extends Controller
 
     public const GREETING_BACK = 'back';
 
-    public function register(Request $request, HomeDestination $destination): RedirectResponse
+    public function register(RegisterRequest $request, HomeDestination $destination): RedirectResponse
     {
-        $validated = $request->validate([
-            'name' => ['required', 'string', 'max:255'],
-            'email' => ['required', 'string', 'email', 'max:255', 'unique:users,email'],
-            'password' => ['required', 'confirmed', 'min:8'],
-        ], [
-            'email.unique' => __('auth.validation.email_unique'),
-        ]);
+        $validated = $request->validated();
 
         $user = User::create([
             'name' => $validated['name'],
@@ -61,6 +56,9 @@ class AuthController extends Controller
             // made. Tajik is the product default, though, so a never-made
             // choice still gets a legitimate stored value rather than NULL.
             'locale' => session(SetLocale::EXPLICIT_SESSION_KEY) ? session('locale') : SetLocale::DEFAULT_LOCALE,
+            // Фиксируем согласие и версию политик на момент регистрации.
+            'terms_accepted_at' => now(),
+            'terms_version' => RegisterRequest::TERMS_VERSION,
         ]);
 
         Auth::login($user);

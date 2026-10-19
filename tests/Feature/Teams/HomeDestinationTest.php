@@ -117,6 +117,7 @@ class HomeDestinationTest extends TestCase
             'email' => 'nadia@example.test',
             'password' => 'secret-password',
             'password_confirmation' => 'secret-password',
+            'terms_accepted' => '1',
         ]);
 
         $response->assertRedirect(route('agents.index'));

@@ -3,9 +3,14 @@
 namespace App\Http\Controllers;
 
 use App\Http\Middleware\SetLocale;
+use App\Http\Requests\UpdateAiProviderSettingsRequest;
 use App\Models\Agent;
+use App\Models\Team;
 use App\Services\Account\DeletesAccount;
 use App\Services\Account\SharedTeamAccountDeletionException;
+use App\Services\Llm\LlmProviderFactory;
+use App\Services\Permissions\PermissionCatalog;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -13,6 +18,7 @@ use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -42,9 +48,13 @@ class SettingsController extends Controller
     public function index(Request $request): View
     {
         $user = $request->user();
+        $team = Team::find($user->activeTeamId());
 
         return view('settings.index', [
             'i18nExtraNamespaces' => ['settings'],
+            'activeTeam' => $team,
+            'canManageAiProvider' => $user->can(PermissionCatalog::TEAM_SETTINGS_UPDATE),
+            'llmProviders' => config('agent.llm_providers'),
             // Saving here is a small, local confirmation, so the flash is shown
             // as a self-dismissing toast instead of the layout's banner — which
             // would push the whole form down on every save.
@@ -221,6 +231,78 @@ class SettingsController extends Controller
         ])->save();
 
         return response()->json(['theme' => $data['theme']]);
+    }
+
+    /**
+     * Провайдер LLM, модель и base_url Ollama для активной команды.
+     */
+    public function updateAiProvider(UpdateAiProviderSettingsRequest $request): RedirectResponse
+    {
+        $team = Team::findOrFail($request->user()->activeTeamId());
+
+        $team->forceFill($request->teamAttributes())->save();
+
+        return back()->with('status', __('settings.ai_provider.saved'));
+    }
+
+    /**
+     * Пробный запрос к провайдеру с тем, что сейчас введено в форме — ничего
+     * не сохраняет, так что можно проверить Ollama до того, как owner нажмёт
+     * "Save".
+     */
+    public function testAiProviderConnection(Request $request, LlmProviderFactory $factory): JsonResponse
+    {
+        abort_unless($request->user()->can(PermissionCatalog::TEAM_SETTINGS_UPDATE), 403);
+
+        $data = $request->validate([
+            'ai_provider' => ['required', 'string', Rule::in(config('agent.llm_providers'))],
+            'ai_model' => ['nullable', 'string', 'max:100'],
+            'ollama_base_url' => ['nullable', 'string', 'url', 'max:255'],
+        ]);
+
+        $result = $factory->testConnection($data['ai_provider'], $data);
+
+        if (! $result['ok']) {
+            return response()->json([
+                'ok' => false,
+                'message' => __('settings.ai_provider.test_failed', ['error' => $result['error']]),
+            ], 502);
+        }
+
+        return response()->json(['ok' => true, 'message' => __('settings.ai_provider.test_succeeded')]);
+    }
+
+    /**
+     * Модели, установленные в Ollama (GET {base_url}/api/tags) — для
+     * выпадающего списка. Недоступный сервер отдаёт пустой список, а не
+     * ошибку: форма сама откатывается на свободный ввод модели.
+     */
+    public function ollamaModels(Request $request): JsonResponse
+    {
+        abort_unless($request->user()->can(PermissionCatalog::TEAM_SETTINGS_UPDATE), 403);
+
+        $data = $request->validate([
+            'ollama_base_url' => ['nullable', 'string', 'url', 'max:255'],
+        ]);
+
+        $baseUrl = rtrim($data['ollama_base_url'] ?? (string) config('agent.ollama.base_url'), '/');
+
+        try {
+            $response = Http::timeout(5)->acceptJson()->get("{$baseUrl}/api/tags");
+        } catch (ConnectionException) {
+            return response()->json(['models' => [], 'reachable' => false]);
+        }
+
+        if ($response->failed()) {
+            return response()->json(['models' => [], 'reachable' => false]);
+        }
+
+        $models = collect($response->json('models', []))
+            ->pluck('name')
+            ->filter()
+            ->values();
+
+        return response()->json(['models' => $models, 'reachable' => true]);
     }
 
     /**

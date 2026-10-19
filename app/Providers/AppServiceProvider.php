@@ -5,15 +5,16 @@ namespace App\Providers;
 use App\Models\BiDataset;
 use App\Models\BiSource;
 use App\Models\Deal;
+use App\Models\Team;
 use App\Models\User;
 use App\Observers\BiDatasetObserver;
 use App\Observers\BiSourceObserver;
 use App\Observers\DealObserver;
 use App\Observers\UserObserver;
 use App\Services\Database\DriverManager;
-use App\Services\Llm\GeminiProvider;
+use App\Services\Llm\LlmProviderContext;
+use App\Services\Llm\LlmProviderFactory;
 use App\Services\Llm\LlmProviderInterface;
-use App\Services\Llm\OpenAiProvider;
 use App\Services\Llm\UsageRecorder;
 use App\Services\Permissions\RegistersTeamPermissions;
 use App\Services\Quality\FeedbackCadence;
@@ -30,18 +31,9 @@ use Illuminate\Queue\Events\Looping;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
-use InvalidArgumentException;
 
 class AppServiceProvider extends ServiceProvider
 {
-    /**
-     * @var array<string, class-string<LlmProviderInterface>>
-     */
-    protected const LLM_PROVIDERS = [
-        'openai' => OpenAiProvider::class,
-        'gemini' => GeminiProvider::class,
-    ];
-
     /**
      * Register any application services.
      */
@@ -57,23 +49,25 @@ class AppServiceProvider extends ServiceProvider
         // One usage context per request/job, reset between them.
         $this->app->scoped(UsageRecorder::class);
 
+        // Текущая команда для выбора провайдера — see LlmProviderContext.
+        $this->app->scoped(LlmProviderContext::class);
+
         // Built from config rather than autowired: its two thresholds ARE the
         // cadence, and a test that changes them wants the change to take.
         $this->app->bind(FeedbackCadence::class, fn () => FeedbackCadence::fromConfig());
 
+        // Какая команда активна решает LlmProviderFactory: явный контекст
+        // (фоновые задачи, знающие team_id строки — см. HandleIncomingMessageJob)
+        // побеждает, иначе — активная команда вошедшего пользователя, иначе —
+        // глобальный дефолт из config('agent.llm_provider').
         $this->app->bind(LlmProviderInterface::class, function ($app) {
-            $configured = (string) config('agent.llm_provider');
+            $team = $app->make(LlmProviderContext::class)->current();
 
-            $provider = self::LLM_PROVIDERS[$configured] ?? null;
-
-            if ($provider === null) {
-                throw new InvalidArgumentException(
-                    "Unsupported agent.llm_provider [{$configured}]. Supported: "
-                    .implode(', ', array_keys(self::LLM_PROVIDERS)).'.'
-                );
+            if ($team === null && auth()->check()) {
+                $team = Team::find(auth()->user()->activeTeamId());
             }
 
-            return $app->make($provider);
+            return $app->make(LlmProviderFactory::class)->make($team);
         });
 
         $this->app->useLangPath(resource_path('lang'));

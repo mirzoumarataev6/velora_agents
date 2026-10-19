@@ -40,6 +40,7 @@ class LocaleDefaultTest extends TestCase
             'email' => 'new-visitor@example.com',
             'password' => 'password',
             'password_confirmation' => 'password',
+            'terms_accepted' => '1',
         ])->assertRedirect();
 
         $this->assertSame('tg', User::where('email', 'new-visitor@example.com')->first()->locale);
@@ -54,6 +55,7 @@ class LocaleDefaultTest extends TestCase
             'email' => 'ru-visitor@example.com',
             'password' => 'password',
             'password_confirmation' => 'password',
+            'terms_accepted' => '1',
         ])->assertRedirect();
 
         $this->assertSame('ru', User::where('email', 'ru-visitor@example.com')->first()->locale);

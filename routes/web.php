@@ -25,6 +25,7 @@ use App\Http\Controllers\KnowledgeMediaController;
 use App\Http\Controllers\KnowledgeSourceController;
 use App\Http\Controllers\LeadController;
 use App\Http\Controllers\LeadNotificationController;
+use App\Http\Controllers\LegalController;
 use App\Http\Controllers\LocaleController;
 use App\Http\Controllers\OnboardingController;
 use App\Http\Controllers\PasswordResetController;
@@ -391,6 +392,13 @@ Route::middleware(['auth', 'auth.session'])->group(function () {
         Route::delete('sessions', [SettingsController::class, 'logoutOtherSessions'])->name('sessions');
         Route::patch('preferences', [SettingsController::class, 'updatePreferences'])->name('preferences');
         Route::put('theme', [SettingsController::class, 'updateTheme'])->name('theme');
+        Route::patch('ai-provider', [SettingsController::class, 'updateAiProvider'])->name('ai-provider');
+        // Throttled: both are a real outbound request (an LLM call, or a hit
+        // against the owner's own Ollama server) a click can repeat quickly.
+        Route::post('ai-provider/test', [SettingsController::class, 'testAiProviderConnection'])
+            ->middleware('throttle:10,1')->name('ai-provider.test');
+        Route::get('ai-provider/ollama-models', [SettingsController::class, 'ollamaModels'])
+            ->middleware('throttle:20,1')->name('ai-provider.ollama-models');
         Route::delete('account', [SettingsController::class, 'destroy'])->name('account.destroy');
     });
 
@@ -512,6 +520,11 @@ Route::prefix('{locale}')->group(function () {
     // route('welcome') is the brand link on the auth layout.
     Route::view('/', 'showcase')->name('welcome')
         ->middleware('cache.headers:public;max_age=300;etag');
+
+    // Public on purpose: linked from the registration checkbox, the login
+    // page and the footer, before and after sign-in alike.
+    Route::get('/terms', [LegalController::class, 'terms'])->name('legal.terms');
+    Route::get('/privacy', [LegalController::class, 'privacy'])->name('legal.privacy');
 
     Route::middleware('guest')->group(function () {
         Route::view('/login', 'auth.login')->name('login');

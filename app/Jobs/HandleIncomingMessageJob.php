@@ -7,6 +7,7 @@ use App\Models\Agent;
 use App\Models\Channel;
 use App\Models\Conversation;
 use App\Models\Message;
+use App\Models\Team;
 use App\Services\AgentReplyService;
 use App\Services\Channels\ChannelDriverInterface;
 use App\Services\Channels\ChannelDriverManager;
@@ -14,6 +15,7 @@ use App\Services\Channels\HumanizedReplySender;
 use App\Services\Channels\IncomingMessage;
 use App\Services\Channels\PhotoReplyService;
 use App\Services\Channels\PhotoRequestContext;
+use App\Services\Llm\LlmProviderContext;
 use App\Services\Quality\FeedbackCadence;
 use App\Services\Quality\MessageFeedbackRecorder;
 use App\Services\Reply\CustomerLocale;
@@ -45,7 +47,6 @@ class HandleIncomingMessageJob implements ShouldQueue
     // Обрабатывает входящее сообщение или обратную связь и отправляет ответ клиенту
     public function handle(
         ChannelDriverManager $drivers,
-        AgentReplyService $replyService,
         TelegramNotifyLinker $linker,
         HumanizedReplySender $sender,
         MessageFeedbackRecorder $ratings,
@@ -57,6 +58,18 @@ class HandleIncomingMessageJob implements ShouldQueue
         if (! $this->claimUpdate()) {
             return;
         }
+
+        // Почему так: нельзя взять AgentReplyService через method injection
+        // (как остальные параметры выше) — DI резолвит LlmProviderInterface
+        // внутри её конструктора ДО того, как выполнится первая строчка этого
+        // метода. Контекст команды нужно выставить раньше, поэтому сервис
+        // резолвится вручную, уже после того, как контекст задан. Используется
+        // team_id канала, а не активная команда владельца — это фоновый путь,
+        // у него нет "активного" пользователя.
+        app(LlmProviderContext::class)->for(
+            $this->channel->team_id ? Team::find($this->channel->team_id) : null
+        );
+        $replyService = app(AgentReplyService::class);
 
         $driver = $drivers->for($this->channel);
 
