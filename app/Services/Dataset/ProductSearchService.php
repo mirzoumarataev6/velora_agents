@@ -47,7 +47,14 @@ class ProductSearchService
                         'description' => 'Words to match against the product name, description, category and its other '
                             .'attributes (processor, memory, size, colour — whatever this catalog lists). Use the product '
                             .'words the customer actually said, without extra qualifiers; word endings do not have to match '
-                            .'the catalog\'s. Omit to browse by filter alone.',
+                            .'the catalog\'s. The customer may be writing in a different language or script than the '
+                            .'catalog (e.g. asking in Tajik about a catalog with Russian names and Latin brand names) — '
+                            .'in that case put ONLY the brand or model name here (it is the one thing both sides spell '
+                            .'the same way, "nike", "iphone") and put the generic product type in "category" instead, '
+                            .'translated into the catalog\'s own language if you can. For a general "do you sell '
+                            .'shoes/laptops/X?" with no brand or model named, omit both "query" and "category" and call '
+                            .'with no filters to see a sample of the catalog — do not guess a single generic word into '
+                            .'either filter, since this catalog\'s own wording for that category may not contain it.',
                     ],
                     'min_price' => [
                         'type' => 'number',
@@ -380,6 +387,18 @@ class ProductSearchService
 
         $relaxations = [];
 
+        // Tried first: a customer typing in a different language/script than the
+        // catalog (Tajik "кавшхои nike") produces a query whose words are ANDed
+        // by the source — one word the catalog's text will never contain (the
+        // Tajik word for "shoes") zeroes out an otherwise-matching brand name
+        // ("nike"). Splitting the words and searching each on its own is what
+        // recovers that match; the price/stock/category relaxations below are
+        // for a DIFFERENT problem (right words, wrong price/category) and would
+        // never have found this.
+        if (isset($filters['query']) && count($this->queryWords($filters['query'])) >= 2) {
+            $relaxations['words'] = $filters;
+        }
+
         if (isset($filters['min_price']) || isset($filters['max_price'])) {
             $relaxations['price'] = array_diff_key($filters, array_flip(['min_price', 'max_price']));
         }
@@ -393,10 +412,17 @@ class ProductSearchService
         }
 
         foreach ($relaxations as $relaxed => $wider) {
+            $words = null;
+
             try {
-                $products = $relaxed === 'price'
-                    ? $this->nearestByPrice($source, $wider, $filters)
-                    : $this->fetch($source, $wider, self::NEAREST_LIMIT);
+                if ($relaxed === 'price') {
+                    $products = $this->nearestByPrice($source, $wider, $filters);
+                } elseif ($relaxed === 'words') {
+                    $words = $this->nearestByWords($source, $filters);
+                    $products = $words['products'];
+                } else {
+                    $products = $this->fetch($source, $wider, self::NEAREST_LIMIT);
+                }
             } catch (\Throwable $e) {
                 return $none;
             }
@@ -414,6 +440,7 @@ class ProductSearchService
                             .'present these as being within budget.',
                         'stock' => 'These are what the customer asked for, but they are NOT currently in stock. Say '
                             .'that plainly and offer to let them know when it arrives — never imply availability.',
+                        'words' => $this->wordsNote($words),
                         default => 'These are from the catalog more widely rather than the category asked about. Offer '
                             .'them as a suggestion, not as the thing that was asked for.',
                     },
@@ -422,6 +449,98 @@ class ProductSearchService
         }
 
         return $none;
+    }
+
+    /**
+     * Searches each word of a multi-word "query" filter on its own — rather than
+     * ANDed together the way the source normally applies them — and ranks what
+     * comes back by how many of the words actually matched.
+     *
+     * Why this exists at all: the customer's language is not the catalog's. A
+     * Tajik "кавшхои nike" ("Nike shoes") has one word ("nike") a Russian/Latin
+     * catalog will match and one ("кавшхои") it never will, and the source's
+     * normal AND-of-every-word search makes the second word veto the first.
+     * Searching them apart is the only way to still find the Nike rows.
+     *
+     * @return array{products: array<int, array<string, mixed>>, matched: list<string>, unmatched: list<string>}
+     */
+    protected function nearestByWords(ProductSource $source, array $filters): array
+    {
+        $words = $this->queryWords($filters['query'] ?? '');
+        $base = array_diff_key($filters, array_flip(['query']));
+
+        $matches = []; // identity => ['row' => row, 'count' => how many words it matched]
+        $matched = [];
+        $unmatched = [];
+
+        foreach ($words as $word) {
+            $rows = $this->fetch($source, [...$base, 'query' => $word], self::MAX_LIMIT);
+
+            if ($rows === []) {
+                $unmatched[] = $word;
+
+                continue;
+            }
+
+            $matched[] = $word;
+
+            foreach ($rows as $row) {
+                // sku, falling back to the name: present() never includes the
+                // dataset row's own id, and the name is the only other field
+                // guaranteed to identify "the same product" across two calls.
+                $identity = $row['sku'] ?? $row['name'] ?? null;
+
+                if ($identity === null) {
+                    continue;
+                }
+
+                $matches[$identity] ??= ['row' => $row, 'count' => 0];
+                $matches[$identity]['count']++;
+            }
+        }
+
+        $ranked = array_values($matches);
+        usort($ranked, fn (array $a, array $b) => $b['count'] <=> $a['count']);
+
+        return [
+            'products' => array_map(fn (array $m) => $m['row'], array_slice($ranked, 0, self::NEAREST_LIMIT)),
+            'matched' => $matched,
+            'unmatched' => $unmatched,
+        ];
+    }
+
+    /**
+     * Splits a search query into the standalone words {@see nearestByWords()}
+     * tries on their own. Short words are skipped (too common to mean
+     * anything on their own, e.g. a one-letter size) and the list is capped —
+     * both so a live database source backing one of these searches is hit a
+     * bounded number of times rather than once per word in a long sentence.
+     *
+     * @return list<string>
+     */
+    protected function queryWords(string $query): array
+    {
+        $words = preg_split('/\s+/u', mb_strtolower(trim($query))) ?: [];
+        $words = array_filter($words, fn (string $word) => mb_strlen($word) >= 3);
+
+        return array_slice(array_values(array_unique($words)), 0, 4);
+    }
+
+    /**
+     * The nearest_note for a "words" relaxation: which of the customer's words
+     * the catalog actually has, which it does not, and why that is still a
+     * real answer rather than a failed one.
+     */
+    protected function wordsNote(array $words): string
+    {
+        $matched = implode(', ', $words['matched']);
+        $unmatched = implode(', ', $words['unmatched']);
+
+        return 'The full phrase did not match anything, but searching its words separately found products matching: '
+            .$matched.'. These words matched nothing in the catalog (possibly a different language than the catalog '
+            .'uses, or a generic word like "shoes" rather than a brand/model): '.$unmatched.'. Present these as real '
+            .'options for what the customer asked about — do not say "not found" and do not claim this is an exact '
+            .'match for the whole phrase they used.';
     }
 
     // Ищет ближайшие по цене товары ниже и выше заданного диапазона

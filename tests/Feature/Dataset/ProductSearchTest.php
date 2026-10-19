@@ -494,4 +494,115 @@ class ProductSearchTest extends TestCase
         $this->assertArrayNotHasKey('agent_id', $product);
         $this->assertArrayNotHasKey('dataset_id', $product);
     }
+
+    // --- the shop that reported this: a Tajik customer, a Russian catalog, Latin brands (BUG 4) --
+
+    /**
+     * The catalog behind this bug report: a shoe shop whose category names are
+     * Russian words and whose brand is a Latin name kept in an extra column
+     * ("Бренд" => "Nike") — exactly how the real importer stores it, never in
+     * the product's own name.
+     */
+    protected function agentWithShoes(): Agent
+    {
+        $agent = Agent::factory()->for(User::factory())->create();
+
+        $this->catalog($agent, [
+            [
+                'name' => "Air Force 1 '07", 'price' => 760, 'stock' => 13,
+                'description' => null, 'sku' => 'SH-0001', 'category' => 'Кроссовки',
+                'extra' => ['Бренд' => 'Nike', 'Цвет' => 'Белый'],
+            ],
+            [
+                'name' => 'Air Max 90', 'price' => 940, 'stock' => 7,
+                'description' => null, 'sku' => 'SH-0002', 'category' => 'Кроссовки',
+                'extra' => ['Бренд' => 'Nike', 'Цвет' => 'Чёрный'],
+            ],
+            [
+                'name' => 'Stan Smith', 'price' => 700, 'stock' => 9,
+                'description' => null, 'sku' => 'SH-0003', 'category' => 'Кеды',
+                'extra' => ['Бренд' => 'Adidas', 'Цвет' => 'Белый'],
+            ],
+            [
+                'name' => 'Школьные туфли', 'price' => 420, 'stock' => 20,
+                'description' => null, 'sku' => 'SH-0004', 'category' => 'Детская обувь',
+                'extra' => ['Бренд' => 'Kapika'],
+            ],
+        ]);
+
+        return $agent;
+    }
+
+    /**
+     * The reported failure: a Tajik customer asked "кавшхои nike доред?"
+     * ("do you have Nike shoes?"). "nike" is a real brand in the catalog;
+     * "кавшхои" (Tajik for "shoes") is a word the catalog's own Russian/Latin
+     * text will never contain. ANDing the two together, as a plain query
+     * does, zeroes out an otherwise-exact brand match.
+     */
+    public function test_a_word_the_catalog_has_no_translation_for_does_not_hide_the_brand_it_was_asked_alongside(): void
+    {
+        $agent = $this->agentWithShoes();
+
+        $result = $this->search->search($agent, ['query' => 'кавшхои nike']);
+
+        $this->assertSame(0, $result['count']);
+        $this->assertSame(['Air Force 1 \'07', 'Air Max 90'], $this->names($result['nearest']));
+        // The model must be told this is a partial match on "nike" only, not an
+        // exact match for the whole phrase, and must be told to present it.
+        $this->assertStringContainsString('nike', $result['nearest_note']);
+        $this->assertStringContainsString('кавшхои', $result['nearest_note']);
+        $this->assertStringContainsString('Present these as real options', $result['nearest_note']);
+    }
+
+    /**
+     * A generic category word in a language the catalog never uses ("обувь",
+     * Russian for "shoes" in general) still matches SOME of the catalog by
+     * plain substring luck ("Детская ОБУВЬ") — the real risk this guards
+     * against is the model treating that partial, biased slice as the whole
+     * range. The fix for that is in the tool's own description (BUG 4's
+     * second half), asserted below; this just pins today's search behaviour
+     * so a future change to it is deliberate.
+     */
+    public function test_a_generic_word_matches_only_the_categories_that_happen_to_contain_it(): void
+    {
+        $agent = $this->agentWithShoes();
+
+        $result = $this->search->search($agent, ['query' => 'обувь']);
+
+        // Only "Детская обувь" contains the word "обувь" — "Кроссовки" and
+        // "Кеды" do not, even though they are shoes too.
+        $this->assertSame(['Школьные туфли'], $this->names($result['products']));
+    }
+
+    /**
+     * When NO word in the query matches anything at all, the words relaxation
+     * must not invent a result — the honest empty answer (BUG 3's guidance)
+     * still has to come through unchanged.
+     */
+    public function test_a_query_where_no_word_matches_anything_stays_an_honest_empty_result(): void
+    {
+        $agent = $this->agentWithShoes();
+
+        $result = $this->search->search($agent, ['query' => 'кавшхои пойафзол']);
+
+        $this->assertSame(0, $result['count']);
+        $this->assertSame([], $result['nearest']);
+        $this->assertNull($result['nearest_note']);
+    }
+
+    /**
+     * Regression pin for the tool description the model actually reads: it
+     * must tell the model to split a brand/model from a generic product-type
+     * word when the customer's language differs from the catalog's, and to
+     * call with no filters at all for a bare "do you sell X?" rather than
+     * guess a single word into "query" or "category".
+     */
+    public function test_the_query_parameter_tells_the_model_to_split_brand_from_generic_words_across_languages(): void
+    {
+        $description = $this->search->toolDefinition()['parameters']['properties']['query']['description'];
+
+        $this->assertStringContainsString('different language or script than the catalog', $description);
+        $this->assertStringContainsString('call with no filters', $description);
+    }
 }

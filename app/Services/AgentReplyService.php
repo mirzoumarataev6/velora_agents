@@ -838,7 +838,11 @@ class AgentReplyService
                     'count' => (int) $found['count'],
                 ];
 
-                if ((int) $found['count'] === 0) {
+                // A real alternative in "nearest" (the words relaxation included)
+                // is a product the customer is being shown, not a miss the owner
+                // needs to see — only an EMPTY search, with nothing to offer at
+                // all, is the unanswered demand classifyUnanswered() reports on.
+                if ((int) $found['count'] === 0 && empty($found['nearest'])) {
                     $misses++;
                 }
 
