@@ -15,7 +15,6 @@ class VerifyWorkerCodeJob implements ShouldQueue
 
     public int $tries = 1;
 
-    // Проверяет, что воркер очереди выполняет актуальную версию кода, и логирует результат
     public function handle(AgentReplyService $replyService): void
     {
         $checks = [];

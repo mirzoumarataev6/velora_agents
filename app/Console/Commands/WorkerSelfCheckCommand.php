@@ -14,8 +14,7 @@ class WorkerSelfCheckCommand extends Command
 {
     public function handle(WorkerHeartbeat $heartbeat): int
     {
-        // Is anyone even listening? Dispatching a canary onto a queue with no
-        // worker looks identical to a stale worker, so say which it is.
+
         if (! $heartbeat->running()) {
             $this->components->error(
                 $heartbeat->read() === null

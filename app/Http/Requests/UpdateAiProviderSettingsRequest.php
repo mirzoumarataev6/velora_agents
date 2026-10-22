@@ -7,9 +7,6 @@ use Illuminate\Foundation\Http\Attributes\ErrorBag;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
-/**
- * Валидирует форму "AI Provider" в настройках команды.
- */
 #[ErrorBag('ai_provider')]
 class UpdateAiProviderSettingsRequest extends FormRequest
 {
@@ -27,13 +24,6 @@ class UpdateAiProviderSettingsRequest extends FormRequest
         ];
     }
 
-    /**
-     * Пустая строка в модели/base_url значит "не переопределять" — хранится
-     * как NULL, а не как '', чтобы LlmProviderFactory однозначно отличал
-     * "команда ничего не задала" от "команда явно задала пустое значение".
-     *
-     * @return array{ai_provider: string, ai_model: ?string, ollama_base_url: ?string}
-     */
     public function teamAttributes(): array
     {
         $data = $this->validated();

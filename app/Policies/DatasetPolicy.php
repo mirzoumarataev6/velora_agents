@@ -17,9 +17,6 @@ class DatasetPolicy
         return $this->permitted($user, PermissionCatalog::CATALOG_VIEW, $dataset);
     }
 
-    /**
-     * Authorized via Gate::authorize('create', [Dataset::class, $agent]).
-     */
     public function create(User $user, Agent $agent): bool
     {
         return $this->permitted($user, PermissionCatalog::CATALOG_MANAGE, $agent);

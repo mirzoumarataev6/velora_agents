@@ -12,7 +12,6 @@ class DatasetFileReader
 
     protected const SNIFF_BYTES = 8192;
 
-    // Читает CSV или табличный файл и возвращает заголовки и строки данных
     public function read(string $absolutePath, ?int $limit = null): array
     {
         if (! is_readable($absolutePath)) {
@@ -42,7 +41,6 @@ class DatasetFileReader
         ];
     }
 
-    // Приводит строку заголовков к непустым уникальным именам столбцов
     protected function normalizeHeaders(array $cells): array
     {
         $headers = [];
@@ -68,7 +66,6 @@ class DatasetFileReader
         return $headers;
     }
 
-    // Читает строки из файла Excel/ODS через PhpSpreadsheet
     protected function readSpreadsheet(string $path, ?int $limit): array
     {
         try {
@@ -98,7 +95,6 @@ class DatasetFileReader
         ];
     }
 
-    // Читает строки из CSV-файла, определяя кодировку и разделитель
     protected function readCsv(string $path, ?int $limit): array
     {
         $encoding = $this->detectCsvEncoding($path);
@@ -135,7 +131,6 @@ class DatasetFileReader
         return ['rows' => $rows, 'truncated' => $truncated];
     }
 
-    // Определяет разделитель CSV по первой строке файла
     protected function detectDelimiter(string $path, string $encoding): string
     {
         $head = (string) file_get_contents($path, false, null, 0, self::SNIFF_BYTES);
@@ -162,7 +157,6 @@ class DatasetFileReader
         return $best;
     }
 
-    // Определяет кодировку CSV-файла (UTF-8 или Windows-1251)
     protected function detectCsvEncoding(string $path): string
     {
         $head = (string) file_get_contents($path, false, null, 0, self::SNIFF_BYTES);
@@ -174,7 +168,6 @@ class DatasetFileReader
         return mb_check_encoding($head, 'WINDOWS-1251') ? 'WINDOWS-1251' : 'UTF-8';
     }
 
-    // Приводит значение ячейки к строке, очищая нестандартные пробелы
     protected function cell(mixed $value): string
     {
         if ($value === null || is_bool($value)) {

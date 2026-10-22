@@ -233,9 +233,16 @@ class InstagramWebhookTest extends TestCase
         $response->assertNotFound();
     }
 
-    public function test_human_takeover_conversation_stores_message_but_does_not_auto_reply(): void
+    /**
+     * Почему так: раньше human_takeover глушил диалог навсегда — одна старая
+     * эскалация и бот молчал на любое новое сообщение клиента даже недели
+     * спустя. Новое сообщение клиента всегда должно получить ответ, поэтому
+     * диалог переоткрывается как обычный AI-диалог.
+     */
+    public function test_human_takeover_conversation_is_reopened_and_answered_on_a_new_message(): void
     {
         $this->fakeMetaApi();
+        $this->mockGemini('Здравствуйте! Чем можем помочь на этот раз?');
         $channel = Channel::factory()->instagram()->create();
         $conversation = $channel->agent->conversations()->create([
             'channel_id' => $channel->id,
@@ -250,8 +257,9 @@ class InstagramWebhookTest extends TestCase
             'role' => 'user',
             'content' => 'Кто-нибудь ответит?',
         ]);
-        $this->assertDatabaseMissing('messages', ['conversation_id' => $conversation->id, 'role' => 'assistant']);
-        Http::assertNothingSent();
+        $this->assertDatabaseHas('messages', ['conversation_id' => $conversation->id, 'role' => 'assistant']);
+        $this->assertSame('ai', $conversation->refresh()->status);
+        Http::assertSent(fn ($request) => str_contains($request->url(), 'messages'));
     }
 
     public function test_paused_agent_does_not_auto_reply(): void

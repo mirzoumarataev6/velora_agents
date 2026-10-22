@@ -16,10 +16,6 @@ use Throwable;
 #[Description('Re-embed every knowledge chunk under the currently configured LLM provider')]
 class ReindexEmbeddingsCommand extends Command
 {
-    /**
-     * Re-embed in batches this size. Matched to the provider's own batching so a
-     * single reindex chunk maps to roughly one API call.
-     */
     protected const BATCH = 100;
 
     public function handle(LlmProviderInterface $llm, UsageRecorder $usage): int
@@ -67,9 +63,6 @@ class ReindexEmbeddingsCommand extends Command
         return self::SUCCESS;
     }
 
-    /**
-     * @return Collection<int, Agent>|null Null signals a bad --agent argument.
-     */
     protected function targetAgents(): ?Collection
     {
         $agentId = $this->option('agent');
@@ -89,9 +82,6 @@ class ReindexEmbeddingsCommand extends Command
         return collect([$agent]);
     }
 
-    /**
-     * @return array{0: int, 1: int} [chunks re-embedded, chunk batches failed]
-     */
     protected function reindexAgent(Agent $agent, LlmProviderInterface $llm, UsageRecorder $usage): array
     {
         $total = $agent->knowledgeChunks()->count();
@@ -106,7 +96,6 @@ class ReindexEmbeddingsCommand extends Command
         $bar = $this->output->createProgressBar($total);
         $bar->start();
 
-        // Usage produced by the reindex is attributed to the agent being reindexed.
         $usage->for($agent);
 
         $done = 0;
@@ -117,7 +106,7 @@ class ReindexEmbeddingsCommand extends Command
             ->orderBy('id')
             ->chunkById(self::BATCH, function ($chunks) use ($llm, &$done, &$failed, $bar) {
                 try {
-                    // Same embedding input as EmbedChunksJob — see KnowledgeChunk::embeddingText().
+
                     $embeddings = $llm->embedBatch(
                         $chunks->mapWithKeys(fn ($chunk) => [$chunk->id => $chunk->embeddingText()])->all()
                     );
@@ -137,7 +126,7 @@ class ReindexEmbeddingsCommand extends Command
                         $done++;
                     }
                 } catch (Throwable $e) {
-                    // Includes LlmException; one failed batch shouldn't abort the run.
+
                     $failed++;
                     $this->newLine();
                     $this->components->warn('Batch failed: '.$e->getMessage());
@@ -149,7 +138,6 @@ class ReindexEmbeddingsCommand extends Command
         $bar->finish();
         $this->newLine();
 
-        // New vectors are live immediately; drop the cached (now-stale) set.
         MySqlCosineVectorStore::forgetCache($agent->id);
 
         return [$done, $failed];

@@ -25,7 +25,7 @@ class ChannelController extends Controller
 
         $channel = $agent->channels()->firstOrNew(['type' => 'telegram']);
         $channel->credentials = ['bot_token' => $request->string('bot_token')->toString()];
-        $channel->status = 'error'; // corrected to "connected" below only on success
+        $channel->status = 'error';
         $channel->save();
 
         try {
@@ -67,7 +67,7 @@ class ChannelController extends Controller
         try {
             $drivers->for($channel)->disconnect($channel);
         } catch (Throwable) {
-            // Best-effort: still disconnect locally even if Telegram's deleteWebhook call fails.
+
         }
 
         $channel->update([
@@ -91,9 +91,7 @@ class ChannelController extends Controller
             'phone_number_id' => ['required', 'string'],
             'access_token' => ['required', 'string'],
             'verify_token' => ['required', 'string', 'min:8'],
-            // Required, not optional: without it Meta's X-Hub-Signature-256
-            // cannot be checked, and an unverifiable webhook is one anyone can
-            // POST to. See VerifiesMetaWebhook.
+
             'app_secret' => ['required', 'string', 'min:16'],
         ], [], [
             'phone_number_id' => 'Phone Number ID',
@@ -104,7 +102,7 @@ class ChannelController extends Controller
 
         $channel = $agent->channels()->firstOrNew(['type' => 'whatsapp']);
         $channel->credentials = $data;
-        $channel->status = 'error'; // corrected to "connected" below only on success
+        $channel->status = 'error';
         $channel->save();
 
         try {
@@ -145,7 +143,7 @@ class ChannelController extends Controller
         try {
             $drivers->for($channel)->disconnect($channel);
         } catch (Throwable) {
-            // Best-effort: still disconnect locally even if the API call fails.
+
         }
 
         $channel->update([
@@ -169,8 +167,7 @@ class ChannelController extends Controller
             'ig_business_account_id' => ['required', 'string'],
             'page_access_token' => ['required', 'string'],
             'verify_token' => ['required', 'string', 'min:8'],
-            // Instagram's webhook needs exactly the same protection as
-            // WhatsApp's — same Graph signature, same public endpoint.
+
             'app_secret' => ['required', 'string', 'min:16'],
         ], [], [
             'ig_business_account_id' => 'ID бизнес-аккаунта Instagram',
@@ -181,7 +178,7 @@ class ChannelController extends Controller
 
         $channel = $agent->channels()->firstOrNew(['type' => 'instagram']);
         $channel->credentials = $data;
-        $channel->status = 'error'; // corrected to "connected" below only on success
+        $channel->status = 'error';
         $channel->save();
 
         try {
@@ -222,7 +219,7 @@ class ChannelController extends Controller
         try {
             $drivers->for($channel)->disconnect($channel);
         } catch (Throwable) {
-            // Best-effort: still disconnect locally even if the API call fails.
+
         }
 
         $channel->update([
@@ -245,7 +242,7 @@ class ChannelController extends Controller
         $data = $request->validate([
             'id_instance' => ['required', 'string', 'regex:/^\d{6,20}$/'],
             'api_token_instance' => ['required', 'string', 'regex:/^[A-Za-z0-9]{20,}$/'],
-            // Editable because instances live on numbered servers (7107.api...).
+
             'api_url' => ['nullable', 'url:https'],
         ], [], [
             'id_instance' => 'idInstance',
@@ -259,8 +256,8 @@ class ChannelController extends Controller
             'api_token_instance' => $data['api_token_instance'],
             'api_url' => rtrim(($data['api_url'] ?? null) ?: GreenApiDriver::DEFAULT_API_URL, '/'),
         ];
-        $channel->status = 'error'; // corrected to "connected" below only on success
-        $channel->save(); // the webhook URL connect() registers needs the uuid
+        $channel->status = 'error';
+        $channel->save();
 
         try {
             $info = $drivers->for($channel)->connect($channel);
@@ -304,7 +301,7 @@ class ChannelController extends Controller
         try {
             $drivers->for($channel)->disconnect($channel);
         } catch (Throwable) {
-            // Best-effort: still disconnect locally even if clearing the webhook fails.
+
         }
 
         $channel->update([
@@ -334,7 +331,7 @@ class ChannelController extends Controller
 
         $channel = $agent->channels()->firstOrNew(['type' => 'instagrapi']);
         $channel->credentials = $data;
-        $channel->status = 'error'; // corrected to "connected" below only on success
+        $channel->status = 'error';
         $channel->save();
 
         try {
@@ -374,7 +371,7 @@ class ChannelController extends Controller
         try {
             $drivers->for($channel)->disconnect($channel);
         } catch (Throwable) {
-            // Best-effort: still disconnect locally even if this call fails.
+
         }
 
         $channel->update([

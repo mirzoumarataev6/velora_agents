@@ -9,27 +9,10 @@ use App\Services\Permissions\PermissionCatalog;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Support\Collection;
 
-/**
- * The RBAC read side: "is this user a member of this team, with what role,
- * and does that role carry this permission." Policies and catalog Gates
- * share these memoized answers so rendering a list does not query per row.
- *
- * Memoized per User instance, not per request: `flushPermissionCache()` is
- * the seam controllers call after a role/membership
- * change mid-request (switching teams, an admin editing their own
- * permissions), and it is what the tests use to prove the cache does not
- * paper over a stale answer.
- *
- * Memberships and roles share one joined snapshot with the navigation menu.
- * Non-owner permission sets are loaded once per team on demand; an Owner
- * never needs that extra query. Flush after changing membership or roles.
- */
 trait HasTeams
 {
-    /** @var array<int, TeamMembership>|null A null cache has not been loaded yet. */
     private ?array $teamMembershipCache = null;
 
-    /** @var array<int, list<string>> team_id => that team's role's permission keys, fetched once */
     private array $teamPermissionSetCache = [];
 
     public function teams(): BelongsToMany
@@ -39,14 +22,10 @@ trait HasTeams
             ->withTimestamps();
     }
 
-    /** @return Collection<int, TeamMembership> */
     public function cachedTeamMemberships(): Collection
     {
         if ($this->teamMembershipCache === null) {
-            // Authorization and the team switcher consume the same membership
-            // snapshot. One join avoids adding two policy queries to every
-            // page, while checking role.team_id prevents a malformed pivot
-            // from borrowing another team's Owner role.
+
             $memberships = TeamMembership::query()
                 ->join('roles', function ($join) {
                     $join->on('roles.id', '=', 'team_user.role_id')
@@ -105,14 +84,12 @@ trait HasTeams
         return in_array($permission, $this->permissionSetFor($team, $membership->role), true);
     }
 
-    /** Clears both caches — call after a role/permission/membership change this instance's answers must reflect. */
     public function flushPermissionCache(): void
     {
         $this->teamMembershipCache = null;
         $this->teamPermissionSetCache = [];
     }
 
-    /** @return list<string> */
     private function permissionSetFor(Team|int $team, ?Role $role): array
     {
         $teamId = $this->teamIdOf($team);

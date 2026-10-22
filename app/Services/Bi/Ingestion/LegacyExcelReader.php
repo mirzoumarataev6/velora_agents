@@ -12,26 +12,6 @@ use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 use Throwable;
 
-/**
- * Legacy Excel (.xls, the BIFF8 binary format), read the only way it can be.
- *
- * There is no streaming reader for BIFF in PHP, in any library. The format
- * interleaves a shared string table, per-sheet records and a format table with
- * byte offsets that point backwards, so a parser genuinely cannot emit row one
- * before it has read the file — PhpSpreadsheet is not being wasteful here, it is
- * being correct. That makes this the one format whose ceiling is memory, and it
- * is therefore capped far lower than the others (`bi.max_legacy_xls_size_kb`) and
- * refused with its own error code so the owner is told to re-save as .xlsx rather
- * than being handed a fatal.
- *
- * Kept at all because it is what a decade-old 1C or accounting export still
- * produces, and telling those owners "convert it yourself first" would be
- * refusing the files most in need of a dashboard.
- *
- * Dates arrive as Excel serial numbers here, not as objects — so they are
- * converted to DateTimeImmutable on the way out, giving the rest of the pipeline
- * the same unambiguous shape SpreadsheetReader provides.
- */
 final class LegacyExcelReader implements TabularReader
 {
     private ?Spreadsheet $spreadsheet = null;
@@ -46,9 +26,7 @@ final class LegacyExcelReader implements TabularReader
         $seen = 0;
 
         foreach ($spreadsheet->getAllSheets() as $index => $sheet) {
-            // PhpSpreadsheet spells this as a sheet STATE rather than a boolean,
-            // with 'hidden' and 'veryHidden' both meaning the author did not mean
-            // to publish it.
+
             if ($sheet->getSheetState() !== Worksheet::SHEETSTATE_VISIBLE) {
                 continue;
             }
@@ -68,9 +46,6 @@ final class LegacyExcelReader implements TabularReader
         }
     }
 
-    /**
-     * @return Generator<int, array<int, mixed>>
-     */
     private function readRows(object $sheet): Generator
     {
         $highestColumn = (int) Coordinate::columnIndexFromString(
@@ -79,8 +54,7 @@ final class LegacyExcelReader implements TabularReader
 
         foreach ($sheet->getRowIterator() as $row) {
             $cells = $row->getCellIterator();
-            // Blank cells must still be yielded, or a row with a gap in the
-            // middle would have every later value shifted one column left.
+
             $cells->setIterateOnlyExistingCells(false);
 
             $values = [];
@@ -97,18 +71,6 @@ final class LegacyExcelReader implements TabularReader
         }
     }
 
-    /**
-     * One cell's value, with a date cell turned into a DateTimeImmutable.
-     *
-     * An Excel date is a float counting days from 1900 (or 1904), and ONLY the
-     * cell's number format says whether 45000 is the 18th of March or eighteen
-     * thousand somethings. So the decision has to ask the cell, not the value —
-     * which is why this cannot be a pure function of the number.
-     *
-     * Doing it here means the rest of the pipeline sees the same unambiguous
-     * shape it gets from .xlsx, and DateFormatVoter is never asked to guess at a
-     * date that the file already stated precisely.
-     */
     private function cellValue(object $cell): mixed
     {
         $value = $cell->getValue();
@@ -132,9 +94,7 @@ final class LegacyExcelReader implements TabularReader
                 $date instanceof \DateTime ? $date : \DateTime::createFromInterface($date)
             );
         } catch (Throwable) {
-            // A serial outside Excel's representable range, or a corrupt format
-            // record. The raw number is the honest fallback — it is what the
-            // file actually contains.
+
             return $value;
         }
     }
@@ -170,9 +130,7 @@ final class LegacyExcelReader implements TabularReader
 
         try {
             $reader = new XlsSpreadsheetReader;
-            // Formatting, styles and charts are dead weight for an import that
-            // only wants values, and they are a large share of what BIFF
-            // parsing spends its memory on.
+
             $reader->setReadDataOnly(true);
 
             return $this->spreadsheet = $reader->load($this->path);

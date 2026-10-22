@@ -11,22 +11,18 @@ class DatasetProductSource implements ProductSource
     use NormalizesSearchTerms;
     use PresentsProducts;
 
-    // Создаёт источник товаров из загруженного датасета агента
     public function __construct(protected Agent $agent) {}
 
-    // Возвращает ключ, идентифицирующий этот источник товаров
     public function key(): string
     {
         return 'dataset';
     }
 
-    // Сообщает, есть ли у агента загруженные товары
     public function hasProducts(): bool
     {
         return DatasetProduct::query()->where('agent_id', $this->agent->id)->exists();
     }
 
-    // Сообщает, ведётся ли в датасете учёт остатков на складе
     public function tracksStock(): bool
     {
         return DatasetProduct::query()
@@ -35,7 +31,6 @@ class DatasetProductSource implements ProductSource
             ->exists();
     }
 
-    // Возвращает товары, подходящие под фильтры, с ограничением по количеству
     public function fetch(array $filters, int $limit): array
     {
         return $this->query($filters)
@@ -45,7 +40,6 @@ class DatasetProductSource implements ProductSource
             ->all();
     }
 
-    // Строит запрос к товарам датасета с учётом фильтров поиска, категории, цены и сортировки
     protected function query(array $filters): Builder
     {
         $query = DatasetProduct::query()->where('agent_id', $this->agent->id);
@@ -58,10 +52,7 @@ class DatasetProductSource implements ProductSource
             }
 
             foreach ($terms as $term) {
-                // Either the term itself, or its skeleton — matching a Latin
-                // brand name's Cyrillic loanword spelling ("макбук" against
-                // the "makbuk" skeleton search_text stores for "MacBook").
-                // See SearchSkeleton and DatasetProduct::searchText().
+
                 $skeleton = SearchSkeleton::fold($term);
                 $query->where(function (Builder $q) use ($term, $skeleton) {
                     $q->where('search_text', 'like', '%'.$term.'%');
@@ -97,7 +88,6 @@ class DatasetProductSource implements ProductSource
         };
     }
 
-    // Преобразует модель товара датасета в представление для ответа
     protected function present(DatasetProduct $product): array
     {
         return $this->presentRow([

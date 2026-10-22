@@ -9,10 +9,6 @@ use App\Services\Crm\DealTrend;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 
-/**
- * The pipeline's own time series — new deals, deals won, and paid revenue —
- * a CRM-specific report distinct from the agent-facing dashboard.
- */
 class CrmTrendController extends Controller
 {
     public function __construct(protected DealTrend $trend) {}

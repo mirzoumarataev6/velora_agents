@@ -105,12 +105,6 @@ class KnowledgeSourceController extends Controller
         return back()->with('status', 'Ссылка добавлена и поставлена в очередь на обработку.');
     }
 
-    /**
-     * Re-scrape a URL source in place: clear its old chunks and any cached
-     * extraction, reset it to pending, and re-run the pipeline. Only URL
-     * sources can be re-fetched — a file/text source has no live origin to
-     * pull from again.
-     */
     public function refetch(Request $request, Agent $agent, KnowledgeSource $knowledgeSource): RedirectResponse|JsonResponse
     {
         $this->authorize('update', $agent);

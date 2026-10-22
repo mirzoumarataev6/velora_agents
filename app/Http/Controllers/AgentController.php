@@ -12,14 +12,6 @@ use Illuminate\View\View;
 
 class AgentController extends Controller
 {
-    /**
-     * The tabs on the agent detail page, in nav order.
-     *
-     * `?tab=` is what carries the open tab across a reload and a language
-     * switch, so an arbitrary value would otherwise reach the page — and every
-     * panel is `x-show`n against it, so an unrecognized one would render a page
-     * with no content at all. Anything not on this list falls back to the first.
-     */
     public const TABS = ['knowledge', 'catalog', 'database', 'channels', 'playground', 'conversations', 'settings'];
 
     public function index(Request $request, OnboardingService $onboarding): View
@@ -38,9 +30,6 @@ class AgentController extends Controller
             $request->session()->get(AuthController::ONBOARDING_SESSION_KEY, false) === true,
         );
 
-        // Stamped here rather than inside the service so the write is visible
-        // at the call site: rendering the finished checklist is what spends the
-        // congratulations panel, and it is spent exactly once.
         if ($checklist['celebrate']) {
             $user->markOnboardingCompleted();
         }
@@ -95,16 +84,12 @@ class AgentController extends Controller
 
         return view('agents.show', compact('agent', 'tab', 'tabs', 'playgroundConversation') + [
             'i18nExtraNamespaces' => ['agents', 'conversations'],
-            // The conversations tab renders the shared inbox partial, pinned to
-            // this agent. Channel types come off the already-loaded relation so
-            // the tab costs no extra query on a page that never opens it.
+
             'conversationFilters' => ConversationController::defaultFilters($agent->id),
             'conversationChannelTypes' => $agent->channels->pluck('type')->unique()->values(),
-            // Seeds the catalog tab so it paints its real state on first render
-            // rather than flashing "empty" until an XHR comes back.
+
             'catalog' => in_array('catalog', $tabs, true) ? DatasetController::state($agent) : [],
-            // Same idea for the live-connection tab: it paints its real state on
-            // first render rather than flashing "not connected".
+
             'database' => in_array('database', $tabs, true) ? DatabaseConnectionController::state($agent) : [],
         ]);
     }

@@ -15,12 +15,6 @@ use RuntimeException;
 use Smalot\PdfParser\Parser as PdfParser;
 use Symfony\Component\DomCrawler\Crawler;
 
-/**
- * Extracts raw content from a KnowledgeSource into a normalized shape consumed by
- * the chunker:
- *   ['kind' => 'plain', 'text' => string, 'meta' => array]
- *   ['kind' => 'tabular', 'header' => string, 'rows' => string[], 'meta' => array]
- */
 class KnowledgeExtractionService
 {
     public function __construct(protected LlmProviderInterface $llm) {}
@@ -66,9 +60,6 @@ class KnowledgeExtractionService
         $text = trim($pdf->getText());
         $pageCount = count($pdf->getPages());
 
-        // Near-empty text on a multi-page (or any) PDF usually means it's scanned images.
-        // Gemini natively understands PDF bytes (including OCR); OpenAI does not and
-        // will raise, which markFailed() surfaces as a source-level error.
         if (mb_strlen($text) < max(50, $pageCount * 20)) {
             $result = $this->llm->extractFromImage(
                 $path,
@@ -171,12 +162,6 @@ class KnowledgeExtractionService
         ];
     }
 
-    /**
-     * Parse a product-feed XML file (YML / Google Merchant / CommerceML /
-     * generic) into a tabular product list, or fall back to flat text for
-     * non-catalog XML. Tags the payload with its own products-per-chunk budget
-     * so the chunker packs it like a spreadsheet.
-     */
     protected function extractXml(string $path): array
     {
         $extracted = (new XmlCatalogExtractor)->extract($path);
@@ -210,13 +195,12 @@ class KnowledgeExtractionService
 
         $client = new HttpClient([
             'timeout' => 15,
-            'allow_redirects' => false, // avoid SSRF via redirect to an internal address
+            'allow_redirects' => false,
             'headers' => [
                 'User-Agent' => 'Mozilla/5.0 (compatible; VeloraBot/1.0; +https://velora.example/bot)',
             ],
             'curl' => [
-                // Pin the connection to the IP we already validated, closing the
-                // DNS-rebinding window between the safety check and the request.
+
                 CURLOPT_RESOLVE => ["{$host}:{$port}:{$ip}"],
             ],
         ]);
@@ -232,20 +216,6 @@ class KnowledgeExtractionService
         return $this->parseHtmlContent($html);
     }
 
-    /**
-     * Turn a fetched HTML document into normalized extraction output. Split out
-     * from the network fetch so it can be unit-tested against fixtures without
-     * hitting the SSRF guard or a live server.
-     *
-     * Strategy: capture the page broadly (title, meta, all headings, paragraphs,
-     * list items, definition lists, tables, and — crucially — <address> tags and
-     * footer content, which commonly hold the business address/phone). A
-     * "CONTACT INFO" summary (emails, phones, postal addresses gathered from
-     * schema.org JSON-LD, tel:/mailto: links, <address> tags, and regex) is
-     * prepended as a single block so retrieval reliably finds contact details.
-     *
-     * @return array{kind: string, text: string, meta: array<string, mixed>}
-     */
     public function parseHtmlContent(string $html): array
     {
         $crawler = new Crawler($html);
@@ -254,22 +224,14 @@ class KnowledgeExtractionService
         $metaDescription = $this->metaContent($crawler, 'description');
         $metaKeywords = $this->metaContent($crawler, 'keywords');
 
-        // Structured contact data (before we strip anything) — schema.org JSON-LD
-        // and tel:/mailto: links are the most reliable sources.
         $contact = $this->extractContactInfo($crawler, $html);
 
-        // Choose the most content-rich root, preferring semantic containers that
-        // modern sites use, but keep the whole body as the fallback.
         $root = $this->contentRoot($crawler);
 
-        // Strip only true noise. Deliberately NOT removing nav/header/footer —
-        // the footer routinely carries the address, phone, and hours.
         $root->filter('script, style, noscript, svg, template, iframe, form')->each(
             fn (Crawler $node) => $node->getNode(0)?->parentNode?->removeChild($node->getNode(0))
         );
 
-        // Pull structured blocks so headings/lists/addresses keep their shape,
-        // then fall back to the root's full text so nothing is missed.
         $blocks = [];
         $root->filter('h1, h2, h3, h4, h5, h6, p, li, dt, dd, address, blockquote, figcaption, th, td')->each(
             function (Crawler $node) use (&$blocks) {
@@ -283,13 +245,8 @@ class KnowledgeExtractionService
         $structured = implode("\n\n", array_values(array_unique($blocks)));
         $fullText = $this->normalizeWhitespace($root->text(''));
 
-        // Prefer the structured capture when it retained most of the content;
-        // otherwise use the flat text (some pages don't use semantic tags).
         $bodyText = mb_strlen($structured) >= mb_strlen($fullText) * 0.6 ? $structured : $fullText;
 
-        // A near-empty body on a page full of scripts/SPA mount points means the
-        // real content is rendered client-side and we can't see it. Warn clearly
-        // via the source's error field instead of silently ingesting nothing.
         if (mb_strlen($bodyText) < 200 && $this->looksJavaScriptRendered($crawler, $bodyText)) {
             throw new RuntimeException(
                 'This page appears to be JavaScript-rendered — try providing the specific inner page URL or paste the text directly.'
@@ -300,8 +257,6 @@ class KnowledgeExtractionService
             throw new RuntimeException('No readable content was found at this URL.');
         }
 
-        // Assemble: contact summary first (as one un-splittable block), then the
-        // meta description, then the page body.
         $parts = array_filter([
             $title,
             $contact['summary'],
@@ -339,10 +294,6 @@ class KnowledgeExtractionService
         return $node->count() > 0 ? trim((string) $node->first()->attr('content')) : '';
     }
 
-    /**
-     * The container most likely to hold the primary content, falling back to
-     * <body> (then the whole document) when no semantic wrapper exists.
-     */
     protected function contentRoot(Crawler $crawler): Crawler
     {
         foreach (['main', 'article', '[role="main"]', '[itemprop="mainContentOfPage"]', '#content', '#main'] as $selector) {
@@ -357,16 +308,12 @@ class KnowledgeExtractionService
         return $body->count() > 0 ? $body->first() : $crawler;
     }
 
-    /**
-     * @return array{summary: string, emails: string[], phones: string[], addresses: string[]}
-     */
     protected function extractContactInfo(Crawler $crawler, string $html): array
     {
         $emails = [];
         $phones = [];
         $addresses = [];
 
-        // mailto:/tel: links are unambiguous.
         $crawler->filter('a[href^="mailto:"]')->each(function (Crawler $a) use (&$emails) {
             $email = trim(str_ireplace('mailto:', '', (string) $a->attr('href')));
             $email = explode('?', $email)[0];
@@ -381,7 +328,6 @@ class KnowledgeExtractionService
             }
         });
 
-        // <address> tags and schema.org PostalAddress.
         $crawler->filter('address')->each(function (Crawler $node) use (&$addresses) {
             $text = $this->normalizeWhitespace($node->text(''));
             if ($text !== '') {
@@ -393,13 +339,12 @@ class KnowledgeExtractionService
             $this->collectSchemaContact($data, $emails, $phones, $addresses);
         }
 
-        // Regex sweep of the raw HTML for anything the structured sources missed.
         if (preg_match_all('/[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}/', strip_tags($html), $m)) {
             $emails = array_merge($emails, $m[0]);
         }
         if (preg_match_all('/\+?\d[\d\-\s().]{7,}\d/', strip_tags($html), $m)) {
             foreach ($m[0] as $candidate) {
-                // Require at least 9 digits to avoid catching prices/years/IDs.
+
                 if (preg_match_all('/\d/', $candidate) >= 9) {
                     $phones[] = trim($candidate);
                 }
@@ -410,8 +355,6 @@ class KnowledgeExtractionService
         $phones = array_values(array_unique(array_filter($phones)));
         $addresses = array_values(array_unique(array_filter($addresses)));
 
-        // Single-block summary (single newlines only) so the chunker keeps it in
-        // one chunk rather than splitting the address across a boundary.
         $lines = [];
         if ($addresses !== []) {
             $lines[] = 'Address: '.implode(' | ', $addresses);
@@ -428,9 +371,6 @@ class KnowledgeExtractionService
         return ['summary' => $summary, 'emails' => $emails, 'phones' => $phones, 'addresses' => $addresses];
     }
 
-    /**
-     * @return array<int, mixed>
-     */
     protected function jsonLdBlocks(Crawler $crawler): array
     {
         $blocks = [];
@@ -445,14 +385,6 @@ class KnowledgeExtractionService
         return $blocks;
     }
 
-    /**
-     * Recursively pull telephone/email/PostalAddress out of a decoded JSON-LD
-     * tree (handles @graph, arrays, and nested nodes).
-     *
-     * @param  string[]  $emails
-     * @param  string[]  $phones
-     * @param  string[]  $addresses
-     */
     protected function collectSchemaContact(mixed $data, array &$emails, array &$phones, array &$addresses): void
     {
         if (! is_array($data)) {
@@ -484,9 +416,6 @@ class KnowledgeExtractionService
         }
     }
 
-    /**
-     * @param  array<string, mixed>  $address
-     */
     protected function formatPostalAddress(array $address): string
     {
         $parts = array_filter([
@@ -500,10 +429,6 @@ class KnowledgeExtractionService
         return trim(implode(', ', array_map('trim', $parts)));
     }
 
-    /**
-     * Heuristic for a page whose real content is injected by JavaScript: almost
-     * no server-rendered text, but a known SPA mount point or a script-heavy body.
-     */
     protected function looksJavaScriptRendered(Crawler $crawler, string $visibleText): bool
     {
         $hasSpaRoot = $crawler->filter('#app, #root, [data-reactroot], [data-server-rendered], [ng-app], [ng-version]')->count() > 0;

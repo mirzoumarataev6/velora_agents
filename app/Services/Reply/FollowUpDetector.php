@@ -32,8 +32,6 @@ class FollowUpDetector
     {
         $text = $this->fold($message);
 
-        // Deliberately anchored: "не повторяй" / "don't repeat" are complaints,
-        // not permission to send the same answer again.
         return preg_match('/^(?:(?:пожалуйста|please|лутфан)\s+)?(?:'
             .'(?:повтори(?:те)?|напомни(?:те)?)(?:\s|$)'
             .'|(?:можешь|можете)\s+(?:повторить|напомнить)(?:\s|$)'
@@ -44,7 +42,6 @@ class FollowUpDetector
             .')/u', $text) === 1;
     }
 
-    // Определяет, является ли сообщение коротким уточняющим вопросом к предыдущему ответу
     public function isShortFollowUp(string $message, bool $hasPriorReply): bool
     {
         if (! $hasPriorReply) {
@@ -74,7 +71,6 @@ class FollowUpDetector
         return false;
     }
 
-    // Нормализует сообщение (нижний регистр, без пунктуации) для сравнения с эталонными фразами
     protected function fold(string $message): string
     {
         $text = mb_strtolower(trim($message));

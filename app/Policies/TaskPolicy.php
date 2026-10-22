@@ -42,8 +42,7 @@ class TaskPolicy
 
     private function visibleFromCrm(User $user, Task $task, bool $write = false): bool
     {
-        // The permission matrix checks unsaved models; persisted tasks always
-        // have a board, which is where private-board access is enforced.
+
         if (! $task->exists) {
             return true;
         }

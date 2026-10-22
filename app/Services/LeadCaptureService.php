@@ -9,41 +9,16 @@ use App\Models\Message;
 use App\Services\Leads\PhoneNumberDetector;
 use Illuminate\Support\Str;
 
-/**
- * Owns everything about the create_lead function-calling tool: its neutral
- * definition (handed to the LLM provider), the prompt guidance that tells the
- * model when to use it, and the persistence of a captured lead.
- *
- * Kept separate from AgentReplyService so the reply pipeline only has to decide
- * "offer the tool?" and "a tool call came back — persist it", without carrying
- * the tool's schema and copy inline.
- */
 class LeadCaptureService
 {
     public const TOOL_NAME = 'create_lead';
 
-    /**
-     * Marks the assistant turn that asked for a phone number, so the ask
-     * happens once per conversation and not on every order attempt.
-     *
-     * Stored in the message's own meta rather than on the conversation: it is a
-     * fact about a turn that actually happened, it needs no migration, and a
-     * conversation column would have to be reset by hand if the customer came
-     * back a week later with a second order.
-     */
     public const ASKED_FOR_PHONE = 'phone_requested';
 
-    /** How far back to look for a number the customer already gave. */
     protected const PHONE_LOOKBACK = 30;
 
     public function __construct(protected PhoneNumberDetector $phones) {}
 
-    /**
-     * The tool definition in the neutral shape LlmProviderInterface::generate()
-     * accepts under $options['tools'].
-     *
-     * @return array{name: string, description: string, parameters: array}
-     */
     public function toolDefinition(): array
     {
         return [
@@ -82,17 +57,12 @@ class LeadCaptureService
                         'description' => 'Any other useful detail: delivery address, preferred time, budget, special requests.',
                     ],
                 ],
-                // Deliberately empty: a partial lead (just a phone number, say) is
-                // still worth capturing, so nothing is strictly required.
+
                 'required' => [],
             ],
         ];
     }
 
-    /**
-     * Guidance appended to the system prompt when lead capture is enabled, so
-     * the model understands it has the tool and roughly when to reach for it.
-     */
     public function systemInstruction(): string
     {
         return implode("\n", [
@@ -130,21 +100,6 @@ class LeadCaptureService
         ]);
     }
 
-    /**
-     * Whether this order attempt should pause to ask for a phone number.
-     *
-     * Deliberately enforced here rather than trusted to the prompt. The model is
-     * told to ask first, and a model mid-order with everything else in hand
-     * routinely decides the number is optional and records without it — and once
-     * the order exists there is no natural moment to ask again. So the first
-     * order attempt with no number anywhere is turned into the question.
-     *
-     * It fires ONCE. Whatever the customer says next — a number, a refusal, or
-     * something else entirely — the following attempt records the order. That is
-     * what keeps requirement "ask" from quietly becoming requirement "insist".
-     *
-     * @param  array<int, array<string, mixed>>  $leadCalls
-     */
     public function shouldAskForPhoneFirst(?Conversation $conversation, array $leadCalls): bool
     {
         if ($conversation === null) {
@@ -158,16 +113,6 @@ class LeadCaptureService
         return ! $this->alreadyAskedForPhone($conversation);
     }
 
-    /**
-     * The customer's phone number for this order: what the model passed, else
-     * what they typed earlier in the conversation.
-     *
-     * The history is searched because the model frequently omits a number the
-     * customer gave three messages ago — it has already "seen" it, so it does
-     * not repeat it, and the order would be filed as uncallable.
-     *
-     * @param  array<int, array<string, mixed>>  $leadCalls
-     */
     public function phoneFor(?Conversation $conversation, array $leadCalls): ?string
     {
         foreach ($leadCalls as $call) {
@@ -192,7 +137,6 @@ class LeadCaptureService
         );
     }
 
-    /** Whether the assistant has already asked this customer for a number. */
     public function alreadyAskedForPhone(Conversation $conversation): bool
     {
         return $conversation->messages()
@@ -203,13 +147,6 @@ class LeadCaptureService
             ->contains(fn (Message $message) => (bool) ($message->meta[self::ASKED_FOR_PHONE] ?? false));
     }
 
-    /**
-     * What the model is told when the order is being held back for one turn.
-     *
-     * It is told the order is NOT saved, because a model that believes the order
-     * is already recorded asks for the number as an afterthought and the
-     * customer answers something else entirely.
-     */
     public function phoneRequestInstruction(): string
     {
         return implode("\n", [
@@ -224,11 +161,6 @@ class LeadCaptureService
         ]);
     }
 
-    /**
-     * What the model is told once the order IS recorded — and the difference is
-     * the whole point: never promise a call to someone whose number you do not
-     * have.
-     */
     public function confirmationInstruction(bool $hasPhone): string
     {
         return $hasPhone
@@ -241,19 +173,13 @@ class LeadCaptureService
                 .'again, and do not apologise for not having one. Use their own language and your own wording.';
     }
 
-    /**
-     * Persist a captured lead from the model's tool-call arguments.
-     *
-     * @param  array<string, mixed>  $args  Raw create_lead arguments.
-     */
     public function persist(Agent $agent, ?Conversation $conversation, array $args, string $source, ?string $phone = null): Lead
     {
         return $agent->leads()->create([
             'conversation_id' => $conversation?->id,
             'customer_name' => $this->clean($args['customer_name'] ?? null)
                 ?? $conversation?->external_user_name,
-            // Null is a real, recorded answer here: the customer was asked and
-            // declined. It is what puts "только чат" on the owner's panel.
+
             'phone' => $phone ?? $this->phoneFor($conversation, [['arguments' => $args]]),
             'contact' => $this->clean($args['contact'] ?? null),
             'items' => $this->clean($args['items'] ?? null),
@@ -264,16 +190,6 @@ class LeadCaptureService
         ]);
     }
 
-    /**
-     * A deterministic confirmation used only if the follow-up generation (which
-     * normally writes the confirmation in the conversation's language) fails —
-     * the lead is already saved by then, so the customer must still hear back.
-     */
-    /**
-     * Sent instead of a confirmation when the order genuinely could not be
-     * saved. Says what is true and what happens next, and promises nothing the
-     * business cannot deliver.
-     */
     public function orderFailureMessage(Agent $agent): string
     {
         return $agent->response_format['order_failure_message']
@@ -281,14 +197,6 @@ class LeadCaptureService
                 .'Я передал ваш запрос коллеге — с вами свяжутся, чтобы всё оформить.';
     }
 
-    /**
-     * What the model is told when the order could NOT be written.
-     *
-     * There is no version of this where the customer should hear "заявка
-     * принята". The write failed, so no order exists, and a confirmation would
-     * be a promise the business cannot keep — which is precisely the failure
-     * this instruction exists to stop repeating.
-     */
     public function failureInstruction(): string
     {
         return 'The order could NOT be recorded — the write failed. Do NOT tell the customer their order is '
@@ -297,19 +205,6 @@ class LeadCaptureService
             .'complete the order. Keep everything they told you in the conversation so it is not lost.';
     }
 
-    /**
-     * Record an order the assistant has already promised the customer.
-     *
-     * The last line of defence, and deliberately blunt. If a reply tells a
-     * customer their order is accepted, an order has to exist — the alternative
-     * is what happened in production: a shop that believes it has no orders
-     * while its customers believe they have placed three.
-     *
-     * The details are thin because they were never captured. That is fine: the
-     * conversation is linked, and an owner with a lead pointing at the right
-     * chat can read what was wanted in ten seconds. A thin order is recoverable;
-     * a missing one is not.
-     */
     public function recordPromisedOrder(Agent $agent, ?Conversation $conversation, string $source, ?string $phone = null): Lead
     {
         return $agent->leads()->create([
@@ -324,10 +219,6 @@ class LeadCaptureService
         ]);
     }
 
-    /**
-     * Asked when the model could not write the question itself. Having asked at
-     * all is what matters; a templated sentence still asks.
-     */
     public function phoneRequestFallback(Agent $agent): string
     {
         return $agent->response_format['phone_request_message']
@@ -336,9 +227,7 @@ class LeadCaptureService
 
     public function confirmationFallback(Agent $agent, bool $hasPhone = true): string
     {
-        // The owner's own wording is used only when a call can actually be
-        // promised — it almost always says "мы свяжемся"/"перезвоним", which is
-        // the one thing that must not be said to someone with no number on file.
+
         if ($hasPhone) {
             return $agent->response_format['lead_confirmation']
                 ?? 'Спасибо! Мы вам позвоним для подтверждения заказа.';

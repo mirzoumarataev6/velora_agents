@@ -12,7 +12,6 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-/** A private folder for one owner's CRM customers and sales records. */
 #[Fillable(['name', 'color'])]
 #[UsePolicy(CrmWorkspacePolicy::class)]
 class CrmWorkspace extends Model
@@ -27,22 +26,6 @@ class CrmWorkspace extends Model
         return ['is_default' => 'boolean'];
     }
 
-    /**
-     * Team-scoped, not user-scoped: Stage 2d-4 makes this (and the other
-     * five CRM scopeOwnedBy()s) read `team_id` instead of `user_id`, so a
-     * teammate sharing the active team sees the same rows the owner does —
-     * the entire point of this stage. Behaviour-neutral for the only case
-     * that exists today (one user, one team, current_team_id always valid):
-     * `activeTeamId()` resolves to that team's id and this reduces to
-     * exactly the same single-team result `user_id` scoping always gave.
-     *
-     * A null/stale `activeTeamId()` returns nothing, never falling back to
-     * `user_id` — a stale `current_team_id` must not leak another team's
-     * rows into view just because they happen to share an owner.
-     *
-     * @param  Builder<CrmWorkspace>  $query
-     * @return Builder<CrmWorkspace>
-     */
     public function scopeOwnedBy(Builder $query, User $user): Builder
     {
         $teamId = $user->activeTeamId();
@@ -52,11 +35,6 @@ class CrmWorkspace extends Model
             : $query->whereRaw('1 = 0');
     }
 
-    /**
-     * A shared team's default belongs to the team, regardless of who first
-     * opened CRM. firstOrCreate also retries a concurrent insert against the
-     * team/name unique key. The omitted-team branch remains for legacy callers.
-     */
     public static function defaultFor(User $user, Team|int|null $team = null): self
     {
         if ($team === null) {
@@ -73,8 +51,6 @@ class CrmWorkspace extends Model
             return $existing;
         }
 
-        // Preserve the backfill seam for a legacy unstamped default. An
-        // explicitly different team is never eligible for this adoption.
         $legacy = $user->crmWorkspaces()->whereNull('team_id')->where('name', '__main__')->first();
         if ($legacy !== null) {
             $legacy->forceFill(['team_id' => $teamId])->save();

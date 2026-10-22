@@ -5,42 +5,10 @@ namespace App\Services\Knowledge;
 use RuntimeException;
 use XMLReader;
 
-/**
- * Turns an uploaded product-feed XML file into normalized extraction output the
- * chunker understands.
- *
- * Recognized dialects:
- *   - Yandex YML          (<yml_catalog> / <shop> / <offers> / <offer>)
- *   - Google Merchant RSS (<rss> with g: namespace, <item> + <g:*> fields)
- *   - 1C CommerceML       (<КоммерческаяИнформация> / <Товар>)
- *   - generic catalog     (repeating <product> / <offer> / <item>)
- *
- * Each product becomes one retrieval-friendly line
- * ("Товар: … | Цена: … | Наличие: … | Категория: … | Артикул: …"), returned as
- * a 'tabular' payload so the chunker packs a fixed number of products per chunk
- * (see config agent.rag.xml_products_per_chunk), exactly like a spreadsheet.
- *
- * Anything that isn't a recognizable catalog falls back to a clean flat-text
- * extraction so the source still contributes something usable.
- *
- * Robustness:
- *   - UTF-8 feeds stream forward-only via XMLReader (the whole DOM is never
- *     materialized), so large catalogs stay within memory.
- *   - windows-1251 (very common in CIS feeds) is detected and transcoded to
- *     UTF-8 before parsing, because libxml can only stream a document whose
- *     declared encoding matches its bytes.
- *   - malformed markup is parsed with libxml recovery: whatever products were
- *     read before the break are kept; a fully unreadable file raises a helpful
- *     message instead of a fatal PHP error.
- */
 class XmlCatalogExtractor
 {
-    /** How much of the head to sniff for encoding + dialect detection. */
     protected const SNIFF_BYTES = 8192;
 
-    /**
-     * @return array{kind: string, header?: string, rows?: string[], text?: string, meta: array<string, mixed>}
-     */
     public function extract(string $path): array
     {
         if (! is_readable($path)) {
@@ -49,8 +17,6 @@ class XmlCatalogExtractor
 
         $encoding = $this->detectEncoding($path);
 
-        // Only non-UTF-8 documents are pulled fully into memory (to transcode);
-        // UTF-8 — the large-catalog common case — is streamed straight off disk.
         $inMemoryXml = $encoding !== 'UTF-8' ? $this->readTranscoded($path, $encoding) : null;
 
         $head = $this->sniffHead($path, $encoding);
@@ -61,17 +27,11 @@ class XmlCatalogExtractor
         if ($spec !== null) {
             $products = $this->parseStreaming($path, $inMemoryXml, $spec);
 
-            // XMLReader's pull parser can't partially recover a malformed
-            // document — a break anywhere aborts the whole stream. When a
-            // detected catalog yields nothing, retry with a DOM recovery pass
-            // that keeps whatever well-formed products it can salvage.
             if ($products === []) {
                 $products = $this->parseDomRecovery($path, $inMemoryXml, $spec);
             }
         }
 
-        // Unknown structure, or a "catalog" that yielded nothing usable: keep the
-        // source useful by falling back to clean flat text rather than failing.
         if ($products === []) {
             return $this->fallbackText($path, $inMemoryXml, $dialect);
         }
@@ -87,13 +47,6 @@ class XmlCatalogExtractor
         ];
     }
 
-    // ---- encoding -----------------------------------------------------------
-
-    /**
-     * Resolve the document's byte encoding, normalized to a canonical name
-     * ('UTF-8' or 'WINDOWS-1251'). Prefers the XML declaration, then a BOM,
-     * then a heuristic byte sniff for undeclared cp1251 (common in CIS feeds).
-     */
     protected function detectEncoding(string $path): string
     {
         $head = (string) file_get_contents($path, false, null, 0, self::SNIFF_BYTES);
@@ -112,8 +65,6 @@ class XmlCatalogExtractor
             }
         }
 
-        // No usable declaration: if the bytes aren't valid UTF-8 but do decode
-        // cleanly as cp1251, treat them as windows-1251.
         if (! mb_check_encoding($head, 'UTF-8') && mb_check_encoding($head, 'WINDOWS-1251')) {
             return 'WINDOWS-1251';
         }
@@ -121,10 +72,6 @@ class XmlCatalogExtractor
         return 'UTF-8';
     }
 
-    /**
-     * Read the whole file, transcode to UTF-8, and rewrite the XML declaration's
-     * encoding so libxml parses the returned string without a mismatch.
-     */
     protected function readTranscoded(string $path, string $encoding): string
     {
         $raw = (string) file_get_contents($path);
@@ -142,19 +89,12 @@ class XmlCatalogExtractor
         return $utf8;
     }
 
-    /**
-     * The first SNIFF_BYTES of the document as UTF-8, used for dialect
-     * detection. Transcodes when needed so Cyrillic root tags (CommerceML)
-     * match reliably.
-     */
     protected function sniffHead(string $path, string $encoding): string
     {
         $head = (string) file_get_contents($path, false, null, 0, self::SNIFF_BYTES);
 
         return $encoding === 'UTF-8' ? $head : mb_convert_encoding($head, 'UTF-8', $encoding);
     }
-
-    // ---- dialect detection --------------------------------------------------
 
     protected function detectDialect(string $head): string
     {
@@ -177,10 +117,6 @@ class XmlCatalogExtractor
         return 'unknown';
     }
 
-    /**
-     * The repeating product element for a generic catalog: the first of the
-     * usual suspects that actually appears in the head.
-     */
     protected function genericNodeName(string $head): ?string
     {
         foreach (['product', 'offer', 'item'] as $name) {
@@ -192,14 +128,6 @@ class XmlCatalogExtractor
         return null;
     }
 
-    // ---- parse strategy -----------------------------------------------------
-
-    /**
-     * The product node name, line mapper, and optional side-state collector for
-     * a dialect. Returns null for a non-catalog document.
-     *
-     * @return null|array{node: string, mapper: callable(\DOMElement, array<string, mixed>): string, collector: ?array{name: string, handler: callable, context: array<string, mixed>}}
-     */
     protected function catalogSpec(string $dialect, string $head): ?array
     {
         return match ($dialect) {
@@ -227,15 +155,6 @@ class XmlCatalogExtractor
         };
     }
 
-    /**
-     * Stream the document forward-only, expanding one product subtree at a time
-     * into a DOMElement and mapping it to a line — the whole DOM is never
-     * materialized. A dialect's collector (e.g. the YML categoryId → name
-     * table) is accumulated from nodes seen before the products.
-     *
-     * @param  array{node: string, mapper: callable, collector: ?array}  $spec
-     * @return string[]
-     */
     protected function parseStreaming(string $path, ?string $inMemoryXml, array $spec): array
     {
         $reader = new XMLReader;
@@ -255,8 +174,7 @@ class XmlCatalogExtractor
         $rows = [];
 
         try {
-            // @ suppresses the libxml warning-to-PHP bridge; a malformed break
-            // ends the stream and is handled by the DOM recovery fallback.
+
             while (@$reader->read()) {
                 if ($reader->nodeType !== XMLReader::ELEMENT) {
                     continue;
@@ -294,15 +212,6 @@ class XmlCatalogExtractor
         return $rows;
     }
 
-    /**
-     * Recovery pass for malformed catalogs: parse the whole document with
-     * libxml recovery mode enabled, then map every product node the recovered
-     * tree exposes. Heavier than streaming (builds a DOM), but only ever runs
-     * when streaming salvaged nothing.
-     *
-     * @param  array{node: string, mapper: callable, collector: ?array}  $spec
-     * @return string[]
-     */
     protected function parseDomRecovery(string $path, ?string $inMemoryXml, array $spec): array
     {
         $xml = $inMemoryXml ?? (string) file_get_contents($path);
@@ -344,11 +253,6 @@ class XmlCatalogExtractor
         return $rows;
     }
 
-    // ---- per-dialect product mappers ---------------------------------------
-
-    /**
-     * @return array{name: string, handler: callable, context: array<string, mixed>}
-     */
     protected function ymlCategoryCollector(): array
     {
         return [
@@ -364,9 +268,6 @@ class XmlCatalogExtractor
         ];
     }
 
-    /**
-     * @param  array<string, mixed>  $context
-     */
     protected function fromYml(\DOMElement $node, array $context): string
     {
         $name = $this->child($node, 'name');
@@ -399,8 +300,7 @@ class XmlCatalogExtractor
 
     protected function fromCommerceMl(\DOMElement $node): string
     {
-        // Prices in CommerceML often live in a separate "предложения" document;
-        // when present inline we read the first per-unit price, otherwise omit.
+
         $price = '';
         foreach ($node->getElementsByTagName('ЦенаЗаЕдиницу') as $priceNode) {
             $price = trim($priceNode->textContent);
@@ -428,8 +328,6 @@ class XmlCatalogExtractor
             'sku' => $this->firstChild($node, ['sku', 'article', 'артикул', 'vendorCode', 'id']) ?: $node->getAttribute('id'),
         ];
 
-        // If none of the well-known fields matched, fall back to a flat dump of
-        // this node's leaf children so the product still contributes text.
         if (trim(implode('', $fields)) === '') {
             return $this->flattenLeaves($node);
         }
@@ -437,11 +335,6 @@ class XmlCatalogExtractor
         return $this->formatProduct($fields);
     }
 
-    // ---- formatting helpers -------------------------------------------------
-
-    /**
-     * @param  array{name?: string, price?: string, available?: string, category?: string, sku?: string}  $fields
-     */
     protected function formatProduct(array $fields): string
     {
         $labels = [
@@ -471,9 +364,6 @@ class XmlCatalogExtractor
         return $price !== '' && $currency !== '' ? "{$price} {$currency}" : $price;
     }
 
-    /**
-     * Normalize the many ways feeds express stock into a short RU phrase.
-     */
     protected function availability(string $raw): string
     {
         $value = trim(mb_strtolower($raw));
@@ -490,7 +380,6 @@ class XmlCatalogExtractor
         };
     }
 
-    /** Direct-child text by (case-insensitive) local name. */
     protected function child(\DOMElement $node, string $name): string
     {
         foreach ($node->childNodes as $child) {
@@ -502,9 +391,6 @@ class XmlCatalogExtractor
         return '';
     }
 
-    /**
-     * @param  string[]  $names
-     */
     protected function firstChild(\DOMElement $node, array $names): string
     {
         foreach ($names as $name) {
@@ -532,16 +418,10 @@ class XmlCatalogExtractor
         return implode(' | ', $parts);
     }
 
-    // ---- fallback -----------------------------------------------------------
-
-    /**
-     * @return array{kind: string, text: string, meta: array<string, mixed>}
-     */
     protected function fallbackText(string $path, ?string $inMemoryXml, string $dialect): array
     {
         $xml = $inMemoryXml ?? (string) file_get_contents($path);
 
-        // Drop comments/CDATA scaffolding, turn tags into whitespace, collapse.
         $text = preg_replace('/<!\[CDATA\[(.*?)\]\]>/s', '$1', $xml) ?? $xml;
         $text = strip_tags($text);
         $text = html_entity_decode($text, ENT_QUOTES | ENT_XML1, 'UTF-8');

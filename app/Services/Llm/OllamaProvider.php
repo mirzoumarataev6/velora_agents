@@ -8,14 +8,6 @@ use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
-/**
- * Обёртка над локальным/самостоятельно размещённым Ollama (`/api/chat`,
- * `/api/embeddings`). Нет api_key — отдельному серверу нечем аутентифицироваться.
- *
- * Почему так: `/api/chat` вызывается со `stream: false`, иначе Ollama отдаёт
- * NDJSON построчно, а не один JSON-объект, и весь остальной контракт
- * (generate()/extractFromImage()) рассчитан на единый ответ, как у OpenAI/Gemini.
- */
 class OllamaProvider implements LlmProviderInterface
 {
     protected string $baseUrl;
@@ -53,9 +45,7 @@ class OllamaProvider implements LlmProviderInterface
 
     public function embeddingDimensions(): ?int
     {
-        // Зависит от конкретной локальной модели владельца — нет единого
-        // дефолта, как у OpenAI/Gemini. MySqlCosineVectorStore читает длину
-        // вектора из самих данных, так что null здесь безопасен.
+
         return null;
     }
 
@@ -77,11 +67,6 @@ class OllamaProvider implements LlmProviderInterface
             'stream' => false,
         ];
 
-        // Почему так: `array_filter` на пустом массиве даёт `[]`, а `json_encode`
-        // сериализует пустой список как JSON-массив `[]`, не объект `{}` — Go
-        // ждёт объект для `options` и падает с "cannot unmarshal array into
-        // ... map[string]interface{}". Ключ просто опускается, когда нечего
-        // передавать.
         $generationOptions = array_filter([
             'temperature' => $options['temperature'] ?? null,
             'num_predict' => $options['max_output_tokens'] ?? null,
@@ -171,10 +156,6 @@ class OllamaProvider implements LlmProviderInterface
             return [];
         }
 
-        // Почему так: `/api/embed` (батчем) не гарантированно доступен на
-        // старых установках Ollama, а `/api/embeddings` (по одному тексту)
-        // есть у всех — батч-размер из конфига ограничивает только то, сколько
-        // запросов уходит в рамках одного усреднённого лога использования.
         $results = [];
 
         foreach (array_chunk($texts, max(1, $this->embeddingBatchSize), true) as $chunk) {
@@ -232,8 +213,7 @@ class OllamaProvider implements LlmProviderInterface
             $arguments = $call['function']['arguments'] ?? [];
 
             $toolCalls[] = [
-                // Ollama не присваивает id вызовам инструментов — синтезируем
-                // стабильный, чтобы ход с tool_result мог на него сослаться.
+
                 'id' => $name !== '' ? $name.':'.$i : 'call_'.$i,
                 'name' => $name,
                 'arguments' => is_array($arguments) ? $arguments : [],
@@ -249,9 +229,6 @@ class OllamaProvider implements LlmProviderInterface
         ];
     }
 
-    /**
-     * @throws OllamaException
-     */
     protected function request(string $operation, string $path, array $payload): array
     {
         try {
@@ -266,8 +243,6 @@ class OllamaProvider implements LlmProviderInterface
                             return true;
                         }
 
-                        // Нет чужого rate limit'а, который стоило бы различать —
-                        // ретраим только то, что похоже на временный сбой сервера.
                         return $exception instanceof RequestException
                             && in_array($exception->response->status(), [500, 502, 503, 504], true);
                     },

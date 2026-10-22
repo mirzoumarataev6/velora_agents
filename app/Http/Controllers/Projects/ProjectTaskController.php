@@ -60,13 +60,7 @@ class ProjectTaskController extends Controller
                 'deal_id' => $data['deal_id'] ?? null,
             ]);
             [$newlyAssigned] = $this->syncAssignees($task, $data['assignee_ids'] ?? []);
-            // Where in this transaction notifyNewAssignees() is called doesn't
-            // affect whether a later failure can undo it: DB::afterCommit
-            // queues its callback onto the CURRENT transaction regardless of
-            // registration order, and the whole queue is discarded if that
-            // transaction rolls back for any reason, including something
-            // thrown by syncLabels()/workflow->record() below. Called here
-            // simply for locality with the write it reports on.
+
             $this->notifyNewAssignees($task, $board, $newlyAssigned, $request->user());
             $this->syncLabels($task, $data['label_ids'] ?? []);
             $workflow->record($task, $request->user(), 'created');
@@ -111,14 +105,9 @@ class ProjectTaskController extends Controller
             $newlyAssigned = [];
             if (array_key_exists('assignee_ids', $data)) {
                 [$newlyAssigned, $unassigned] = $this->syncAssignees($task, $data['assignee_ids']);
-                // See store() above: called here for locality with the write
-                // it reports on, not because the position within this
-                // transaction changes DB::afterCommit's rollback behaviour.
+
                 $this->notifyNewAssignees($task, $board, $newlyAssigned, $request->user());
-                // User ids, not names: the activity log resolves them to
-                // CURRENT names at render time (same as actor_id already
-                // does), so a renamed or deleted account never leaves a
-                // stale name frozen in old history.
+
                 if ($newlyAssigned !== []) {
                     $eventDetails['assignees_added'] = $newlyAssigned;
                 }
@@ -164,15 +153,6 @@ class ProjectTaskController extends Controller
         DB::transaction(fn () => $task->forceFill(['archived_at' => $task->archived_at ? null : now()])->save());
         $workflow->record($task, $request->user(), $task->archived_at ? 'archived' : 'restored');
 
-        // Rebuilt from route() rather than back(), so — unlike the other actions
-        // below, which already keep q/filter/page via back()'s Referer — this one
-        // must explicitly carry the rest of the query string forward itself
-        // (PRJ-005). $request->query(), never ->except()/->all(): this is a PATCH
-        // whose body carries _token and _method, and except() reads from the
-        // merged query+body — that put the live CSRF token in the redirect URL,
-        // browser history and Referer header. And the route parameter must be
-        // merged in LAST: a stray ?board=99 in the query must never be allowed
-        // to outrank the real board this request was authorized against.
         return redirect()->route('projects.boards.show', array_merge(
             Arr::except($request->query(), ['board', 'task']),
             ['board' => $board]
@@ -248,14 +228,6 @@ class ProjectTaskController extends Controller
         ];
     }
 
-    /**
-     * One message for both bounds of Task::DUE_AT_RULES — the owner does not
-     * need to know their date failed because it is past a MySQL TIMESTAMP's
-     * ceiling specifically vs its floor, only that the date they typed is
-     * out of range.
-     *
-     * @return array<string, string>
-     */
     private function taskMessages(): array
     {
         return [
@@ -293,12 +265,6 @@ class ProjectTaskController extends Controller
         }
     }
 
-    /**
-     * @param  list<int>  $ids
-     * @return array{0: list<int>, 1: list<int>} [added ids, removed ids] — ids
-     *                                           present only in the new set,
-     *                                           and ids present only in the old
-     */
     private function syncAssignees(Task $task, array $ids): array
     {
         $previousIds = DB::table('project_task_assignees')->where('task_id', $task->id)->pluck('user_id')->all();
@@ -312,39 +278,20 @@ class ProjectTaskController extends Controller
             ], $ids));
         }
 
-        // Every write here — including re-saving a card with its assignee
-        // list untouched — goes through the same wipe-and-reinsert, so there
-        // is no "this id is new to the request" flag to read off anywhere.
-        // Diffing the before/after sets is the only way to tell "just
-        // assigned" apart from "already was, still is": without it, editing
-        // a task's title would silently re-notify everyone already on it.
-        // The same diff doubles as the activity log's assignees_added/
-        // assignees_removed (see update() above).
         return [
             array_values(array_diff($ids, $previousIds)),
             array_values(array_diff($previousIds, $ids)),
         ];
     }
 
-    /**
-     * @param  list<int>  $newlyAssignedIds  from syncAssignees() — already the
-     *                                       new-minus-previous diff, never the
-     *                                       full submitted set
-     */
     private function notifyNewAssignees(Task $task, ProjectBoard $board, array $newlyAssignedIds, User $actor): void
     {
-        // Assigning yourself is not news. checkAssignees() lets an actor name
-        // themselves as an assignee like anyone else, so this is filtered here
-        // rather than relied on to never happen upstream.
+
         $recipientIds = array_values(array_diff($newlyAssignedIds, [$actor->id]));
         if ($recipientIds === []) {
             return;
         }
 
-        // Already validated: every id here passed checkAssignees() earlier in
-        // this request (same team, and board access for a private board), so
-        // this fetch only resolves rows to notify — it does not decide who is
-        // allowed to be assigned.
         $recipients = User::whereIn('id', $recipientIds)->get();
         if ($recipients->isEmpty()) {
             return;
@@ -361,22 +308,8 @@ class ProjectTaskController extends Controller
             dueAt: $task->due_at?->toIso8601String(),
         );
 
-        // DB::afterCommit, not a plain call: this queues the closure onto the
-        // CURRENT transaction (the one store()/update() above writes the
-        // assignment in) and Laravel discards the whole queue, unfired, if
-        // that transaction rolls back for any reason — nobody should be told
-        // about an assignment that a rollback just undid. Notification::
-        // sendNow, not ->notify()/queued: the database channel is one INSERT
-        // per recipient, not worth a round trip through the `default` queue
-        // pool, which CLAUDE.md reserves for customer-facing work.
         DB::afterCommit(function () use ($recipients, $notification, $task, $recipientIds) {
-            // By the time this runs, the assignment is already committed —
-            // the write succeeded. The assignment is the source of truth;
-            // this notification is a courtesy on top of it, and a courtesy
-            // that fails (notifications table missing because a deploy
-            // forgot to migrate, a DB hiccup) must never turn an already
-            // -successful save into a 500 the user retries, assigning the
-            // same people again.
+
             try {
                 Notification::sendNow($recipients, $notification);
             } catch (Throwable $e) {
@@ -389,10 +322,6 @@ class ProjectTaskController extends Controller
         });
     }
 
-    /**
-     * @param  list<int>  $ids
-     * @return array{0: list<int>, 1: list<int>} [added label ids, removed label ids]
-     */
     private function syncLabels(Task $task, array $ids): array
     {
         $previousIds = DB::table('project_task_labels')->where('task_id', $task->id)->pluck('label_id')->all();

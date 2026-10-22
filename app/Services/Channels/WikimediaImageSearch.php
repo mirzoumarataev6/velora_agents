@@ -8,7 +8,6 @@ use RuntimeException;
 
 class WikimediaImageSearch
 {
-    /** Terms that describe a kind of image, not the requested product model. */
     private const GENERIC_QUERY_TERMS = [
         'photo', 'picture', 'image', 'фото', 'фотография', 'картинка', 'изображение',
         'laptop', 'notebook', 'computer', 'ноутбук', 'компьютер', 'gaming', 'игровой',
@@ -21,7 +20,6 @@ class WikimediaImageSearch
         'monitor' => ['monitor', 'display', 'монитор'],
     ];
 
-    /** Commons is used because its file metadata exposes attribution and license information. */
     public function search(string $query, int $limit = 3, ?string $productType = null): array
     {
         $query = trim(mb_substr($query, 0, 180));
@@ -37,8 +35,7 @@ class WikimediaImageSearch
             ])->connectTimeout(3)->timeout(8)->get('https://commons.wikimedia.org/w/api.php', [
                 'action' => 'query', 'format' => 'json', 'generator' => 'search',
                 'gsrsearch' => 'filetype:bitmap '.$query.($productType !== null && ! str_contains(mb_strtolower($query), $productType) ? ' '.$productType : ''), 'gsrnamespace' => 6,
-                // Filtering two lexical hits often discarded the unrelated
-                // hits before ever considering an actual product photo.
+
                 'gsrlimit' => 10, 'prop' => 'imageinfo',
                 'iiprop' => 'url|extmetadata', 'iiurlwidth' => 720,
             ]);
@@ -52,11 +49,7 @@ class WikimediaImageSearch
             foreach ($pages as $page) {
                 $info = $page['imageinfo'][0] ?? [];
                 $url = $info['thumburl'] ?? $info['url'] ?? null;
-                // Commons currently returns resized search previews from
-                // thumb.wikimedia.org, while original files use
-                // upload.wikimedia.org. Both are first-party Wikimedia hosts;
-                // accepting only originals made a successful live search look
-                // like an empty result and silently prevented photo delivery.
+
                 $host = strtolower((string) parse_url((string) $url, PHP_URL_HOST));
                 if (! is_string($url)
                     || ! in_array($host, ['upload.wikimedia.org', 'thumb.wikimedia.org'], true)
@@ -68,17 +61,12 @@ class WikimediaImageSearch
                 $license = trim(strip_tags((string) ($metadata['LicenseShortName']['value'] ?? '')));
                 $author = trim(strip_tags((string) ($metadata['Artist']['value'] ?? '')));
                 $licenseUrl = trim(strip_tags((string) ($metadata['LicenseUrl']['value'] ?? '')));
-                // Commons includes files whose reuse terms are unclear or whose
-                // machine-readable attribution is missing. Do not send those.
+
                 if ($license === '' || $licenseUrl === '') {
                     continue;
                 }
                 $title = (string) ($page['title'] ?? '');
-                // Commons text search is lexical: "OMEN 16" currently returns
-                // photographs of an art installation called Omen. Sending a
-                // plausible-looking but unrelated photo is worse than returning
-                // no photo, so a model number and distinctive name must occur
-                // in the file title before it can reach the customer.
+
                 if (! $this->titleMatchesModelQuery($title, $query, $productType)) {
                     continue;
                 }
@@ -125,8 +113,7 @@ class WikimediaImageSearch
 
         $normalizedTitle = mb_strtolower($title);
         if ($productType === null || ! isset(self::PRODUCT_TYPE_TERMS[$productType])) {
-            // A model name alone can also name a band, event, artwork or
-            // person. Without a product class there is no safe way to decide.
+
             return false;
         }
 
@@ -138,17 +125,7 @@ class WikimediaImageSearch
         }
 
         if ($terms === []) {
-            // A query of ONLY generic/type words ("laptop") is a deliberate
-            // browse by product type, and returning true for any matching
-            // title is the intended, permissive behaviour.
-            //
-            // But a query that also had a short, SPECIFIC word too short to
-            // survive the filter above (a bare brand like "HP", left over
-            // once a model name was lost upstream) is a narrower request than
-            // "any laptop" — returning true unconditionally here is what let
-            // an unrelated same-type photo ("HP Laptop 14S") through for a
-            // request that should have stayed a specific model. Require that
-            // short word itself to appear in the title instead.
+
             $shortSpecificTerms = array_values(array_filter($matches[0] ?? [], fn (string $term) => ! ctype_digit($term)
                 && mb_strlen($term) < 3 && ! in_array($term, self::GENERIC_QUERY_TERMS, true)
             ));
@@ -156,8 +133,6 @@ class WikimediaImageSearch
             return $shortSpecificTerms === [] || array_intersect($shortSpecificTerms, $titleTerms) !== [];
         }
 
-        // Require the model as one sequence. Separate occurrences of "Omen"
-        // and "16" let the concert photo Profane_Omen_..._16.jpg through.
         $queryLength = count($terms);
         foreach ($titleTerms as $index => $unused) {
             if (array_slice($titleTerms, $index, $queryLength) === $terms) {

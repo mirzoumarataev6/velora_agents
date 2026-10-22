@@ -5,12 +5,6 @@ namespace App\Services\Bi\Query;
 use App\Models\BiColumn;
 use App\Models\BiDataset;
 
-/**
- * The only difference between a materialized column and a live one is where
- * its identifier comes from. Both are resolved by SpecValidator against the
- * current dataset before reaching these methods; a source label or chat string
- * can never become an identifier.
- */
 trait ExternalColumns
 {
     protected function quoteTable(BiDataset $dataset): string
@@ -26,16 +20,13 @@ trait ExternalColumns
 
     protected function column(BiColumn $column): string
     {
-        // QuerySpec has checked that this exact registry row belongs to the
-        // dataset. The source name is the server-discovered identifier.
+
         return $this->quote($column->source_name);
     }
 
     protected function detailOrder(QuerySpec $spec): string
     {
-        // Live tables do not have our internal _row key. Ordering by every
-        // selected field keeps pages deterministic even when the owner did not
-        // choose a sort. Tied rows are identical in this projection.
+
         return implode(', ', array_map(fn ($dimension) => $this->quote($dimension->alias()).' ASC', $spec->dimensions));
     }
 }

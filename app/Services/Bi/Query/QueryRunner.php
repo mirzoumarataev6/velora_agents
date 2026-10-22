@@ -12,28 +12,12 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Throwable;
 
-/**
- * Executes a QuerySpec: readiness checks, cache, the statement itself, and the
- * classification of whatever goes wrong.
- *
- * This is the only class in the layer that touches a database. Everything above
- * it — spec, validator, compiler — is pure, which is what makes the security
- * properties testable without a server and is why those classes are the ones
- * with the long docblocks. This one's job is the messy half: deciding when NOT
- * to run, and turning a driver exception into something an owner can read.
- */
 class QueryRunner
 {
     public function __construct(
         protected readonly CompilerFactory $compilers = new CompilerFactory,
     ) {}
 
-    /**
-     * @param  bool  $fresh  Skip the cache for this call — a manual "refresh" on a
-     *                       tile, never the default. Still WRITES the result back.
-     *
-     * @throws BiQueryException
-     */
     public function run(QuerySpec $spec, bool $fresh = false): QueryResult
     {
         $this->assertRunnable($spec->dataset);
@@ -54,22 +38,11 @@ class QueryRunner
 
         $result = $this->execute($connection, $compiled, $spec);
 
-        // Written back even when `$fresh` was requested: the next reader of the
-        // same tile should benefit from the refresh somebody else just paid for.
         $cache->put($key, $result->toCache(), $this->ttl());
 
         return $result;
     }
 
-    /**
-     * The checks that are about the world rather than about the query.
-     *
-     * Kept out of QuerySpec deliberately — see that class's docblock. A spec
-     * saved on a dashboard stays valid while its dataset rebuilds; it is only
-     * *running* it that has to wait.
-     *
-     * @throws BiQueryException
-     */
     protected function assertRunnable(BiDataset $dataset): void
     {
         if (! $dataset->isReady()) {
@@ -83,12 +56,6 @@ class QueryRunner
             return;
         }
 
-        // The table is dropped and recreated on every rematerialization, so there
-        // is a real window — seconds on a small file, minutes on a large one — in
-        // which the row says `ready` and the table is not there. Checked rather
-        // than discovered as a driver error, because "table missing" is transient
-        // and retryable while the error the driver raises for it is
-        // indistinguishable from a genuine bug.
         if (! Schema::hasTable($dataset->physicalTable())) {
             throw new BiQueryException(
                 BiQueryException::TABLE_MISSING,
@@ -133,9 +100,6 @@ class QueryRunner
         return $result;
     }
 
-    /**
-     * @throws BiQueryException
-     */
     protected function execute(ConnectionInterface $connection, CompiledQuery $compiled, QuerySpec $spec): QueryResult
     {
         $startedAt = microtime(true);
@@ -150,14 +114,6 @@ class QueryRunner
 
         $durationMs = (int) round((microtime(true) - $startedAt) * 1000);
 
-        // The PHP-side ceiling. On MySQL the optimizer hint has already stopped
-        // the statement and we never get here; this is what gives SQLite — and a
-        // MariaDB that ignored the hint — the same classified error rather than a
-        // request that merely took a very long time and then succeeded. It cannot
-        // interrupt the query, and saying so is the honest version: by the time
-        // this fires the work is already done. What it buys is that the owner is
-        // told the tile is too slow instead of being handed a number that took
-        // forty seconds and will again.
         if ($durationMs > $this->timeoutMs()) {
             throw new BiQueryException(
                 BiQueryException::TIMEOUT,
@@ -167,8 +123,6 @@ class QueryRunner
 
         $rows = array_map(fn ($row) => (array) $row, $rows);
 
-        // The probe row is removed here and never leaves this method, so no
-        // caller can accidentally render page_size + 1 rows.
         $hasMore = $compiled->hasMore(count($rows));
 
         if ($hasMore) {
@@ -185,22 +139,11 @@ class QueryRunner
         );
     }
 
-    /**
-     * Turn a driver exception into a classified one.
-     *
-     * Only two outcomes, because only two are actionable: the owner can retry a
-     * timeout or simplify the tile, and everything else is ours to fix. Matching
-     * on SQLSTATE and vendor code rather than on message text, which is
-     * localized on some MySQL builds.
-     */
     protected function classify(QueryException $e, int $durationMs): BiQueryException
     {
         $sqlState = (string) ($e->errorInfo[0] ?? '');
         $driverCode = (int) ($e->errorInfo[1] ?? 0);
 
-        // 3024: ER_QUERY_TIMEOUT, what MAX_EXECUTION_TIME raises.
-        // 1028/2013/HY000+2006: the connection died under a long statement,
-        // which from the owner's side is the same event.
         $timedOut = $driverCode === 3024
             || $driverCode === 2013
             || $driverCode === 2006
@@ -217,16 +160,6 @@ class QueryRunner
         return new BiQueryException(BiQueryException::EXECUTION_FAILED, $e->getMessage(), $e);
     }
 
-    /**
-     * The cache key.
-     *
-     * Namespaced by dataset so a future "invalidate everything for this dataset"
-     * has somewhere to hook, and fingerprinted by the spec — which already folds
-     * in `bi_datasets.version`. That is what makes a rematerialization invalidate
-     * every cached tile over that dataset without anything having to go and find
-     * them: the new version produces different keys, and the orphaned entries
-     * expire on their own TTL rather than being hunted down.
-     */
     protected function cacheKey(QuerySpec $spec): string
     {
         return 'bi:q:'.$spec->dataset->getKey().':'.$spec->fingerprint();

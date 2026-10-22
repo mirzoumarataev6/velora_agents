@@ -19,10 +19,8 @@ class SendEscalationNotificationJob implements ShouldQueue
 
     public int $tries = 2;
 
-    // Создаёт задачу уведомления владельца об эскалации диалога
     public function __construct(public Conversation $conversation) {}
 
-    // Отправляет владельцу в Telegram уведомление о диалоге, требующем внимания человека
     public function handle(ChannelDriverManager $drivers): void
     {
         $agent = $this->conversation->agent;
@@ -59,7 +57,6 @@ class SendEscalationNotificationJob implements ShouldQueue
         }
     }
 
-    // Формирует текст уведомления об эскалации для отправки владельцу
     protected function message(string $agentName, ?string $locale): string
     {
         $locale = $locale ?: config('app.locale');

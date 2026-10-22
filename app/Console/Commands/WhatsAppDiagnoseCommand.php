@@ -8,20 +8,6 @@ use Illuminate\Console\Command;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 
-/**
- * Reports the REAL state of a WhatsApp Cloud API setup, straight from the Graph
- * API, and can repair the webhook subscription without touching a browser.
- *
- * Written because the interesting failures here are all invisible from inside
- * the app: a token that expired last Tuesday, a callback URL still pointing at
- * yesterday's tunnel, an app subscribed to the wrong fields, a WABA that never
- * got subscribed to the app at all. Every one of those looks identical from
- * this side — messages simply never arrive — so this command asks Meta rather
- * than inferring.
- *
- * Everything printed is the raw response. Nothing here summarises an error into
- * a guess about what it means.
- */
 #[Description('Check (and optionally repair) the WhatsApp Cloud API setup against the Graph API')]
 class WhatsAppDiagnoseCommand extends Command
 {
@@ -36,11 +22,6 @@ class WhatsAppDiagnoseCommand extends Command
         {--waba= : WhatsApp Business Account ID, if you already know it}
         {--fix : Repair the webhook subscription to point at this app\'s callback URL}';
 
-    /**
-     * Matches the driver, deliberately. A diagnosis run against a different API
-     * version than the one that actually sends messages can come back clean
-     * while the real path is broken.
-     */
     protected const API_VERSION = 'v21.0';
 
     public function handle(): int
@@ -126,9 +107,6 @@ class WhatsAppDiagnoseCommand extends Command
         return self::SUCCESS;
     }
 
-    /**
-     * @return array{expected_webhook_url: ?string, stored_webhook_url: ?string}
-     */
     protected function reportLocalState(?Channel $channel): array
     {
         $this->reportEnvironment();
@@ -164,16 +142,6 @@ class WhatsAppDiagnoseCommand extends Command
         return ['expected_webhook_url' => $expected, 'stored_webhook_url' => $stored];
     }
 
-    /**
-     * The WABA ids the token actually carries authority over.
-     *
-     * debug_token's granular_scopes is the only place that reports this without
-     * already knowing a business id, which is why it is read here rather than
-     * walking /me/businesses — a system-user token frequently cannot.
-     *
-     * @param  array<int, array<string, mixed>>  $scopes
-     * @return array<int, string>
-     */
     protected function discoverWabaIds(array $scopes): array
     {
         if ($explicit = $this->option('waba')) {
@@ -227,19 +195,6 @@ class WhatsAppDiagnoseCommand extends Command
         $this->components->warn('No whatsapp_business_account subscription on this app at all.');
     }
 
-    /**
-     * Point the app's subscription at this deployment, and make sure the WABA
-     * is actually subscribed to the app.
-     *
-     * Both halves are required and they are separate objects in Meta's model:
-     * the first says "send WhatsApp events to this URL", the second says "this
-     * business account is one you may send events about". Setting only the
-     * first is the single most common reason a correct-looking setup delivers
-     * nothing.
-     *
-     * @param  array<int, string>  $wabaIds
-     * @param  array{expected_webhook_url: ?string, stored_webhook_url: ?string}  $local
-     */
     protected function repair(?string $appId, array $wabaIds, array $local, ?Channel $channel): void
     {
         $callback = $local['expected_webhook_url'];
@@ -266,8 +221,6 @@ class WhatsAppDiagnoseCommand extends Command
             'access_token' => $this->appToken(),
         ]));
 
-        // Meta calls the URL above synchronously during this POST, so a failure
-        // here is usually the handshake failing, not the subscription itself.
         $this->line('  (Meta calls the callback URL during that POST — a verification failure shows up as the error above.)');
 
         foreach ($wabaIds as $wabaId) {

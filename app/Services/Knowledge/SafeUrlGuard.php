@@ -4,22 +4,8 @@ namespace App\Services\Knowledge;
 
 use RuntimeException;
 
-/**
- * Guards against SSRF when fetching user-supplied URLs (knowledge sources):
- * rejects non-http(s) schemes and resolves the hostname to reject private/
- * reserved/loopback IP ranges before any request is made.
- */
 class SafeUrlGuard
 {
-    /**
-     * Validate that a URL is safe to fetch server-side.
-     *
-     * @return array{0: string, 1: int} The validated [ip, port] to pin the
-     *                                  connection to, preventing DNS-rebinding
-     *                                  between this check and the actual fetch.
-     *
-     * @throws RuntimeException
-     */
     public static function assertSafe(string $url): array
     {
         $parts = parse_url($url);
@@ -61,9 +47,6 @@ class SafeUrlGuard
         ) !== false;
     }
 
-    /**
-     * @return string[]
-     */
     protected static function resolveIps(string $host): array
     {
         if (filter_var($host, FILTER_VALIDATE_IP)) {

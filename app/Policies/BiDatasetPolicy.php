@@ -21,7 +21,6 @@ class BiDatasetPolicy
         return $this->permitted($user, PermissionCatalog::ANALYTICS_VIEW, $dataset);
     }
 
-    /** Running a query against it. Deliberately distinct from view(). */
     public function query(User $user, BiDataset $dataset): bool
     {
         return $this->permitted($user, PermissionCatalog::ANALYTICS_VIEW, $dataset);

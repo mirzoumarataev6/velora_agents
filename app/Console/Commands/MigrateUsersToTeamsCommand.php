@@ -8,32 +8,12 @@ use App\Services\Teams\CreatesPersonalTeam;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 
-/**
- * Idempotent backfill, safe to run repeatedly on a populated database —
- * never inline in `php artisan migrate` — per the Phase-1 plan's data
- * migration strategy. Two passes, each guarded by `whereNull('team_id')` so
- * neither can ever overwrite a row that already carries a team:
- *
- * 1. A user with no team yet gets a personal Team (as Owner), and every row
- *    they own gets that team's id denormalized onto it.
- * 2. A user who already has a team gets topped up: until a later stage
- *    wires every write path to stamp `team_id` itself, a row created after
- *    a user's first migration (a new conversation, deal, task, ...) is
- *    still born with `team_id = NULL`. Skipping such users entirely — as
- *    an earlier version of this command did, by only ever looking at
- *    `current_team_id IS NULL` — was a dead end: `team:verify-migration`
- *    would keep finding NULLs that this command could never go back and
- *    fill, right before the NOT NULL flip. This pass closes that gap by
- *    re-scanning every already-migrated user for rows still missing a
- *    team_id and filling them with their existing team.
- */
 class MigrateUsersToTeamsCommand extends Command
 {
     protected $signature = 'team:migrate-users {--dry-run} {--chunk=200}';
 
     protected $description = 'Backfill a personal team for every user who does not have one yet, top up rows created since, and denormalize team_id onto them.';
 
-    /** Tables scoped today by a direct user_id column. */
     private const DIRECT_TABLES = [
         'usage_logs', 'deals', 'bi_sources', 'bi_datasets', 'bi_columns',
         'bi_dashboards', 'bi_widgets', 'bi_connections', 'bi_chat_messages',
@@ -41,7 +21,6 @@ class MigrateUsersToTeamsCommand extends Command
         'customer_merges', 'deal_activities',
     ];
 
-    /** Tables scoped only by agent_id, backfilled by joining through agents.user_id. */
     private const AGENT_SCOPED_TABLES = [
         'knowledge_sources', 'channels', 'knowledge_chunks', 'conversations',
         'leads', 'datasets', 'dataset_products', 'database_connections', 'product_images',
@@ -84,7 +63,6 @@ class MigrateUsersToTeamsCommand extends Command
         return self::SUCCESS;
     }
 
-    /** @return array{0: int, 1: int} [users created, rows backfilled] */
     private function createPersonalTeams(bool $dryRun, int $chunk): array
     {
         $createdUsers = 0;
@@ -116,7 +94,6 @@ class MigrateUsersToTeamsCommand extends Command
         return [$createdUsers, $createdRows];
     }
 
-    /** @return array{0: int, 1: int} [users topped up, rows filled] */
     private function topUpExistingTeams(bool $dryRun, int $chunk): array
     {
         $toppedUpUsers = 0;
@@ -141,8 +118,7 @@ class MigrateUsersToTeamsCommand extends Command
                 $team = Team::find($user->current_team_id);
 
                 if ($team === null) {
-                    // An orphaned current_team_id — nothing sane to fill
-                    // with. team:verify-migration surfaces this separately.
+
                     continue;
                 }
 
@@ -158,7 +134,6 @@ class MigrateUsersToTeamsCommand extends Command
         return [$toppedUpUsers, $toppedUpRows];
     }
 
-    /** Rows this user owns that do not yet carry ANY team_id — never rows that carry a different one. */
     private function countMissingRows(User $user): int
     {
         $count = DB::table('agents')->where('user_id', $user->id)->whereNull('team_id')->count();
@@ -178,12 +153,6 @@ class MigrateUsersToTeamsCommand extends Command
         return $count;
     }
 
-    /**
-     * Fills `team_id` only where it is currently NULL — used both to
-     * backfill a brand-new team and to top up an existing one, so neither
-     * path can ever clobber a row that already carries a (possibly
-     * different) team.
-     */
     private function fillMissingRows(User $user, Team $team): void
     {
         DB::table('agents')->where('user_id', $user->id)->whereNull('team_id')->update(['team_id' => $team->id]);
@@ -192,10 +161,6 @@ class MigrateUsersToTeamsCommand extends Command
             DB::table($table)->where('user_id', $user->id)->whereNull('team_id')->update(['team_id' => $team->id]);
         }
 
-        // Not a join()->update() on purpose: SQLite's query builder grammar
-        // (which the test suite runs on, per tests/TestCase.php) does not
-        // support joined updates the way MySQL does. A whereIn subquery
-        // compiles identically on both.
         foreach (self::AGENT_SCOPED_TABLES as $table) {
             DB::table($table)
                 ->whereIn('agent_id', function ($query) use ($user) {

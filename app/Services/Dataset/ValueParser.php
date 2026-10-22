@@ -18,7 +18,6 @@ class ValueParser
         'нест', 'мавҷуд нест', 'мавчуд нест',
     ];
 
-    // Разбирает строку с ценой и возвращает её в нормализованном числовом виде
     public function price(?string $raw): ?string
     {
         $value = $this->number($raw);
@@ -30,7 +29,6 @@ class ValueParser
         return number_format($value, 2, '.', '');
     }
 
-    // Разбирает строку с остатком (число или текстовую отметку наличия) в количество
     public function stock(?string $raw): ?int
     {
         $value = $this->clean($raw);
@@ -58,7 +56,6 @@ class ValueParser
         return max(0, (int) floor($number));
     }
 
-    // Очищает и обрезает текстовое значение ячейки до заданной длины
     public function text(?string $raw, int $limit = 255): ?string
     {
         $value = $this->clean($raw);
@@ -72,7 +69,6 @@ class ValueParser
         return $value === '' ? null : mb_substr($value, 0, $limit);
     }
 
-    // Очищает и обрезает длинный текст (например, описание товара)
     public function longText(?string $raw, int $limit = 5000): ?string
     {
         $value = $this->clean($raw);
@@ -80,7 +76,6 @@ class ValueParser
         return $value === null ? null : mb_substr($value, 0, $limit);
     }
 
-    // Разбирает строку и возвращает валидный URL, при необходимости добавляя схему
     public function url(?string $raw): ?string
     {
         $value = $this->text($raw, 1024);
@@ -99,7 +94,6 @@ class ValueParser
                 : null;
     }
 
-    // Разбирает строку в число с плавающей точкой, учитывая знак и разделители
     protected function number(?string $raw): ?float
     {
         $value = $this->clean($raw);
@@ -127,7 +121,6 @@ class ValueParser
         return $negative ? -(float) $value : (float) $value;
     }
 
-    // Определяет, какой из разделителей (запятая или точка) десятичный, а какой — разряды тысяч
     protected function normalizeSeparators(string $value): string
     {
         $lastComma = strrpos($value, ',');
@@ -161,7 +154,6 @@ class ValueParser
         return $head.'.'.$tail;
     }
 
-    // Очищает значение от неразрывных пробелов и распознаёт признаки "пусто"
     protected function clean(?string $raw): ?string
     {
         if ($raw === null) {

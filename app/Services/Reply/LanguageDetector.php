@@ -66,7 +66,6 @@ class LanguageDetector
         'доставка', 'наличии', 'магазин', 'товар', 'сомони', 'да', 'очень', 'тоже',
     ];
 
-    // Определяет язык одного сообщения (тоҷикӣ / русский / английский)
     public function detect(string $message): ?string
     {
         $text = mb_strtolower(trim($message));
@@ -113,7 +112,6 @@ class LanguageDetector
         return null;
     }
 
-    // Определяет язык клиента по последним сообщениям диалога
     public function forConversation(iterable $recentMessages): ?string
     {
         foreach ($recentMessages as $message) {
@@ -127,7 +125,6 @@ class LanguageDetector
         return null;
     }
 
-    // Считает токены, оканчивающиеся на характерное таджикское окончание
     protected function countSuffixMatches(array $tokens): int
     {
         $matched = 0;
@@ -149,7 +146,6 @@ class LanguageDetector
         return $matched;
     }
 
-    // Считает уникальные токены, совпавшие со словарём или его характерными префиксами
     protected function countMatches(array $tokens, array $words, array $prefixes): int
     {
         $matched = [];
@@ -173,7 +169,6 @@ class LanguageDetector
         return count($matched);
     }
 
-    // Разбивает текст на слова-токены, отбрасывая пунктуацию
     protected function tokens(string $text): array
     {
         $text = (string) preg_replace('/[^\p{L}\p{N}]+/u', ' ', $text);

@@ -18,13 +18,11 @@ class InstagramDriver implements ChannelDriverInterface
 
     protected const MAX_MESSAGE_LENGTH = 2000;
 
-    // Создаёт драйвер Instagram с сервисом LLM и markdown-конвертацией
     public function __construct(
         protected LlmProviderInterface $llm,
         protected OutboundMarkdown $markdown = new OutboundMarkdown,
     ) {}
 
-    // Выделяет из пейлоада вебхука отдельные доставки сообщений Instagram
     public function splitDeliveries(array $payload): array
     {
         $deliveries = [];
@@ -41,7 +39,6 @@ class InstagramDriver implements ChannelDriverInterface
         return $deliveries;
     }
 
-    // Преобразует пейлоад Instagram во внутреннее представление входящего сообщения
     public function parseIncomingMessage(array $payload, Channel $channel): ?IncomingMessage
     {
         $messaging = $payload['entry'][0]['messaging'][0] ?? null;
@@ -87,7 +84,6 @@ class InstagramDriver implements ChannelDriverInterface
         return $this->buildPhotoMessage((string) $externalMessageId, (string) $externalUserId, $imageUrl, $text);
     }
 
-    // Возвращает URL первого вложения-изображения среди вложений сообщения
     protected function firstImageAttachmentUrl(array $attachments): ?string
     {
         foreach ($attachments as $attachment) {
@@ -99,7 +95,6 @@ class InstagramDriver implements ChannelDriverInterface
         return null;
     }
 
-    // Собирает входящее сообщение с фото, добавляя подпись и распознанное описание изображения
     protected function buildPhotoMessage(string $externalMessageId, string $externalUserId, string $imageUrl, string $caption): IncomingMessage
     {
         $vision = $this->describeMedia($imageUrl);
@@ -125,7 +120,6 @@ class InstagramDriver implements ChannelDriverInterface
         );
     }
 
-    // Скачивает изображение по URL и распознаёт его содержимое
     protected function describeMedia(string $imageUrl): array
     {
         $unclear = ['confident' => false, 'description' => null];
@@ -145,7 +139,6 @@ class InstagramDriver implements ChannelDriverInterface
         }
     }
 
-    // Отправляет текстовое сообщение пользователю Instagram, разбивая длинный текст на части
     public function sendMessage(Channel $channel, string $externalUserId, string $text): void
     {
         $this->assertWithinMessagingWindow($channel, $externalUserId);
@@ -177,7 +170,6 @@ class InstagramDriver implements ChannelDriverInterface
         throw new RuntimeException('Outbound images are not enabled for this Instagram integration.');
     }
 
-    // Отправляет индикатор набора текста пользователю Instagram
     public function sendTypingIndicator(Channel $channel, string $externalUserId): void
     {
         try {
@@ -189,7 +181,6 @@ class InstagramDriver implements ChannelDriverInterface
         }
     }
 
-    // Проверяет учётные данные и возвращает профиль Instagram-аккаунта при подключении
     public function connect(Channel $channel): array
     {
         $accountId = $this->accountId($channel);
@@ -210,10 +201,8 @@ class InstagramDriver implements ChannelDriverInterface
         ];
     }
 
-    // Отключает канал Instagram (дополнительных действий не требуется)
     public function disconnect(Channel $channel): void {}
 
-    // Возвращает ID Instagram-аккаунта канала или бросает исключение, если он не настроен
     protected function accountId(Channel $channel): string
     {
         $value = $channel->credentials['ig_business_account_id'] ?? null;
@@ -225,7 +214,6 @@ class InstagramDriver implements ChannelDriverInterface
         return $value;
     }
 
-    // Возвращает токен доступа страницы или бросает исключение, если он не настроен
     protected function accessToken(Channel $channel): string
     {
         $value = $channel->credentials['page_access_token'] ?? null;
@@ -237,7 +225,6 @@ class InstagramDriver implements ChannelDriverInterface
         return $value;
     }
 
-    // Строит URL Graph API, выбирая хост в зависимости от типа токена
     protected function apiUrl(string $token, string $path): string
     {
         $host = str_starts_with($token, 'IGAA') ? 'graph.instagram.com' : 'graph.facebook.com';
@@ -245,7 +232,6 @@ class InstagramDriver implements ChannelDriverInterface
         return "https://{$host}/".self::API_VERSION.'/'.$path;
     }
 
-    // Выполняет POST-запрос к Graph API для отправки сообщения или действия
     protected function call(string $token, string $accountId, array $payload): array
     {
         try {

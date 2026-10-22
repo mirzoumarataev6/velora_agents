@@ -11,7 +11,6 @@ use Symfony\Component\HttpFoundation\Response;
 
 class MetaWebhookController extends Controller
 {
-    // Подтверждает вебхук Meta (WhatsApp/Instagram) для указанного канала
     public function verify(Request $request, Channel $channel, ChannelDriverManager $drivers, string $type): Response
     {
         $this->assertChannelType($channel, $type);
@@ -21,7 +20,6 @@ class MetaWebhookController extends Controller
         return $driver->verifyWebhook($request, $channel) ?? response('Not Found', 404);
     }
 
-    // Принимает вебхук Meta и ставит в очередь обработку входящих сообщений
     public function handle(Request $request, Channel $channel, ChannelDriverManager $drivers, string $type): Response
     {
         $this->assertChannelType($channel, $type);
@@ -39,7 +37,6 @@ class MetaWebhookController extends Controller
         return response('OK', 200);
     }
 
-    // Проверяет, что тип канала соответствует ожидаемому
     protected function assertChannelType(Channel $channel, string $type): void
     {
         if ($channel->type !== $type) {

@@ -4,20 +4,8 @@ namespace App\Services\Database;
 
 use Closure;
 
-/**
- * The registry of supported engines.
- *
- * This is the whole extension point: a new engine is a class implementing
- * DatabaseDriver plus one register() call. Nothing in the controller, the
- * search source or the tool knows which engines exist — they ask here.
- *
- * Two are shipped, MySQL/MariaDB and PostgreSQL, because those are the two we
- * can actually run against. Registering an engine we cannot test would put a
- * choice in the UI that fails on the customer's first real table.
- */
 class DriverManager
 {
-    /** @var array<string, array{factory: Closure, port: int, label: string}> */
     protected array $engines = [];
 
     public function __construct()
@@ -37,17 +25,11 @@ class DriverManager
         );
     }
 
-    /**
-     * @param  Closure(ConnectionConfig): DatabaseDriver  $factory
-     */
     public function register(string $engine, int $defaultPort, string $label, Closure $factory): void
     {
         $this->engines[$engine] = ['factory' => $factory, 'port' => $defaultPort, 'label' => $label];
     }
 
-    /**
-     * @throws DatabaseConnectionException when no driver is registered for the engine.
-     */
     public function make(ConnectionConfig $config): DatabaseDriver
     {
         $engine = $this->engines[$config->engine] ?? null;
@@ -62,7 +44,6 @@ class DriverManager
         return ($engine['factory'])($config);
     }
 
-    /** @return string[] */
     public function keys(): array
     {
         return array_keys($this->engines);
@@ -78,11 +59,6 @@ class DriverManager
         return $this->engines[$engine]['port'] ?? 0;
     }
 
-    /**
-     * The engine list the setup form renders, with each engine's default port.
-     *
-     * @return array<int, array{key: string, label: string, port: int}>
-     */
     public function options(): array
     {
         $options = [];

@@ -4,13 +4,6 @@ namespace App\Services\Database;
 
 use PDO;
 
-/**
- * MySQL 5.7+/8 and MariaDB.
- *
- * Introspection is information_schema, scoped to the connected database — a
- * user with rights on several schemas still only ever sees the one they named,
- * so the table picker cannot become a tour of the server.
- */
 class MySqlDriver extends AbstractPdoDriver
 {
     public const DEFAULT_PORT = 3306;
@@ -38,10 +31,6 @@ class MySqlDriver extends AbstractPdoDriver
 
         $options = [];
 
-        // Verification needs a CA bundle: mysqlnd will not fall back to the
-        // system store. With one configured we verify the server properly; with
-        // none we still encrypt, and the tab says so — encrypted-but-unverified
-        // beats plaintext, and pretending otherwise would be worse than either.
         if ($ca = config('agent.database.ssl_ca')) {
             $options[PDO::MYSQL_ATTR_SSL_CA] = $ca;
             $options[PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT] = true;
@@ -93,9 +82,7 @@ class MySqlDriver extends AbstractPdoDriver
             'SELECT CONSTRAINT_NAME AS `constraint`, TABLE_NAME AS `table`, COLUMN_NAME AS `column`, '
                 .'REFERENCED_TABLE_NAME AS foreign_table, REFERENCED_COLUMN_NAME AS foreign_column '
                 .'FROM information_schema.KEY_COLUMN_USAGE '
-                // Both ends pinned to the connected database. A key pointing at
-                // another schema describes a table the picker never offered, so
-                // following it would join something the owner cannot see.
+
                 .'WHERE TABLE_SCHEMA = ? AND REFERENCED_TABLE_SCHEMA = ? '
                 .'AND REFERENCED_TABLE_NAME IS NOT NULL '
                 .'ORDER BY TABLE_NAME, CONSTRAINT_NAME, ORDINAL_POSITION',
@@ -106,9 +93,7 @@ class MySqlDriver extends AbstractPdoDriver
     protected function uniqueColumnsQuery(): array
     {
         return [
-            // STATISTICS covers the primary key and every unique index, which is
-            // wider than table_constraints and is what actually guarantees at
-            // most one row per value.
+
             'SELECT TABLE_NAME AS `table`, COLUMN_NAME AS `column`, INDEX_NAME AS `key` '
                 .'FROM information_schema.STATISTICS '
                 .'WHERE TABLE_SCHEMA = ? AND NON_UNIQUE = 0 '
@@ -120,9 +105,7 @@ class MySqlDriver extends AbstractPdoDriver
     protected function rowCountsQuery(): array
     {
         return [
-            // TABLE_ROWS is the storage engine's estimate — exact for MyISAM,
-            // approximate for InnoDB, NULL for a view. All three are fine for a
-            // tie-break, and none of them touches a data page.
+
             'SELECT TABLE_NAME AS `table`, TABLE_ROWS AS `rows` '
                 .'FROM information_schema.TABLES WHERE TABLE_SCHEMA = ?',
             [$this->config->database],
@@ -136,35 +119,29 @@ class MySqlDriver extends AbstractPdoDriver
 
     protected function lowerText(string $quotedColumn): string
     {
-        // CAST first: LOWER() on a numeric SKU column is a no-op in MySQL but an
-        // error in Postgres, and both drivers must behave the same way.
+
         return 'LOWER(CAST('.$quotedColumn.' AS CHAR))';
     }
 
     protected function orderTerm(string $quotedColumn, string $direction): string
     {
-        // MySQL has no NULLS LAST, so the null test leads the sort — a product
-        // with no price is never the answer to "what's your cheapest".
+
         return $quotedColumn.' IS NULL, '.$quotedColumn.' '.strtoupper($direction);
     }
 
     protected function selectPrefix(int $timeoutMs): string
     {
-        // MySQL 5.7.8+ honours this; MariaDB ignores an unknown hint as a
-        // comment and gets its ceiling from max_statement_time below instead.
+
         return '/*+ MAX_EXECUTION_TIME('.$timeoutMs.') */ ';
     }
 
     protected function sessionStatements(int $timeoutMs): array
     {
         return [
-            // Read-only INTENT, enforced by the server. The customer should
-            // still supply a read-only user — this is defence in depth, not a
-            // substitute for the privilege.
+
             'SET SESSION TRANSACTION READ ONLY',
             'SET SESSION max_execution_time = '.$timeoutMs,
-            // MariaDB's equivalent, in seconds. Refused by MySQL, which is why
-            // each statement is executed and caught independently.
+
             'SET SESSION max_statement_time = '.max(1, (int) ceil($timeoutMs / 1000)),
         ];
     }

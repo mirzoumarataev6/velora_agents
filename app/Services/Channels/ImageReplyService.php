@@ -38,9 +38,7 @@ class ImageReplyService
 
         $requestedModel = $resolvedModel ?? $this->requestedModel($customerText, $previousAssistantText);
         if ($requestedModel === '') {
-            // "Show a MacBook" after a discussion of several MacBooks does
-            // not identify which product to show. Reusing the previous reply's
-            // OMEN 16 (or searching for a random MacBook) misleads the buyer.
+
             return 0;
         }
 
@@ -50,17 +48,6 @@ class ImageReplyService
             $previousAssistantMeta['product_image_candidates'] ?? [],
         );
 
-        // Owned photos first, and without the URL-safety/fuzzy-name checks
-        // every other candidate still needs: they are the owner's own
-        // upload for the exact catalog row the search already resolved, not
-        // a loose text/URL match. `for_model` is still checked exactly
-        // (not fuzzily) — PhotoReplyService::replyAll() calls this method
-        // once per offered choice while accumulating candidates across
-        // calls, so an earlier choice's owned photo is still sitting in
-        // `$productCandidates` by the time a later choice is processed, and
-        // without this it would be sent again for a product it never
-        // belonged to. No attribution either — that is strictly a courtesy
-        // owed to Wikimedia's licence, further down.
         foreach ($productCandidates as $candidate) {
             if (($candidate['owned'] ?? false) !== true || ! is_string($candidate['url'] ?? null)
                 || ($candidate['for_model'] ?? null) !== $requestedModel) {
@@ -82,9 +69,7 @@ class ImageReplyService
                 || ! $this->nameContainsModel((string) ($candidate['name'] ?? ''), $requestedModel)) {
                 continue;
             }
-            // Price alongside the name when the caller has it (PhotoReplyService,
-            // sending several of these in one "show me all of them" burst) —
-            // otherwise a run of photos with no price reads as one long product.
+
             $label = (string) ($candidate['name'] ?? '');
             if (($candidate['price'] ?? null) !== null && $candidate['price'] !== '') {
                 $label .= ' — '.$candidate['price'];
@@ -93,16 +78,13 @@ class ImageReplyService
         }
 
         if ($images === []) {
-            // Photo turns bypass the LLM/RAG, so uploads must be discoverable
-            // without a previous retrieved chunk. Only this agent's files are
-            // eligible, and their names must identify the selected model.
+
             foreach (KnowledgeSource::query()->where('agent_id', $agent->id)
                 ->whereIn('mime_type', ['image/jpeg', 'image/png', 'image/webp'])
                 ->whereNotNull('file_path')->orderBy('id')->cursor() as $source) {
                 $mimeType = $source->mime_type;
                 if (! $this->nameContainsModel($source->name, $requestedModel)
-                    // WhatsApp's image media endpoint accepts JPEG/PNG; passing
-                    // WebP would turn a valid knowledge match into a provider error.
+
                     || ($channel->type === 'whatsapp' && $mimeType === 'image/webp')
                     || ! Storage::disk('local')->exists($source->file_path)) {
                     continue;
@@ -128,8 +110,7 @@ class ImageReplyService
 
         if ($images === [] && ($agent->behavior['internet_image_search'] ?? false)) {
             $productType = WikimediaImageSearch::detectProductType($customerText.' '.$previousAssistantText.' '.$requestedModel);
-            // An internet outage must not hide an owner's matching upload.
-            // Limit lexical search to one verified result for the chosen model.
+
             $images = $this->internet->search($requestedModel, 1, $productType);
         }
 
@@ -155,7 +136,6 @@ class ImageReplyService
         }
     }
 
-    /** Resolve only a model named in this turn, or an unambiguous pronoun follow-up. */
     public function requestedModel(string $customerText, string $previousAssistantText = ''): string
     {
         $current = $this->modelNamesFromContext($customerText);
@@ -172,7 +152,6 @@ class ImageReplyService
         return count($previous) === 1 ? $previous[0] : '';
     }
 
-    /** @return string[] */
     protected function modelNamesFromContext(string $text): array
     {
         preg_match_all('/\b[A-Z][A-Za-z0-9-]*(?:\s+[A-Z0-9][A-Za-z0-9-]*){1,4}\b/u', $text, $matches);
@@ -182,8 +161,7 @@ class ImageReplyService
 
     protected function nameContainsModel(string $name, string $model): bool
     {
-        // Catalogs often join the model and size (OMEN16); token boundaries
-        // still prevent OMEN 16 from matching OMEN 160.
+
         $name = preg_replace('/(\p{L})(\d)/u', '$1 $2', $name);
         $model = preg_replace('/(\p{L})(\d)/u', '$1 $2', $model);
         $normalizedName = preg_replace('/[^\p{L}\p{N}]+/u', ' ', mb_strtolower($name));

@@ -7,24 +7,6 @@ use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Command;
 use Illuminate\Http\Client\Response;
 
-/**
- * Reports the REAL state of an Instagram Messaging setup, straight from the
- * Graph API — the sibling of whatsapp:diagnose, sharing its plumbing through
- * TalksToGraphApi rather than repeating it.
- *
- * Instagram has one failure mode WhatsApp does not, and it is the one that
- * wastes the most time: THE APP IS IN DEVELOPMENT MODE. In that state the
- * integration behaves perfectly for accounts listed as testers on the app and
- * is completely silent for everybody else — no error, no webhook, nothing to
- * find in a log. This command cannot see that setting (Meta exposes no API for
- * it), so it says so explicitly rather than reporting a clean bill of health
- * for a bot that answers nobody.
- *
- * The other Instagram-specific trap is the token host: the newer "Instagram API
- * with Instagram Login" flow issues IGAA-prefixed tokens that graph.facebook.com
- * rejects outright, while the older Page tokens (EAA) only work there. The
- * driver picks the host per token and so does this.
- */
 #[Description('Check the Instagram Messaging setup against the Graph API')]
 class InstagramDiagnoseCommand extends Command
 {
@@ -37,7 +19,6 @@ class InstagramDiagnoseCommand extends Command
         {--app-id= : Meta App ID (needed for app-level subscription checks)}
         {--app-secret= : Meta App Secret (needed for app-level subscription checks)}';
 
-    /** Matches InstagramDriver, deliberately — see that class. */
     protected const API_VERSION = 'v21.0';
 
     public function handle(): int
@@ -85,9 +66,7 @@ class InstagramDiagnoseCommand extends Command
                 'Needs both --app-id and --app-secret (Meta only accepts an APP access token here).'
             );
         } else {
-            // Always graph.facebook.com: app-level subscriptions live on the
-            // app, not on the Instagram account, whichever host the messaging
-            // token belongs to.
+
             $this->instagramLogin = false;
             $subscriptions = $this->get("{$appId}/subscriptions", ['access_token' => $this->appToken()], useToken: false);
             $this->dump($subscriptions);
@@ -104,7 +83,6 @@ class InstagramDiagnoseCommand extends Command
         return self::SUCCESS;
     }
 
-    /** @return string|null the expected callback URL, when there is a channel */
     protected function reportLocalState(?Channel $channel): ?string
     {
         $this->reportEnvironment();
@@ -140,15 +118,6 @@ class InstagramDiagnoseCommand extends Command
         return $expected;
     }
 
-    /**
-     * Token identity, by whichever route the token's own flow allows.
-     *
-     * IGAA tokens cannot be introspected with /debug_token at all — the
-     * endpoint lives on graph.facebook.com and rejects them — so for those the
-     * honest check is "does it authenticate against /me on its own host".
-     *
-     * @return string|null the app id, when Meta will tell us
-     */
     protected function reportTokenIdentity(): ?string
     {
         if ($this->isInstagramLoginToken()) {
@@ -166,11 +135,6 @@ class InstagramDiagnoseCommand extends Command
         return $this->reportTokenValidity()['app_id'] ?? null;
     }
 
-    /**
-     * Is the callback URL right, and is the `messages` field actually subscribed
-     * for the `instagram` object? A subscription pointing at the correct URL but
-     * carrying only `comments` delivers no DMs at all.
-     */
     protected function compareSubscription(Response $subscriptions, ?string $expected): void
     {
         $instagram = collect($subscriptions->json('data') ?? [])
@@ -208,7 +172,6 @@ class InstagramDiagnoseCommand extends Command
         return $this->instagramLogin && str_starts_with((string) $this->token, 'IGAA');
     }
 
-    /** IGAA tokens are only valid against graph.instagram.com; see InstagramDriver. */
     protected function graphHost(): string
     {
         return $this->isInstagramLoginToken() ? 'graph.instagram.com' : 'graph.facebook.com';

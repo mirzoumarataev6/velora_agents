@@ -41,19 +41,12 @@ class BoardController extends Controller
             $boards->defaultForTeam($teamId, $request->user()->id);
         }
 
-        // PHASE 3 item 17: a 'team' board's real member count is "everyone
-        // on the team" — `project_board_members` is only ever populated for
-        // a PRIVATE board (ProjectBoards::create(), BoardController::
-        // update()), so counting that pivot for a team board would show 0
-        // or some stale leftover instead. One query, shared across every
-        // 'team' board on the page, rather than one team-membership COUNT
-        // per board card.
         $teamMemberCount = TeamMembership::where('team_id', $teamId)->count();
 
         $boards = $access->visibleBoards($request->user())
             ->withCount([
                 'tasks as open_tasks_count' => fn ($query) => $query->whereNull('done_at')->whereNull('archived_at'),
-                // total_tasks_count removed: computed, never rendered anywhere.
+
                 'tasks as overdue_tasks_count' => fn ($query) => $query->whereNull('done_at')
                     ->whereNull('archived_at')->whereNotNull('due_at')->where('due_at', '<', now()),
                 'members as members_count',
@@ -100,14 +93,7 @@ class BoardController extends Controller
     public function show(Request $request, ProjectBoard $board, ProjectAccess $access): View
     {
         $access->authorize($request->user(), $board);
-        // Both query('filter') and query('q') can come back as an ARRAY
-        // (?filter[]=x, ?q[]=x) — nothing stops a visitor typing that into
-        // the address bar. `in_array($array, self::FILTERS, true)` below is
-        // harmless (an array is never === a string), but `(string) $array`
-        // for `q` is not: PHP raises "Array to string conversion", which
-        // Laravel's error handler turns into a thrown ErrorException — a
-        // bare 500 for what should just mean "no search term". is_string()
-        // first turns either case into the same safe default instead.
+
         $rawFilter = $request->query('filter');
         $filter = is_string($rawFilter) && in_array($rawFilter, self::FILTERS, true) ? $rawFilter : 'all';
         $rawSearch = $request->query('q');
@@ -116,9 +102,7 @@ class BoardController extends Controller
         $columns = $board->columns()->get();
         $pages = collect();
         foreach ($columns as $column) {
-            // Each column has its own page cursor. A large board must never
-            // hydrate every card, assignee and checklist just to paint the
-            // first screen; a single global page would hide whole columns.
+
             $page = $column->tasks()->where('team_id', $board->team_id)
                 ->when($filter === 'archived', fn ($q) => $q->whereNotNull('archived_at'), fn ($q) => $q->whereNull('archived_at'))
                 ->when($search !== '', fn ($q) => $q->where('title', 'like', '%'.addcslashes($search, '%_\\').'%'))
@@ -141,14 +125,6 @@ class BoardController extends Controller
                 'customer:id,name', 'deal:id,title'])
             ->firstOrFail();
 
-        // The activity log's `details` JSON stores raw ids (assignees_added/
-        // _removed, labels_added/_removed) rather than names, the same
-        // choice already made for `actor_id` — a renamed or later-deleted
-        // user/label must not leave a name frozen in old history. Resolved
-        // here in two batched queries (not per-event in the Blade loop,
-        // which would be an id per event — up to 40 of them) into a flat
-        // id => name map; a stray id from an account/label deleted since
-        // falls through to deleted_user/deleted_label at render time.
         $eventUserNames = collect();
         $eventLabelNames = collect();
         if ($selectedTask !== null) {
@@ -177,17 +153,10 @@ class BoardController extends Controller
         $deals = collect();
         if ($selectedTask !== null && $canViewCrm) {
             $customers = Customer::where('team_id', $board->team_id)->orderByDesc('id')->limit(100)->get(['id', 'name', 'phone']);
-            // 'customer:id,name' eager-loaded here, not lazy-loaded per row in
-            // the Blade loop below — deals.title is blank on 23 of 71 real
-            // rows (DealStageAutomation used to leave it null; a lingering
-            // one can still reach this list even after that fix), and the
-            // customer's name is what the fallback label needs to tell two
-            // blank deals apart.
+
             $deals = Deal::where('team_id', $board->team_id)->with('customer:id,name')
                 ->orderByDesc('id')->limit(100)->get(['id', 'title', 'customer_id']);
-            // A long-lived card can refer to a customer outside the recent
-            // dropdown slice. Keep that option visible so saving the card
-            // never clears its link merely because newer rows arrived.
+
             if ($selectedTask->customer_id && ! $customers->contains('id', $selectedTask->customer_id)) {
                 $customer = Customer::withTrashed()->where('team_id', $board->team_id)->find($selectedTask->customer_id, ['id', 'name', 'phone']);
                 if ($customer !== null) {
@@ -202,11 +171,6 @@ class BoardController extends Controller
                 }
             }
 
-            // Computed once here rather than in the Blade loop: a <select>
-            // option is plain text, and this is the one place that already
-            // knows both the untitled fallback and the eager-loaded
-            // customer, so there's no reason to re-derive the same string
-            // twice from two different layers.
             $customers->each(fn (Customer $customer) => $customer->display_label = trim(
                 $customer->displayName().($customer->maskedPhoneTail() ? ' · '.$customer->maskedPhoneTail() : '')
             ));
@@ -223,22 +187,7 @@ class BoardController extends Controller
             'board' => $board,
             'columns' => $columns,
             'pages' => $pages,
-            // PHASE 2 item 12: drag used to turn off for the WHOLE board the
-            // moment any one column passed 50 cards, even for a visitor who
-            // never scrolls past page 1 of that column. The real hazard was
-            // never "more than 50 cards exist" — it's dropping into a
-            // column's EMPTY tail space when more pages of it are hidden,
-            // where the server (which sees the true full-column order, not
-            // just this page) would place the card at the column's actual
-            // end rather than where it visually landed. That one case is
-            // guarded client-side instead (board.blade.php's drop(), keyed
-            // off data-has-more-pages) — dropping ONTO a visible card is
-            // exact regardless of how many more are hidden beyond it, so
-            // disabling the rest of the board for that was punishing moves
-            // that were always going to be correct. filter/search are the
-            // one case still disabled outright: the visible set doesn't
-            // match the column's on-screen order at all then (PRJ's own
-            // move_hint already explains why).
+
             'dragEnabled' => $filter === 'all' && $search === '',
             'labels' => $board->labels()->orderBy('name')->get(),
             'members' => $members,
@@ -253,12 +202,7 @@ class BoardController extends Controller
             'canEdit' => $canEdit,
             'canCreate' => $board->archived_at === null && $request->user()->can(PermissionCatalog::PROJECTS_CREATE, $board),
             'canManage' => $canManage,
-            // PRJ-004: the fragment #board-settings a form's back() redirect used to
-            // rely on is never sent in a Referer header, so the panel closed after
-            // every single-field edit inside it. The query string survives back()
-            // fine, so the open/closed state now rides on ?settings=1 instead — set
-            // server-side here, never trusted from the client alone: a Viewer or
-            // Operator passing the parameter still gets it ignored below.
+
             'settingsOpen' => $canManage && $request->boolean('settings'),
             'canAssign' => $board->archived_at === null && $request->user()->can(PermissionCatalog::PROJECTS_ASSIGN, $board),
             'canComment' => $board->archived_at === null && $request->user()->can(PermissionCatalog::PROJECTS_COMMENT, $board),
@@ -305,8 +249,7 @@ class BoardController extends Controller
             }
             $memberIds = [$request->user()->id];
             if ($wasTeamWide) {
-                // Closing a board must not strand people already assigned
-                // to its cards. The manager can remove them afterward.
+
                 $memberIds = array_merge($memberIds, DB::table('project_task_assignees')
                     ->where('board_id', $board->id)->distinct()->pluck('user_id')->all());
             }
@@ -448,25 +391,6 @@ class BoardController extends Controller
         return back()->with('status', __('projects.messages.label_deleted'));
     }
 
-    /**
-     * PHASE 2 item 11: validation only, deliberately NOT a DB unique index.
-     * A migration adding one would be unsafe to ship as-is — this dev
-     * database already has one real board with two labels differing only
-     * by case (audited via `project_labels` grouped on LOWER(name) before
-     * writing this), and a unique index migration fails outright the
-     * moment it hits a row that already violates it. Cleaning that up is a
-     * data migration of its own, out of scope here; this stops any NEW
-     * duplicate from being created in the meantime.
-     *
-     * Compared in PHP, not via SQL LOWER(): this suite runs on sqlite
-     * (phpunit.xml), whose built-in LOWER()/UPPER() are ASCII-only unless
-     * the ICU extension is loaded — a Cyrillic board name would silently
-     * never collide under sqlite's LOWER() while genuinely colliding under
-     * MySQL's, which would have made this exact check pass in the test
-     * suite and still let a Russian-named duplicate through in production.
-     * mb_strtolower() in PHP (loading the board's existing rows, always a
-     * handful) behaves identically on both.
-     */
     private function assertUniqueColumnName(ProjectBoard $board, string $name, ?int $exceptId = null): void
     {
         $normalized = mb_strtolower(trim($name));
@@ -480,7 +404,6 @@ class BoardController extends Controller
         }
     }
 
-    /** Same reasoning as assertUniqueColumnName() above — see its docblock. */
     private function assertUniqueLabelName(ProjectBoard $board, string $name, ?int $exceptId = null): void
     {
         $normalized = mb_strtolower(trim($name));

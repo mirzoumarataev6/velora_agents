@@ -8,13 +8,6 @@ use App\Services\Llm\LlmProviderInterface;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
-/**
- * Computes cosine similarity in PHP over the agent's chunk embeddings.
- *
- * Embeddings are decoded once per agent and cached (see agent.rag.cache_ttl_seconds)
- * to avoid re-decoding the JSON embedding column on every message. The cache is
- * invalidated whenever a source finishes embedding or a chunk is deleted.
- */
 class MySqlCosineVectorStore implements VectorStoreInterface
 {
     public function search(
@@ -37,26 +30,13 @@ class MySqlCosineVectorStore implements VectorStoreInterface
         $mismatched = 0;
 
         foreach ($vectors as $id => ['vector' => $embedding, 'model' => $model]) {
-            // A chunk embedded under a different provider, a different output
-            // dimensionality, or a different model of the same width is not
-            // comparable to this query vector. Comparing them anyway produces
-            // plausible-looking but meaningless scores, so skip instead —
-            // retrieval degrades to "nothing found" until `embeddings:reindex`
-            // re-embeds under the active model.
-            //
-            // The model check matters independently of the length check:
-            // text-embedding-3-small and -3-large are both 1536-dimensional
-            // here and share no vector space at all, so length alone would wave
-            // the stale vectors through. A chunk with no recorded model predates
-            // that column and cannot be vouched for either.
+
             if (count($embedding) !== $queryDimensions || $model !== $activeModel) {
                 $mismatched++;
 
                 continue;
             }
 
-            // Score everything; relevance is decided below, once the best score
-            // in this search is known.
             $scored[$id] = $this->cosineSimilarity($queryVector, $embedding);
         }
 
@@ -77,20 +57,12 @@ class MySqlCosineVectorStore implements VectorStoreInterface
 
         arsort($scored);
 
-        // Relevance is judged against the best hit as well as the fixed floor.
-        // Absolute cosine drops sharply when a two-word question meets a
-        // 2,700-character chunk, and drops again across languages, so a fixed
-        // floor on its own rejects knowledge bases that plainly hold the answer.
-        // Ranking survives both effects, which is what the ratio reads.
         $best = (float) reset($scored);
         $floor = max($threshold, $relativeRatio * $best);
 
         $confidentIds = array_keys(array_filter($scored, fn ($score) => $score >= $floor));
         $confidentIds = array_slice($confidentIds, 0, max(1, $topK));
 
-        // Nothing convincing — hand over the best few anyway, marked as such.
-        // The model can disregard a weak chunk; it cannot use one it never saw.
-        // This is what keeps a stocked knowledge base from presenting as empty.
         $fallbackIds = [];
 
         if (count($confidentIds) < $minContext) {
@@ -113,9 +85,6 @@ class MySqlCosineVectorStore implements VectorStoreInterface
             ->all();
     }
 
-    /**
-     * @return array<int, array{vector: float[], model: ?string}> Keyed by chunk id.
-     */
     protected function loadVectors(Agent $agent): array
     {
         $ttl = (int) config('agent.rag.cache_ttl_seconds');

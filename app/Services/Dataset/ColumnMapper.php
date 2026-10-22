@@ -53,13 +53,11 @@ class ColumnMapper
         ],
     ];
 
-    // Возвращает список возможных названий столбцов для каждого поля
     public static function aliases(): array
     {
         return self::ALIASES;
     }
 
-    // Возвращает алиасы полей в нормализованном (свёрнутом) виде для сравнения
     public static function foldedAliases(): array
     {
         static $folded = null;
@@ -86,7 +84,6 @@ class ColumnMapper
         return $folded;
     }
 
-    // Приводит заголовок столбца к нормализованному виду для сравнения
     public static function fold(string $header): string
     {
         $value = mb_strtolower(trim($header));
@@ -95,7 +92,6 @@ class ColumnMapper
         return trim((string) preg_replace('/\s+/u', ' ', $value));
     }
 
-    // Подбирает соответствие столбцов таблицы полям товара по заголовкам и данным
     public function suggest(array $headers, array $rows = []): array
     {
         $normalized = array_map(fn ($h) => $this->normalize($h), $headers);
@@ -157,7 +153,6 @@ class ColumnMapper
         return $mapping;
     }
 
-    // Ищет столбец, который по содержимому похож на название товара, если явного совпадения не нашлось
     protected function columnThatLooksLikeAName(array $headers, array $normalized, array $rows, array $taken): ?int
     {
         foreach (array_keys($headers) as $index) {
@@ -187,13 +182,11 @@ class ColumnMapper
         return null;
     }
 
-    // Проверяет, есть ли в столбце хотя бы одно непустое значение
     protected function columnHasValues(array $rows, int $index): bool
     {
         return $this->columnValues($rows, $index) !== [];
     }
 
-    // Возвращает непустые значения указанного столбца из всех строк
     protected function columnValues(array $rows, int $index): array
     {
         $values = [];
@@ -209,7 +202,6 @@ class ColumnMapper
         return $values;
     }
 
-    // Проверяет, совпадает ли хотя бы одна из форм заголовка с алиасами поля
     protected function matchesAny(array $forms, array $aliases, bool $exact): bool
     {
         foreach ($forms as $form) {
@@ -221,7 +213,6 @@ class ColumnMapper
         return false;
     }
 
-    // Сравнивает заголовок с алиасом точно или по вхождению подстроки
     protected function matches(string $header, array $aliases, bool $exact): bool
     {
         foreach ($aliases as $alias) {
@@ -233,7 +224,6 @@ class ColumnMapper
         return false;
     }
 
-    // Нормализует заголовок столбца для сравнения с алиасами
     protected function normalize(string $header): string
     {
         return self::fold($header);

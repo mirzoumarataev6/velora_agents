@@ -4,7 +4,6 @@ namespace App\Services\Channels;
 
 trait SplitsLongMessages
 {
-    // Разбивает текст на части не длиннее maxLength, стараясь резать по границам слов и абзацев
     protected function splitMessage(string $text, int $maxLength): array
     {
         if (mb_strlen($text) <= $maxLength) {

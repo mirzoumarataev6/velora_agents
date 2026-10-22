@@ -80,16 +80,25 @@ class FeedbackCadenceTest extends TestCase
     {
         $this->updateId++;
 
-        app()->call([new HandleIncomingMessageJob($this->channel, [
-            'update_id' => $this->updateId,
-            'message' => [
-                'message_id' => $this->updateId,
-                'from' => ['id' => 555, 'first_name' => 'Ivan'],
-                'chat' => ['id' => 555, 'type' => 'private'],
-                'date' => time(),
-                'text' => $text,
-            ],
-        ]), 'handle']);
+        try {
+            app()->call([new HandleIncomingMessageJob($this->channel, [
+                'update_id' => $this->updateId,
+                'message' => [
+                    'message_id' => $this->updateId,
+                    'from' => ['id' => 555, 'first_name' => 'Ivan'],
+                    'chat' => ['id' => 555, 'type' => 'private'],
+                    'date' => time(),
+                    'text' => $text,
+                ],
+            ]), 'handle']);
+        } catch (\Throwable $e) {
+            // A delivery failure now propagates (so the queue retries it)
+            // instead of being swallowed — expected only in the
+            // telegramFails scenario this test suite drives on purpose.
+            if (! $this->telegramFails) {
+                throw $e;
+            }
+        }
 
         return Message::where('role', 'assistant')->latest('id')->firstOrFail();
     }

@@ -9,13 +9,6 @@ use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 
-/**
- * One glance at whether the queue is actually working: is a worker alive,
- * what is it doing, is anything piling up or stuck.
- *
- * Exits non-zero when something is wrong, so it can be used as a check in a
- * script and not just read by eye.
- */
 #[Signature('queue:health {--json : Output machine-readable JSON}')]
 #[Description('Show queue worker health: heartbeat, backlog, failures and stuck knowledge sources')]
 class QueueHealthCommand extends Command
@@ -64,18 +57,11 @@ class QueueHealthCommand extends Command
         return self::FAILURE;
     }
 
-    /**
-     * @return array<string, mixed>
-     */
     protected function report(WorkerHeartbeat $heartbeat): array
     {
         $problems = [];
         $workers = [];
 
-        // Every pool is reported, and every pool's absence is its own problem: an
-        // alive `default` worker says nothing about whether BI imports are being
-        // picked up, and a health check that averaged the two would hide exactly
-        // the outage it exists to catch.
         foreach (WorkerHeartbeat::pools() as $pool) {
             $poolBeat = WorkerHeartbeat::for($pool);
             $beat = $poolBeat->read();
@@ -112,8 +98,7 @@ class QueueHealthCommand extends Command
                 'pending' => DB::table('jobs')->whereNull('reserved_at')->count(),
                 'reserved' => DB::table('jobs')->whereNotNull('reserved_at')->count(),
                 'failed' => DB::table('failed_jobs')->count(),
-                // Per queue, because "12 pending" tells an operator nothing about
-                // WHICH pool is behind.
+
                 'by_queue' => DB::table('jobs')
                     ->whereNull('reserved_at')
                     ->selectRaw('queue, count(*) as aggregate')
@@ -141,9 +126,6 @@ class QueueHealthCommand extends Command
             ->count();
     }
 
-    /**
-     * @param  array<string, mixed>  $worker  One pool's heartbeat summary.
-     */
     protected function workerLine(array $worker): string
     {
         if ($worker['state'] === null) {

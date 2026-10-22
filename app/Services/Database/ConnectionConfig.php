@@ -4,14 +4,6 @@ namespace App\Services\Database;
 
 use App\Models\DatabaseConnection;
 
-/**
- * The credentials a driver needs, as a value object.
- *
- * Drivers take one of these rather than an Eloquent model so nothing in the
- * driver layer can reach back into the ORM, load another tenant's row, or
- * persist anything. A driver can only ever talk to the one server it was
- * handed.
- */
 final class ConnectionConfig
 {
     public function __construct(
@@ -37,9 +29,6 @@ final class ConnectionConfig
         );
     }
 
-    /**
-     * @param  array<string, mixed>  $attributes
-     */
     public static function fromArray(array $attributes): self
     {
         return new self(
@@ -53,20 +42,11 @@ final class ConnectionConfig
         );
     }
 
-    /**
-     * The same config with a different password — used when the owner edits a
-     * saved connection without retyping the secret.
-     */
     public function withPassword(string $password): self
     {
         return new self($this->engine, $this->host, $this->port, $this->database, $this->username, $password, $this->ssl);
     }
 
-    /**
-     * Safe to log: everything except the secret.
-     *
-     * @return array<string, mixed>
-     */
     public function forLog(): array
     {
         return [

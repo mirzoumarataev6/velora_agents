@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Crm;
 use App\Http\Controllers\Controller;
 use App\Models\CrmWorkspace;
 use App\Models\Customer;
-use App\Models\Deal;
 use App\Models\Task;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
@@ -16,13 +15,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
-/**
- * Lightweight CRM follow-ups. Tasks stay deliberately smaller than a project
- * manager, while priority and type make the next action scannable at a glance.
- */
 class TaskController extends Controller
 {
-    /** The only four slices of a to-do list anybody actually uses. */
     protected const FILTERS = ['open', 'today', 'overdue', 'done'];
 
     protected const PER_PAGE = 50;
@@ -54,8 +48,7 @@ class TaskController extends Controller
                 }
             }))
             ->with(['customer:id,name', 'deal:id,title'])
-            // Soonest first, and undated tasks last: a date is a commitment and
-            // outranks a someday.
+
             ->orderByRaw('due_at is null')
             ->orderBy('due_at')
             ->orderByDesc('id')
@@ -79,8 +72,6 @@ class TaskController extends Controller
         $teamId = $request->user()->activeTeamId();
         $dealExists = Rule::exists('deals', 'id')->where('team_id', $teamId);
 
-        // When both references are supplied, they must describe the same
-        // customer. A task may still be linked to only a deal or to neither.
         if ($request->filled('customer_id')) {
             $dealExists->where('customer_id', $request->input('customer_id'));
         }
@@ -106,10 +97,7 @@ class TaskController extends Controller
             if (blank($customerId) && filled($data['new_customer_name'] ?? null)) {
                 $customer = Customer::forceCreate([
                     'user_id' => $request->user()->id,
-                    // Explicit, not left to StampsTeam's own current_team_id
-                    // fallback — the workspace below is already resolved
-                    // against $teamId, and the new customer must land in
-                    // the same one.
+
                     'team_id' => $teamId,
                     'crm_workspace_id' => CrmWorkspace::defaultFor($request->user(), $teamId)->id,
                     'name' => trim($data['new_customer_name']),
@@ -121,7 +109,7 @@ class TaskController extends Controller
             $task = new Task;
             $task->forceFill([
                 'user_id' => $request->user()->id,
-                // Explicit, same reasoning as the customer above.
+
                 'team_id' => $teamId,
                 'title' => $data['title'],
                 'due_at' => $data['due_at'] ?? null,
@@ -164,10 +152,6 @@ class TaskController extends Controller
         return back()->with('status', __('crm.tasks.created'));
     }
 
-    /**
-     * Edit, or tick off. Ticking is the common case and arrives as `done`
-     * alone, so everything else is optional.
-     */
     public function update(Request $request, Task $task): RedirectResponse|JsonResponse
     {
         $this->authorize('update', $task);
@@ -189,8 +173,7 @@ class TaskController extends Controller
         ], fn ($value) => $value !== null);
 
         if ($request->has('done')) {
-            // Re-ticking an already-done task keeps its original completion
-            // time: when it was finished is a fact, not a toggle.
+
             $changes['done_at'] = $request->boolean('done')
                 ? ($task->done_at ?? now())
                 : null;
@@ -202,8 +185,6 @@ class TaskController extends Controller
             }
         }
 
-        // The task model locks a destination column when a CRM completion
-        // toggle moves the card. Keep that lock through the UPDATE as well.
         DB::transaction(fn () => $task->forceFill($changes)->save());
 
         if ($request->wantsJson()) {
@@ -226,13 +207,6 @@ class TaskController extends Controller
         return back()->with('status', __('crm.tasks.deleted'));
     }
 
-    /**
-     * What the widget shows. Public and static because the board renders it
-     * too, and two counts of "how much is late" that could disagree would be
-     * worse than none.
-     *
-     * @return array{overdue: int, today: int, open: int}
-     */
     public static function counts(User $user): array
     {
         return [

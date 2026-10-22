@@ -6,7 +6,6 @@ use Illuminate\Support\Str;
 
 trait MatchesPatterns
 {
-    // Проверяет, соответствует ли текст одному из шаблонов класса
     public function matches(string $text): bool
     {
         $text = Str::of($text)->lower()->squish()->toString();

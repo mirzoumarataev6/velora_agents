@@ -2,24 +2,6 @@
 
 namespace App\Services\Dataset;
 
-/**
- * Folds a word to a script- and spelling-insensitive skeleton, so a Latin
- * brand name and its Cyrillic loanword spelling compare equal: "MacBook" and
- * "макбук" both fold to "makbuk", "VICTUS" and "виктус" both fold to "viktus".
- *
- * This is a skeleton of SOUND, not of letters: Russian/Tajik spell a loanword
- * the way it is pronounced ("макбук", not a letter-for-letter transliteration
- * of "MacBook"), so a positional Latin<->Cyrillic transliteration table (see
- * Transliterator, which solves a different problem: matching a known header
- * vocabulary) cannot bridge the two. The replacements below exist to collapse
- * exactly the respellings English orthography introduces: a hard "c" sounds
- * like "k", doubled vowels collapse to one, "ph" sounds like "f".
- *
- * Shared by the two places that need the same comparison: ProductSearchService
- * (matching a customer's "exclude" words against fetched rows) and
- * DatasetProduct (building the stored search_text haystack a LIKE query
- * matches against).
- */
 final class SearchSkeleton
 {
     private const CYRILLIC_TO_LATIN = [
@@ -30,7 +12,6 @@ final class SearchSkeleton
         'щ' => 'sh', 'ъ' => '', 'ы' => 'i', 'ь' => '', 'э' => 'e', 'ю' => 'yu', 'я' => 'ya',
     ];
 
-    // Сводит слово к грубому "скелету" из латинских букв для нечувствительного к письму и опечаткам сравнения
     public static function fold(string $text): string
     {
         $text = strtr(mb_strtolower($text), self::CYRILLIC_TO_LATIN);

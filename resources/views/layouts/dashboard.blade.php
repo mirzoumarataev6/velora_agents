@@ -225,21 +225,6 @@
             </a>
             @endcan
 
-            {{-- Данные sits after CRM and before Заявки: the analytics page at the
-                 top reports on the ASSISTANTS, this section answers questions about
-                 whatever the owner uploads. Both are reading rather than working,
-                 so they bracket the two sections where work happens. --}}
-            @can('analytics.view')
-            <a href="{{ route('bi.dashboards.index') }}" aria-label="{{ __('shell.nav.bi') }}" data-i18n-al="shell.nav.bi"
-                data-nav="bi"
-                @if (request()->routeIs('bi.*')) aria-current="page" @endif
-                :class="$store.shell.railCollapsed && 'lg:justify-center'"
-                class="nav-item {{ request()->routeIs('bi.*') ? 'nav-item-active' : '' }}">
-                <svg class="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 7c0-1.657 3.582-3 8-3s8 1.343 8 3-3.582 3-8 3-8-1.343-8-3z"/><path stroke-linecap="round" stroke-linejoin="round" d="M20 7v5c0 1.657-3.582 3-8 3s-8-1.343-8-3V7M20 12v5c0 1.657-3.582 3-8 3s-8-1.343-8-3v-5"/></svg>
-                <span data-i18n="shell.nav.bi" :class="$store.shell.railCollapsed && 'lg:hidden'">{{ __('shell.nav.bi') }}</span>
-            </a>
-            @endcan
-
             {{-- Заявки feed straight into a deal (deals.lead_id) and are
                  worked the same way a deal is — approve/decline a price,
                  change status, delete — so this is crm.view/crm.manage

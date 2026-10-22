@@ -8,13 +8,6 @@ use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
-/**
- * Thin wrapper around the OpenAI REST API (/chat/completions, /embeddings) with
- * retry/backoff, timeout handling, and usage logging.
- *
- * Mirrors GeminiProvider's contract exactly; the differences are confined to
- * request/response shape and to retry policy around 429 (see shouldRetry()).
- */
 class OpenAiProvider implements LlmProviderInterface
 {
     protected string $apiKey;
@@ -86,9 +79,6 @@ class OpenAiProvider implements LlmProviderInterface
             'max_tokens' => $options['max_output_tokens'] ?? null,
         ], fn ($value) => $value !== null);
 
-        // 'thinking_budget' is a Gemini-only control; gpt-4o-mini has no
-        // separate reasoning budget, so it's accepted and ignored here.
-
         if (! empty($options['tools'])) {
             $payload['tools'] = array_map(fn (array $tool) => [
                 'type' => 'function',
@@ -127,9 +117,6 @@ class OpenAiProvider implements LlmProviderInterface
 
         $mimeType ??= mime_content_type($absolutePath) ?: 'application/octet-stream';
 
-        // Unlike Gemini, the chat completions image input accepts images only —
-        // a PDF would need the Files API. Fail clearly so callers degrade rather
-        // than sending bytes the API will reject with an opaque 400.
         if (! str_starts_with($mimeType, 'image/')) {
             throw new OpenAiException(
                 "OpenAI vision extraction supports image/* only, got {$mimeType}"
@@ -206,8 +193,7 @@ class OpenAiProvider implements LlmProviderInterface
             $totalInputTokens = 0;
 
             foreach ($embeddings as $embedding) {
-                // The API documents that results may be returned out of order;
-                // the per-item "index" is the authoritative position.
+
                 $position = is_array($embedding) && isset($embedding['index'])
                     ? (int) $embedding['index']
                     : null;
@@ -229,7 +215,6 @@ class OpenAiProvider implements LlmProviderInterface
                 $results[$key] = ['vector' => $vector, 'input_tokens' => $inputTokens];
             }
 
-            // Prefer the API's real prompt_tokens for the aggregate row when present.
             $this->usage->record(
                 $this->name(),
                 'embeddings',
@@ -244,23 +229,11 @@ class OpenAiProvider implements LlmProviderInterface
         return $results;
     }
 
-    /**
-     * Matches GeminiProvider::estimateTokens so per-chunk token_count values stay
-     * comparable across a provider switch.
-     */
     public function estimateTokens(string $text): int
     {
         return max(1, (int) ceil(mb_strlen($text) / 4));
     }
 
-    /**
-     * Translate a neutral contract turn into an OpenAI chat message. Handles the
-     * plain user/model turns plus the function-calling continuation turns
-     * (tool_call / tool_result) documented on LlmProviderInterface::generate().
-     *
-     * @param  array<string, mixed>  $turn
-     * @return array<string, mixed>
-     */
     protected function toOpenAiMessage(array $turn): array
     {
         return match ($turn['role']) {
@@ -281,18 +254,12 @@ class OpenAiProvider implements LlmProviderInterface
                 'tool_call_id' => $turn['id'],
                 'content' => (string) ($turn['result'] ?? ''),
             ],
-            // The shared contract speaks Gemini's vocabulary ("model"); OpenAI
-            // calls the same role "assistant".
+
             'model' => ['role' => 'assistant', 'content' => $turn['text']],
             default => ['role' => 'user', 'content' => $turn['text']],
         };
     }
 
-    /**
-     * @return array{text: string, input_tokens: int, output_tokens: int, finish_reason: ?string, tool_calls: array<int, array{id: string, name: string, arguments: array}>}
-     *
-     * @throws OpenAiException
-     */
     protected function readCompletion(array $data, string $operation): array
     {
         $choices = $data['choices'] ?? [];
@@ -328,9 +295,6 @@ class OpenAiProvider implements LlmProviderInterface
         ];
     }
 
-    /**
-     * @throws OpenAiException
-     */
     protected function request(string $operation, string $path, array $payload): array
     {
         if (empty($this->apiKey)) {
@@ -370,12 +334,6 @@ class OpenAiProvider implements LlmProviderInterface
         return $response->json() ?? [];
     }
 
-    /**
-     * Unlike Gemini, OpenAI's 429 is genuinely ambiguous: a burst rate limit
-     * (worth retrying within our backoff window) and a spent billing quota
-     * (never worth retrying) share the status code. The error type in the body
-     * is what separates them.
-     */
     protected function shouldRetry(\Throwable $exception): bool
     {
         if ($exception instanceof ConnectionException) {

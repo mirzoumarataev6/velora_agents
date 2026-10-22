@@ -7,18 +7,6 @@ use App\Services\Bi\Ingestion\SourceNormalizer;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
-/**
- * Step one: read the upload once, write the normalized shards, infer the schema.
- *
- * Queued rather than done in the request for the reason the brief insisted on: a
- * 100MB spreadsheet takes minutes, and a request that holds the browser for
- * minutes is a request that times out behind a proxy and leaves the owner with no
- * idea whether their file arrived.
- *
- * Dispatches one MaterializeDatasetJob per sheet on success, so a four-sheet
- * workbook builds its four tables as four independently retryable units of work
- * instead of one job that has to be all-or-nothing.
- */
 class NormalizeSourceJob extends BiJob
 {
     public function __construct(public BiSource $source)
@@ -65,9 +53,6 @@ class NormalizeSourceJob extends BiJob
             'code' => $code,
         ]);
 
-        // fresh() because the row may have been touched since this job was
-        // serialized; forceFill so the status transition does not depend on the
-        // model's fillable list.
         ($this->source->fresh() ?? $this->source)->forceFill([
             'status' => BiSource::STATUS_FAILED,
             'error_code' => $code,

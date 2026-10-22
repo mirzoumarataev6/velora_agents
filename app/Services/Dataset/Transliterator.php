@@ -68,7 +68,6 @@ final class Transliterator
         'z' => ['з'],
     ];
 
-    // Возвращает возможные кириллические варианты для латинской транслитерации
     public static function candidates(string $folded): array
     {
         $folded = trim($folded);
@@ -100,7 +99,6 @@ final class Transliterator
         return array_keys($candidates);
     }
 
-    // Строит все комбинации кириллических прочтений латинской строки посимвольно/по токенам
     protected static function expand(string $form): array
     {
         $variants = [''];
@@ -129,7 +127,6 @@ final class Transliterator
         return $variants;
     }
 
-    // Находит самый длинный известный токен транслитерации, начиная с данной позиции
     protected static function readingsAt(string $form, int $at): array
     {
         foreach ([4, 3, 2, 1] as $width) {

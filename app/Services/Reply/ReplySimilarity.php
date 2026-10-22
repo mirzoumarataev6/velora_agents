@@ -10,7 +10,6 @@ class ReplySimilarity
 
     protected const MIN_LISTED_FIGURES = 3;
 
-    // Вычисляет долю слов нового ответа, уже встречавшихся в предыдущем
     public function containment(string $candidate, string $previous): float
     {
         $new = $this->words($candidate);
@@ -25,7 +24,6 @@ class ReplySimilarity
         return count($shared) / count(array_unique($new));
     }
 
-    // Определяет, почти дословно ли новый ответ повторяет предыдущий
     public function isNearDuplicate(string $candidate, string $previous): bool
     {
         if (count($this->words($candidate)) < self::MIN_WORDS) {
@@ -35,7 +33,6 @@ class ReplySimilarity
         return $this->containment($candidate, $previous) >= self::DUPLICATE_THRESHOLD;
     }
 
-    // Определяет, повторяет ли ответ те же числовые данные, что были перечислены ранее
     public function repeatsListing(string $candidate, string $previous, array $ignore = []): bool
     {
         $ignored = array_flip($this->figures(implode(' ', $ignore)));
@@ -50,7 +47,6 @@ class ReplySimilarity
         return count($shared) / count($listed) >= self::DUPLICATE_THRESHOLD;
     }
 
-    // Определяет, является ли ответ повтором предыдущего (дословно или по данным)
     public function isRepeatOf(string $candidate, string $previous, array $ignore = []): bool
     {
         return $this->isNearDuplicate($candidate, $previous)
@@ -59,7 +55,6 @@ class ReplySimilarity
             || $this->isShortDuplicate($candidate, $previous);
     }
 
-    /** @return list<string> Questions copied into an otherwise new answer. */
     public function repeatedQuestions(string $candidate, string $previous): array
     {
         $previousQuestions = array_map(fn ($text) => $this->words($text), $this->questions($previous));
@@ -69,7 +64,6 @@ class ReplySimilarity
         ));
     }
 
-    /** Remove a redundant question only if a substantive answer remains. */
     public function withoutRepeatedQuestions(string $candidate, array $previousReplies): string
     {
         $cleaned = $candidate;
@@ -88,22 +82,19 @@ class ReplySimilarity
     {
         $words = $this->words($candidate);
 
-        // Short acknowledgements and repeated figures can be correct answers.
         return count($words) >= 4 && count($words) < self::MIN_WORDS
             && ! preg_match('/\p{N}/u', $candidate)
             && $words === $this->words($previous);
     }
 
-    /** @return list<string> */
     protected function questions(string $text): array
     {
-        // Preserve decimal points inside sentences and support multi-line chat.
+
         $sentences = preg_split('/(?<=[.!?。！？])\s+|\R/u', trim($text)) ?: [];
 
         return array_values(array_filter($sentences, fn ($sentence) => preg_match('/[?？][!！]*$/u', $sentence)));
     }
 
-    // Извлекает из текста числа длиной от 3 цифр (цены, объёмы и т.п.)
     protected function figures(string $text): array
     {
         return array_values(array_unique(array_filter(
@@ -112,7 +103,6 @@ class ReplySimilarity
         )));
     }
 
-    // Разбивает текст на слова длиной от 2 символов для сравнения
     protected function words(string $text): array
     {
         $text = mb_strtolower($text);

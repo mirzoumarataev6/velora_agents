@@ -20,16 +20,13 @@ class HagglingService
 
     public const STATUS_PENDING = 'awaiting_price_approval';
 
-    // Создаёт сервис торга с детектором телефонных номеров
     public function __construct(protected PhoneNumberDetector $phones) {}
 
-    // Сообщает, включён ли для агента торг по цене
     public function enabledFor(Agent $agent): bool
     {
         return $agent->hagglesOnPrice();
     }
 
-    // Возвращает описание инструмента запроса одобрения цены для LLM
     public function toolDefinition(): array
     {
         return [
@@ -79,7 +76,6 @@ class HagglingService
         ];
     }
 
-    // Возвращает системную инструкцию о правилах торга для конкретного агента
     public function systemInstruction(Agent $agent): string
     {
         $percent = max(1, min(100, (int) ($agent->haggle_min_price_percent ?? 100)));
@@ -110,7 +106,6 @@ class HagglingService
         ], $this->styleLines($this->levelFor($agent)), $this->ownerGuidanceLines($agent)));
     }
 
-    // Добавляет к системной инструкции собственные правила торга владельца агента, если они заданы
     protected function ownerGuidanceLines(Agent $agent): array
     {
         $instructions = trim((string) ($agent->haggling_instructions ?? ''));
@@ -136,7 +131,6 @@ class HagglingService
         ];
     }
 
-    // Возвращает описание стиля переговоров для заданного уровня жёсткости торга
     protected function styleLines(string $level): array
     {
         return match ($level) {
@@ -176,13 +170,11 @@ class HagglingService
         };
     }
 
-    // Возвращает уровень жёсткости торга, настроенный для агента
     public function levelFor(Agent $agent): string
     {
         return $agent->hagglingLevel();
     }
 
-    // Определяет, ниже ли запрошенная цена минимально допустимой для агента
     public function isBelowFloor(Agent $agent, ?float $requested, ?float $listed): bool
     {
         if ($requested === null || $listed === null || $listed <= 0 || $requested <= 0) {
@@ -192,7 +184,6 @@ class HagglingService
         return $requested < $agent->minimumPriceFor($listed);
     }
 
-    // Сохраняет запрос на торг как лид, ожидающий одобрения цены владельцем
     public function persist(Agent $agent, ?Conversation $conversation, array $args, string $source): Lead
     {
         $requested = $this->money($args['requested_price'] ?? null);
@@ -216,7 +207,6 @@ class HagglingService
         ]);
     }
 
-    // Возвращает инструкцию для ответа клиенту, пока цена ожидает одобрения владельца
     public function pendingInstruction(): string
     {
         return implode("\n", [
@@ -230,7 +220,6 @@ class HagglingService
         ]);
     }
 
-    // Возвращает инструкцию для ответа клиенту, если сохранить запрос на торг не удалось
     public function failureInstruction(): string
     {
         return 'The price request could NOT be sent — the write failed. Do not tell the customer their price is '
@@ -238,14 +227,12 @@ class HagglingService
             .'technical problem, and tell them a colleague will get back to them about the price.';
     }
 
-    // Возвращает запасной текст сообщения о том, что цена уточняется у менеджера
     public function pendingFallback(Agent $agent): string
     {
         return $agent->response_format['haggle_pending_message']
             ?? 'Хорошо, я уточню у менеджера, дадут ли такую цену, и вернусь к вам.';
     }
 
-    // Ищет номер телефона клиента в истории сообщений диалога
     protected function phoneFromHistory(?Conversation $conversation): ?string
     {
         if ($conversation === null) {
@@ -257,7 +244,6 @@ class HagglingService
         );
     }
 
-    // Приводит значение к положительному числу с плавающей точкой или null
     protected function money(mixed $value): ?float
     {
         if (is_int($value) || is_float($value)) {
@@ -273,7 +259,6 @@ class HagglingService
         return null;
     }
 
-    // Приводит значение к обрезанной строке или null
     protected function clean(mixed $value): ?string
     {
         if (! is_string($value)) {

@@ -13,12 +13,10 @@ class DatasetImporter
 {
     protected const INSERT_CHUNK = 500;
 
-    // Создаёт импортёр датасета с сервисом разбора значений ячеек
     public function __construct(
         protected ValueParser $values,
     ) {}
 
-    // Импортирует строки таблицы в каталог товаров агента, заменяя прежний каталог
     public function import(Agent $agent, string $filename, array $headers, array $rows, array $mapping): array
     {
         $mapping = $this->validateMapping($mapping, count($headers));
@@ -33,9 +31,6 @@ class DatasetImporter
         DB::transaction(function () use ($agent, $filename, $headers, $mapping, $products, $reasons, $skipped) {
             $dataset = $this->upsertDataset($agent, $filename, $headers, $mapping, count($products), $skipped, $reasons);
 
-            // A replace retires every old row's id — their uploaded photos
-            // cascade at the DB level, but never their files, same reasoning
-            // as DatasetController::destroy().
             ProductImage::purgeFilesForAgent($agent->id);
             DatasetProduct::query()->where('agent_id', $agent->id)->delete();
 
@@ -46,20 +41,6 @@ class DatasetImporter
         return ['imported' => count($products), 'skipped' => $skipped, 'reasons' => $reasons];
     }
 
-    /**
-     * Updates the agent's existing catalog instead of replacing it: a row
-     * matched to an existing product (by sku, then by name — see
-     * matchRows()) is updated in place, keeping its id and every uploaded
-     * photo untouched; only the fields THIS file actually mapped are
-     * overwritten, so a file with no stock column cannot zero out prices or
-     * vice versa. An existing row nothing in the file matched is marked
-     * stock=0 rather than deleted — still visible, still photographed,
-     * just no longer offered as available — unless $markMissingOutOfStock is
-     * false, which leaves those rows completely untouched (the owner's own
-     * opt-out, confirmed at the mapping step once they've seen the count).
-     * A new file row nothing existing matched is inserted, same as import()
-     * would.
-     */
     public function update(Agent $agent, string $filename, array $headers, array $rows, array $mapping, bool $markMissingOutOfStock = true): array
     {
         $mapping = $this->validateMapping($mapping, count($headers));
@@ -96,9 +77,7 @@ class DatasetImporter
             if ($markMissingOutOfStock) {
                 $orphanIds = $existing->reject(fn (DatasetProduct $e) => isset($matchedExistingIds[$e->id]))->pluck('id');
                 if ($orphanIds->isNotEmpty()) {
-                    // Only stock changes — name/description/sku/category (and so
-                    // search_text) are untouched, so a plain query update is
-                    // enough; no need to load these as models.
+
                     DatasetProduct::whereIn('id', $orphanIds)->update(['stock' => 0, 'updated_at' => now()]);
                     $summary['out_of_stock'] = $orphanIds->count();
                 }
@@ -110,14 +89,6 @@ class DatasetImporter
         return $summary + ['skipped' => $skipped, 'reasons' => $reasons];
     }
 
-    /**
-     * The same matching pass update() would run, without writing anything —
-     * what the mapping step shows the owner before they commit, so "N
-     * products not found in the file will be marked out of stock" is a real
-     * count and not a guess they only learn the cost of after confirming.
-     *
-     * @return array{updated: int, added: int, ambiguous: int, missing: int}
-     */
     public function previewUpdate(Agent $agent, array $headers, array $rows, array $mapping): array
     {
         $mapping = $this->validateMapping($mapping, count($headers));
@@ -136,20 +107,6 @@ class DatasetImporter
         ];
     }
 
-    /**
-     * Pairs existing rows with file rows: exact sku match first (only where
-     * the sku is non-blank and occurs exactly once on BOTH sides — sku
-     * comparison is NOT case/whitespace-normalized, since a sku is an
-     * identifier the shop controls), then — among whatever neither side's
-     * sku pass claimed — name match where a name occurs the SAME number of
-     * times on both sides, paired in file order; name comparison IS
-     * case-insensitive and collapses internal whitespace (see
-     * normalizeName()), so "HP Omen 16" and "hp  omen 16" count as the same
-     * name. Everything else is left unmatched; a count mismatch is reported
-     * back as ambiguous rather than guessed at.
-     *
-     * @return array{0: list<array{0: DatasetProduct, 1: int}>, 1: array<int, true>, 2: array<int, true>, 3: array<int, true>}
-     */
     private function matchRows($existing, array $products): array
     {
         $pairs = [];
@@ -202,11 +159,7 @@ class DatasetImporter
             $existingGroup = $existingByName[$name] ?? [];
 
             if (count($existingGroup) !== count($newIndexGroup)) {
-                // A name that exists on both sides but in different counts
-                // is exactly the case nothing here should guess at — every
-                // index in this group is reported ambiguous and inserted
-                // fresh; the existing row(s) it didn't pair with fall
-                // through to the out-of-stock pass untouched.
+
                 if ($existingGroup !== []) {
                     foreach ($newIndexGroup as $newIndex) {
                         $ambiguousNewIndexes[$newIndex] = true;
@@ -227,22 +180,11 @@ class DatasetImporter
         return [$pairs, $matchedNewIndexes, $matchedExistingIds, $ambiguousNewIndexes];
     }
 
-    /** Case/whitespace-insensitive grouping key for name matching — "HP Omen 16" and "hp  omen  16" are the same product; sku matching stays exact, since a sku is an identifier, not prose. */
     private function normalizeName(string $name): string
     {
         return mb_strtolower(trim((string) preg_replace('/\s+/u', ' ', $name)));
     }
 
-    /**
-     * Overwrites only the fields this file's mapping actually assigned a
-     * column to — everything else, including the row's photos, is left
-     * exactly as it was. Within a mapped field, a blank cell ALSO leaves the
-     * existing value alone: a file that maps "Остаток" but has that cell
-     * empty for one row means "not entered", not "zero" — ValueParser
-     * already returns null for a blank/unparseable cell, so null here is
-     * indistinguishable from "didn't say", and the owner never asked for a
-     * blank cell to erase a price or empty out a description.
-     */
     private function applyMatchedRow(DatasetProduct $existingProduct, array $newProduct, array $mapping): void
     {
         $fill = ['name' => $newProduct['name'], 'position' => $newProduct['position']];
@@ -257,42 +199,25 @@ class DatasetImporter
             $fill['extra'] = $newProduct['extra_array'];
         }
 
-        // search_text/category_key are recomputed from whatever this leaves
-        // as the FINAL state (old values for anything not just overwritten)
-        // by DatasetProduct::booted()'s own saving hook — the same one
-        // every other write to this model already goes through.
         $existingProduct->fill($fill)->save();
     }
 
-    /** The shared bulk-insert step import() and update() both end with, for whichever rows turned out to be genuinely new. */
     private function insertRows(array $products, int $datasetId, Agent $agent): void
     {
         foreach (array_chunk($products, self::INSERT_CHUNK) as $chunk) {
             DatasetProduct::query()->insert(array_map(
-                // Bulk insert bypasses DatasetProduct's StampsTeam creating hook,
-                // so the agent's own team_id (resolved once, not per row) is
-                // stamped here explicitly — see StampsTeam's docblock for why.
+
                 fn (array $product) => array_diff_key($product, ['extra_array' => null]) + ['dataset_id' => $datasetId, 'team_id' => $agent->team_id],
                 $chunk,
             ));
         }
     }
 
-    /**
-     * Keeps dataset.row_count meaning what the Каталог tab actually shows:
-     * the catalog's real size right now. upsertDataset() is called before
-     * any product row is written, with only this file's own row count to go
-     * on — fine for import() (a replace ends up with exactly that many
-     * rows), wrong for update() (kept + reappeared + newly out-of-stock
-     * rows can leave the catalog far bigger than the file that updated it).
-     * Called last, once every row this operation touches has been written.
-     */
     private function syncRowCount(Dataset $dataset, Agent $agent): void
     {
         $dataset->update(['row_count' => DatasetProduct::where('agent_id', $agent->id)->count()]);
     }
 
-    /** The one Dataset row per agent, filled in identically whichever import mode ran. */
     private function upsertDataset(Agent $agent, string $filename, array $headers, array $mapping, int $rowCount, int $skipped, array $reasons): Dataset
     {
         $dataset = Dataset::query()->firstOrNew(['agent_id' => $agent->id]);
@@ -310,15 +235,6 @@ class DatasetImporter
         return $dataset;
     }
 
-    /**
-     * Parses every row into the product shape both import() and update()
-     * need. `extra_array` carries the decoded form alongside the
-     * already-json-encoded `extra` string: the bulk insert path needs the
-     * encoded string (it bypasses Eloquent casting entirely), update()'s
-     * matched-row path needs the array to hand to Eloquent's own cast.
-     *
-     * @return array{0: list<array<string, mixed>>, 1: array<string, int>}
-     */
     private function parseRows(Agent $agent, array $headers, array $rows, array $mapping): array
     {
         $nameColumn = $mapping['name'];
@@ -374,7 +290,6 @@ class DatasetImporter
         return [$products, $reasons];
     }
 
-    // Проверяет и очищает сопоставление столбцов, требуя обязательные поля
     public function validateMapping(array $mapping, int $columnCount): array
     {
         $clean = [];
@@ -416,7 +331,6 @@ class DatasetImporter
         return $clean;
     }
 
-    // Проверяет, что все ячейки строки пусты
     protected function isBlankRow(array $row): bool
     {
         foreach ($row as $cell) {

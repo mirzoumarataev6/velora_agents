@@ -5,12 +5,6 @@ namespace App\Console\Commands;
 use Database\Seeders\DemoSeeder;
 use Illuminate\Console\Command;
 
-/**
- * Rebuilds the five presentation agents and everything under them.
- *
- * Replaces only the fixed demo-* agents and demo_v2-tagged conversations.
- * Seeded CRM rows are marked; owner edits are preserved on repeat runs.
- */
 class DemoDataCommand extends Command
 {
     protected $signature = 'db:demo

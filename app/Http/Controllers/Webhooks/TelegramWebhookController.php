@@ -11,7 +11,6 @@ use Illuminate\Http\Response;
 
 class TelegramWebhookController extends Controller
 {
-    // Принимает вебхук Telegram и ставит в очередь обработку входящего обновления
     public function handle(Request $request, Channel $channel, ChannelDriverManager $drivers): Response
     {
         if ($channel->type !== 'telegram') {

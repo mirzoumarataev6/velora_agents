@@ -8,17 +8,6 @@ use App\Services\Channels\TelegramDriver;
 use Illuminate\Console\Command;
 use Throwable;
 
-/**
- * Re-apply the current webhook subscription to every connected Telegram bot.
- *
- * Telegram stores allowed_updates on ITS side, as of the last setWebhook. A
- * change to TelegramDriver::ALLOWED_UPDATES therefore reaches only bots
- * connected afterwards; this is what brings the existing ones up to date. It
- * is how the 👍/👎 buttons were fixed on bots connected before callback_query
- * was subscribed to — they had been silently receiving only messages.
- *
- * URL and secret are kept exactly as stored, so nothing else changes.
- */
 class TelegramSyncWebhooksCommand extends Command
 {
     protected $signature = 'telegram:sync-webhooks {--channel= : Only this channel id}';

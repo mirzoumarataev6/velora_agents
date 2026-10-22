@@ -17,9 +17,6 @@ class DatabaseConnectionPolicy
         return $this->permitted($user, PermissionCatalog::CATALOG_VIEW, $connection);
     }
 
-    /**
-     * Authorized via Gate::authorize('create', [DatabaseConnection::class, $agent]).
-     */
     public function create(User $user, Agent $agent): bool
     {
         return $this->permitted($user, PermissionCatalog::CATALOG_MANAGE, $agent);

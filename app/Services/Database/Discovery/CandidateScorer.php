@@ -4,40 +4,8 @@ namespace App\Services\Database\Discovery;
 
 use App\Services\Dataset\ColumnMapper;
 
-/**
- * Which table holds the products, decided WITHOUT asking a model.
- *
- * This is the pass the whole feature is built to lean on. The signals it uses
- * are facts the schema states about itself — a declared foreign key, a column's
- * type, the name the shop's own developers chose — and on a conventionally named
- * database they settle the question outright. A language model is a tie-breaker
- * for the shortlist this produces and nothing more; if this pass is confident,
- * the model is never consulted at all.
- *
- * Three real-world cases shape the design:
- *
- *  - THE NAME MAY LIVE ELSEWHERE. OpenCart keeps price and quantity on
- *    `oc_product` and the actual product name on `oc_product_description`. A
- *    hard "must have a name column" gate would rule out the right table, so the
- *    gate is satisfiable one relationship hop away, at a lower confidence.
- *  - RETAIL AND WHOLESALE BOTH EXIST. Two tables that both look like products
- *    are not an error to be resolved by picking the higher number; the ranking
- *    is reported as close and the owner chooses. Hence word-boundary matching:
- *    `wholesale_products` must match "products" and must NOT be penalized as a
- *    "sale" table.
- *  - VIEWS ARE OFTEN THE BEST ANSWER. A `v_catalog` someone built to flatten
- *    their schema is exactly what we want, so views are ranked on the same scale
- *    with a small bonus when their name says catalog.
- */
 class CandidateScorer
 {
-    /**
-     * Weights, as plain integers so a ranking can be explained and asserted.
-     *
-     * They are ordered by how much they deserve to be believed: what the table
-     * is CALLED and whether it has the two columns a product cannot do without
-     * dominate, relationships confirm, and size only ever breaks a tie.
-     */
     protected const W_NAME_EXACT = 50;
 
     protected const W_NAME_TOKEN = 30;
@@ -70,38 +38,14 @@ class CandidateScorer
 
     protected const P_SERVICE_TABLE = -60;
 
-    /**
-     * Heavy enough to sink an orders table outright, not merely rank it second.
-     * `order_items` has a product name, a price and a quantity, so on shape
-     * alone it is indistinguishable from a catalog — and offering a customer a
-     * row from it would quote them somebody else's past purchase. A table whose
-     * name genuinely also says "products" earns most of this back.
-     */
     protected const P_TRANSACTION_TABLE = -70;
 
     protected const P_LINK_TABLE = -30;
 
-    /**
-     * `categories` and `stocks` have a name column and get referenced by the
-     * catalog, so on shape alone they look plausible. They are the catalog's
-     * SUPPORTING tables — the ones discovery will go on to join — and offering
-     * them as the catalog itself would be a confusing way to be wrong.
-     *
-     * Deliberately mild: a shop that really does call its product table
-     * `inventory` still clears the plausibility floor on its other signals.
-     */
     protected const P_SUPPORTING_TABLE = -25;
 
-    /** Below this a table is not worth showing the owner at all. */
     public const PLAUSIBLE_SCORE = 40;
 
-    /**
-     * Findings that settle what a table IS, whatever its columns turn out to
-     * mean. A table carrying one of these is never handed to the model
-     * fallback — it is not an unread catalog, it is not a catalog.
-     *
-     * @var string[]
-     */
     protected const DISQUALIFYING_REASONS = [
         'looks_like_orders',
         'looks_like_service_table',
@@ -109,31 +53,16 @@ class CandidateScorer
         'looks_like_supporting_table',
     ];
 
-    /**
-     * Two candidates within this many points are a genuine choice, not a
-     * ranking. Both are surfaced and neither is presented as certain.
-     */
     public const AMBIGUOUS_MARGIN = 15;
 
-    /**
-     * The vocabularies, shared with the join planner — see TableWords for why
-     * there must be exactly one copy of them. Matched on whole words, never
-     * substrings, so `wholesale_products` is a catalog rather than a sale.
-     *
-     * @var string[]
-     */
     protected const PRODUCT_WORDS = TableWords::PRODUCT;
 
-    /** @var string[] */
     protected const CATEGORY_WORDS = TableWords::CATEGORY;
 
-    /** @var string[] */
     protected const STOCK_WORDS = TableWords::STOCK;
 
-    /** @var string[] */
     protected const SERVICE_WORDS = TableWords::SERVICE;
 
-    /** @var string[] */
     protected const TRANSACTION_WORDS = TableWords::TRANSACTION;
 
     public function __construct(
@@ -141,40 +70,11 @@ class CandidateScorer
         protected RelationResolver $relations,
     ) {}
 
-    /**
-     * Rank every table in the schema, best first.
-     *
-     * Tables with no path to a product NAME or to a PRICE are left out entirely
-     * rather than ranked last. A table the agent could not name a single product
-     * from is not a weak candidate, it is not a candidate — and neither is one
-     * with no price, which is what `customers` and `suppliers` are. Offering
-     * those at low confidence still put "Название товара: Иван Петров" in front
-     * of an owner.
-     *
-     * @return array<int, TableCandidate>
-     */
     public function rank(DiscoveredSchema $schema): array
     {
         return $this->survey($schema)['ranked'];
     }
 
-    /**
-     * Rank the schema, keeping the tables that ALMOST qualified.
-     *
-     * A table with no reachable name or price is not a candidate — see rank().
-     * But "we could not read this table's column names" and "this table is not a
-     * catalog" are different findings, and the first one has a remedy: a shop
-     * whose columns are `atalishi` and `qiymati` has a perfectly good catalog
-     * written in a language the vocabulary does not carry. Those tables come
-     * back under `unresolved`, with `missing` naming exactly what could not be
-     * read, so the model fallback can be asked a narrow question about a
-     * specific table instead of a broad one about the schema.
-     *
-     * Tables that failed for any OTHER reason are not in either list: no amount
-     * of interpretation makes `migrations` a product catalog.
-     *
-     * @return array{ranked: array<int, TableCandidate>, unresolved: array<int, TableCandidate>}
-     */
     public function survey(DiscoveredSchema $schema): array
     {
         $ranked = [];
@@ -200,33 +100,16 @@ class CandidateScorer
         ];
     }
 
-    /**
-     * @param  array<int, TableCandidate>  $candidates
-     * @return array<int, TableCandidate>
-     */
     protected function sorted(array $candidates): array
     {
         usort($candidates, function (TableCandidate $a, TableCandidate $b) {
-            // A stable tie-break by name keeps the order deterministic, so the
-            // same schema always produces the same screen.
+
             return [$b->score, $a->table] <=> [$a->score, $b->table];
         });
 
         return $candidates;
     }
 
-    /**
-     * Whether asking a model about this table could possibly be worth a call.
-     *
-     * The bar is deliberately structural rather than clever, because the point
-     * is to avoid spending a model call on a question with no answer:
-     *
-     *  - a table the NAME vocabulary has already identified as orders, plumbing
-     *    or a lookup is not a catalog whatever its columns are called;
-     *  - a table with no text column cannot hold a product name, and one with no
-     *    numeric column cannot hold a price worth filtering on — there is
-     *    nothing there for a model to find.
-     */
     protected function worthInterpreting(DiscoveredSchema $schema, TableCandidate $candidate): bool
     {
         foreach ($candidate->reasons as $reason) {
@@ -245,15 +128,6 @@ class CandidateScorer
         return $text >= 1 && $numeric >= 1;
     }
 
-    /**
-     * The candidates worth putting in front of the owner.
-     *
-     * More than one means a real choice — retail and wholesale, or a table and
-     * the view built over it — and the caller shows them all rather than picking.
-     *
-     * @param  array<int, TableCandidate>  $ranked
-     * @return array<int, TableCandidate>
-     */
     public function shortlist(array $ranked, int $limit = 3): array
     {
         $plausible = array_values(array_filter(
@@ -264,12 +138,6 @@ class CandidateScorer
         return array_slice($plausible, 0, max(1, $limit));
     }
 
-    /**
-     * Whether the top two are close enough that choosing between them is the
-     * owner's call rather than ours.
-     *
-     * @param  array<int, TableCandidate>  $ranked
-     */
     public function isAmbiguous(array $ranked): bool
     {
         return count($ranked) >= 2
@@ -278,9 +146,6 @@ class CandidateScorer
             && ($ranked[0]->score - $ranked[1]->score) <= self::AMBIGUOUS_MARGIN;
     }
 
-    /**
-     * Score one table, or null when it cannot be a product table at all.
-     */
     protected function score(DiscoveredSchema $schema, string $table): ?TableCandidate
     {
         $roles = $this->roles->resolve($schema, $table);
@@ -288,8 +153,6 @@ class CandidateScorer
 
         $score = 0;
         $reasons = [];
-
-        // ---- What the table is called -------------------------------------
 
         $exactName = $this->matchesWholeName($table, self::PRODUCT_WORDS);
         $tokenName = $this->hasWord($words, self::PRODUCT_WORDS);
@@ -302,26 +165,15 @@ class CandidateScorer
             $reasons[] = ['code' => 'table_name_matches', 'params' => ['table' => $table]];
         }
 
-        // ---- The two columns a product cannot do without -------------------
-
         $nameFrom = null;
 
-        // What the deterministic pass could not read. A table with anything in
-        // here is not a candidate; whether it is worth ASKING about is
-        // survey()'s question, not this method's.
         $missing = [];
 
         if ($roles->hasName()) {
             $score += self::W_HAS_NAME_COLUMN;
             $reasons[] = ['code' => 'has_name_column', 'params' => ['column' => $roles->column('name')]];
         } else {
-            // OpenCart and friends: the price lives here, the name one hop away.
-            //
-            // Asked of the JOIN PLANNER rather than merely of the neighbouring
-            // tables, so a candidate is never credited for a name the query
-            // builder could not actually fetch — a related table with several
-            // rows per product cannot be joined, and therefore cannot rescue a
-            // table that has no name of its own.
+
             $nameFrom = $this->relations->nameSource($schema, $table);
 
             if ($nameFrom === null) {
@@ -338,39 +190,21 @@ class CandidateScorer
             $score += self::W_NUMERIC_PRICE;
             $reasons[] = ['code' => 'has_price_column', 'params' => ['column' => $roles->column('price')]];
         } elseif ($roles->has('price')) {
-            // Usable, but it cannot answer "cheaper than 500" — the search drops
-            // numeric filters on a text price, and the owner should know why.
+
             $score += self::W_TEXT_PRICE;
             $reasons[] = ['code' => 'price_not_numeric', 'params' => ['column' => $roles->column('price')]];
         } else {
-            // THE PLAUSIBILITY FLOOR. A shop's catalog has a price, here or one
-            // safe hop away — that is what makes it a catalog rather than a list
-            // of things.
-            //
-            // Without this gate, `customers` and `suppliers` qualify on a name
-            // column alone and are offered as product tables, with previews
-            // reading "Название товара: Иван Петров". Marking them low
-            // confidence was never enough: the honest answer is that they are
-            // not candidates, the same way `migrations` is not. A schema odd
-            // enough to keep its prices somewhere we cannot reach still has the
-            // advanced panel, which is what it is for.
+
             $priceFrom = $this->relations->fieldSource($schema, $table, 'price');
 
             if ($priceFrom === null) {
                 $missing[] = 'price';
             } else {
-                // Said, but not SCORED. A price next door is what makes this
-                // table admissible; it is not evidence that this table rather
-                // than its neighbour is the catalog, and awarding points for it
-                // lifted a narrow `product_stock` link table over the
-                // plausibility floor.
+
                 $reasons[] = ['code' => 'price_column_in_related', 'params' => ['table' => $priceFrom]];
             }
         }
 
-        // A column we read by transliterating it is a column the owner should
-        // glance at. Said once, listing them, rather than once per field: it is
-        // one fact about how this table was read.
         $transliterated = $roles->from(ColumnRoles::TRANSLITERATED);
 
         if ($transliterated !== []) {
@@ -379,8 +213,6 @@ class CandidateScorer
                 'params' => ['columns' => implode(', ', $transliterated)],
             ];
         }
-
-        // ---- Supporting shape ----------------------------------------------
 
         if ($roles->has('stock')) {
             $score += $roles->isNumeric('stock') ? self::W_NUMERIC_STOCK : self::W_TEXT_STOCK;
@@ -395,11 +227,7 @@ class CandidateScorer
             $score += self::W_DESCRIPTION;
         }
 
-        // ---- What the schema says about how it connects ---------------------
-
         $score += $this->relationshipScore($schema, $table, $roles, $reasons);
-
-        // ---- Shape and size -------------------------------------------------
 
         if ($schema->isView($table) && ($exactName || $tokenName)) {
             $score += self::W_CATALOG_VIEW;
@@ -409,17 +237,12 @@ class CandidateScorer
         $rowCount = $schema->rowCount($table);
 
         if ($rowCount !== null && $rowCount > 0) {
-            // Log-scaled and capped: a catalog of 8,000 outranks a lookup table
-            // of 20, but a catalog of 800,000 does not outrank everything else
-            // put together.
+
             $score += min(self::W_SIZE_MAX, (int) floor(log10($rowCount)) * 3);
         }
 
         $score += $this->penalties($schema, $table, $words, $reasons);
 
-        // Said once per candidate, because it colours every relationship reason
-        // above it: on a schema that declares nothing, the links were worked out
-        // from column names rather than read off the catalog.
         if (! $schema->hasDeclaredForeignKeys()) {
             $reasons[] = ['code' => 'no_declared_keys'];
         }
@@ -437,11 +260,6 @@ class CandidateScorer
         );
     }
 
-    /**
-     * Points for the relationships the schema declares around this table.
-     *
-     * @param  array<int, array{code: string, params?: array<string, mixed>}>  $reasons
-     */
     protected function relationshipScore(DiscoveredSchema $schema, string $table, ColumnRoles $roles, array &$reasons): int
     {
         $score = 0;
@@ -457,8 +275,7 @@ class CandidateScorer
         $referencedBy = $schema->keysTo($table);
 
         if ($referencedBy !== []) {
-            // Things point AT a catalog: order lines, stock rows, images. A
-            // lookup table that nothing references is rarely the main entity.
+
             $score += self::W_REFERENCED;
             $reasons[] = ['code' => 'referenced_by_others', 'params' => ['count' => count($referencedBy)]];
         }
@@ -476,10 +293,6 @@ class CandidateScorer
         return $score;
     }
 
-    /**
-     * @param  string[]  $words
-     * @param  array<int, array{code: string, params?: array<string, mixed>}>  $reasons
-     */
     protected function penalties(DiscoveredSchema $schema, string $table, array $words, array &$reasons): int
     {
         $penalty = 0;
@@ -490,15 +303,11 @@ class CandidateScorer
         }
 
         if ($this->hasWord($words, self::TRANSACTION_WORDS)) {
-            // The one false positive that would actively harm a customer:
-            // answering "what do you sell" out of somebody's past order.
+
             $penalty += self::P_TRANSACTION_TABLE;
             $reasons[] = ['code' => 'looks_like_orders'];
         }
 
-        // Only when the name does not ALSO say products: `product_categories`
-        // is a catalog table by one word and a lookup by another, and the
-        // product word is the more specific claim.
         if (! $this->hasWord($words, self::PRODUCT_WORDS)
             && $this->hasWord($words, [...self::CATEGORY_WORDS, ...self::STOCK_WORDS])) {
             $penalty += self::P_SUPPORTING_TABLE;
@@ -513,10 +322,6 @@ class CandidateScorer
         return $penalty;
     }
 
-    /**
-     * A narrow table of nothing but keys — `product_category`, `item_tag` — is
-     * plumbing between two entities, not an entity.
-     */
     protected function looksLikeLinkTable(DiscoveredSchema $schema, string $table): bool
     {
         $columns = $schema->columns($table);
@@ -536,15 +341,9 @@ class CandidateScorer
         return true;
     }
 
-    /**
-     * How much this reading deserves to be believed, before the ranking as a
-     * whole is taken into account.
-     */
     protected function confidenceFor(DiscoveredSchema $schema, ColumnRoles $roles, bool $nameMatched, ?string $nameFrom, ?string $priceFrom = null): string
     {
-        // Recognized by column shape alone, or leaning on a related table for
-        // the product name or its price — either way the owner is being asked to
-        // check something we are genuinely unsure of.
+
         if (! $nameMatched || $nameFrom !== null || $priceFrom !== null) {
             return TableCandidate::LOW;
         }
@@ -553,20 +352,9 @@ class CandidateScorer
             return TableCandidate::MEDIUM;
         }
 
-        // The full case: the schema says what this table is called, its columns
-        // are the right types, and it declares how it connects to the rest.
         return $schema->hasDeclaredForeignKeys() ? TableCandidate::HIGH : TableCandidate::MEDIUM;
     }
 
-    /**
-     * Downgrade a leader the runner-up is breathing down the neck of.
-     *
-     * Confidence is about the ANSWER, not the table: "products scores 140" means
-     * nothing if `wholesale_products` scores 138.
-     *
-     * @param  array<int, TableCandidate>  $candidates
-     * @return array<int, TableCandidate>
-     */
     protected function applyRelativeConfidence(array $candidates): array
     {
         if (! $this->isAmbiguous($candidates)) {
@@ -580,33 +368,16 @@ class CandidateScorer
         return $candidates;
     }
 
-    /**
-     * A table name as comparable words: `oc_product_description` becomes
-     * ['oc', 'product', 'description'], and a schema qualifier is dropped.
-     *
-     * Word-boundary matching rather than substring is what lets
-     * `wholesale_products` be recognized as products without being mistaken for
-     * a sales table.
-     *
-     * @return string[]
-     */
     protected function words(string $table): array
     {
         return TableWords::of($table);
     }
 
-    /**
-     * @param  string[]  $words
-     * @param  string[]  $vocabulary
-     */
     protected function hasWord(array $words, array $vocabulary): bool
     {
         return TableWords::any($words, $vocabulary);
     }
 
-    /**
-     * @param  string[]  $vocabulary
-     */
     protected function matchesWholeName(string $table, array $vocabulary): bool
     {
         $words = $this->words($table);

@@ -18,10 +18,8 @@ class SendLeadNotificationJob implements ShouldQueue
 
     public int $tries = 2;
 
-    // Создаёт задачу уведомления владельца о новом лиде
     public function __construct(public Lead $lead) {}
 
-    // Отправляет владельцу в Telegram уведомление о новом лиде или запросе цены
     public function handle(ChannelDriverManager $drivers): void
     {
         $agent = $this->lead->agent;
@@ -58,7 +56,6 @@ class SendLeadNotificationJob implements ShouldQueue
         }
     }
 
-    // Формирует текст уведомления о новом лиде для отправки владельцу
     protected function message(string $agentName): string
     {
         if ($this->lead->isHaggle()) {
@@ -86,7 +83,6 @@ class SendLeadNotificationJob implements ShouldQueue
         return implode("\n", $lines);
     }
 
-    // Формирует текст уведомления о запросе цены (торге) для отправки владельцу
     protected function priceRequestMessage(string $agentName): string
     {
         $lines = ["💬 Запрос цены · {$agentName}"];

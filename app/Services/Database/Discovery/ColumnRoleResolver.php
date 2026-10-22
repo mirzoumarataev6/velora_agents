@@ -6,81 +6,22 @@ use App\Services\Database\LiveProductSource;
 use App\Services\Dataset\ColumnMapper;
 use App\Services\Dataset\Transliterator;
 
-/**
- * What each column of a table means, judged by its NAME and its TYPE.
- *
- * The uploaded catalog guesses this from header names alone, because a
- * spreadsheet has no types. A live database does, and the types settle cases the
- * names cannot:
- *
- *  - a shop with both `price` (decimal) and `price_text` (varchar) gets the one
- *    the search can actually compare against a number;
- *  - a `nomer` integer column is never offered as the product NAME, whatever the
- *    vocabulary says, because a product name is text;
- *  - a `qty` column that turns out to hold "в наличии" is still mapped, and
- *    LiveProductSource already knows to drop the numeric filter for it.
- *
- * The vocabulary itself is ColumnMapper's, unchanged and shared, so an owner who
- * has mapped a spreadsheet before meets the same words here.
- *
- * IT IS READ IN TWO LAYERS. The vocabulary is written in Cyrillic and English,
- * and a great many real databases spell the same words in latin — `nazvanie`,
- * `cena`, `narkh`. Rather than list those spellings (hundreds per language, and
- * a new set for every language added), a latin name is transliterated back to
- * Cyrillic and looked up in the SAME vocabulary. See Transliterator.
- *
- * The layers are ordered so that certainty wins over cleverness:
- *
- *   1. exact, in the vocabulary's own languages
- *   2. exact, after transliteration
- *   3. substring, in the vocabulary's own languages
- *   4. substring, after transliteration
- *
- * A direct hit always beats a transliterated one at the same precision, which is
- * what keeps a latin word that happens to read as a Cyrillic one — `tip`, `art`,
- * `sum` — from stealing a column that a real word already claimed. Layer 1
- * cannot be overridden by layer 2, only completed by it.
- */
 class ColumnRoleResolver
 {
-    /**
-     * How well a column's type suits a field. Higher wins when several columns
-     * match the same word; it never lets a column match a word it does not.
-     */
     protected const TYPE_FIT = [
         'price' => ['numeric' => 2, 'text' => 0],
         'stock' => ['numeric' => 2, 'text' => 1],
-        // A name, a description and a URL are text by nature. A numeric column
-        // matching one of those words is a coincidence, not a meaning.
+
         'name' => ['numeric' => -1, 'text' => 2],
         'description' => ['numeric' => -1, 'text' => 2],
         'url' => ['numeric' => -1, 'text' => 2],
-        // An SKU is legitimately either: an integer article number is as real as
-        // a printed code.
+
         'sku' => ['numeric' => 1, 'text' => 1],
         'category' => ['numeric' => -1, 'text' => 2],
     ];
 
-    /**
-     * Fields that must be text. A numeric column is never offered for these,
-     * even as a last resort — see TYPE_FIT's negative scores.
-     *
-     * `category` is here for a reason worth stating: a numeric `category_id` is
-     * a FOREIGN KEY, not a category. Reading it as the label would have the
-     * agent telling a customer their category is "7" — and, worse, would make
-     * the field look filled, so the join that fetches the real name from
-     * `categories` would never be planned.
-     */
     protected const TEXT_ONLY = ['name', 'description', 'url', 'category'];
 
-    /**
-     * Read one table's columns as product fields.
-     *
-     * Every field is claimed by at most one column and every column by at most
-     * one field, the same rule the spreadsheet mapper applies: a table with both
-     * "Цена" and "Цена закупки" must not end up with two prices for the search
-     * to arbitrate between.
-     */
     public function resolve(DiscoveredSchema $schema, string $table): ColumnRoles
     {
         $columns = $schema->columns($table);
@@ -89,9 +30,6 @@ class ColumnRoleResolver
             return new ColumnRoles;
         }
 
-        // Two readings of every column: what it says, and what it would say if
-        // it were a latin spelling of one of the vocabulary's own words. The
-        // second list is empty for a name already written in Cyrillic.
         $folded = [];
         $latin = [];
 
@@ -106,11 +44,6 @@ class ColumnRoleResolver
         $sources = [];
         $taken = [];
 
-        // Exact matches across every field first, so a precise column name always
-        // wins before any substring rule gets a chance at it — "цена" claims
-        // `Цена` before the loose pass hands it `Цена закупки`. Within each
-        // precision the vocabulary's own languages are read before any
-        // transliteration of them.
         foreach ([[true, false], [true, true], [false, false], [false, true]] as [$exactPass, $translitPass]) {
             foreach (LiveProductSource::FIELDS as $field) {
                 if (isset($roles[$field]) || ! isset($aliases[$field])) {
@@ -131,10 +64,6 @@ class ColumnRoleResolver
                         continue;
                     }
 
-                    // Judged on the REAL column name, never on a transliterated
-                    // reading of it: `id` is a surrogate key whichever alphabet
-                    // it is written in, and a guess must not be able to talk its
-                    // way past a rule the direct pass would have applied.
                     if ($this->isSurrogateKey($field, $folded[$index], (bool) $column['numeric'])) {
                         continue;
                     }
@@ -145,9 +74,6 @@ class ColumnRoleResolver
                         continue;
                     }
 
-                    // Ties go to the earlier column: a table's own ordering puts
-                    // the primary name before the secondary one far more often
-                    // than not.
                     if ($fit > $bestFit) {
                         $bestFit = $fit;
                         $best = $index;
@@ -169,31 +95,16 @@ class ColumnRoleResolver
         return new ColumnRoles($roles, $numeric, $sources);
     }
 
-    /**
-     * Whether a field will accept a column of this type at all.
-     *
-     * Public because the model fallback has to obey the same rule: a numeric
-     * column is not the product name however confidently anything says it is.
-     */
     public static function accepts(string $field, bool $numeric): bool
     {
         return ! ($numeric && in_array($field, self::TEXT_ONLY, true));
     }
 
-    /**
-     * Whether this table could supply the given field for SOMEONE ELSE — used
-     * when a product table keeps its name or its stock in a related table.
-     */
     public function supplies(DiscoveredSchema $schema, string $table, string $field): bool
     {
         return $this->resolve($schema, $table)->has($field);
     }
 
-    /**
-     * @param  string[]  $forms  Readings of one column name. Any of them matching is a match:
-     *                           they are alternative spellings of the same word, not several words.
-     * @param  string[]  $aliases
-     */
     protected function matchesAny(array $forms, array $aliases, bool $exact): bool
     {
         foreach ($forms as $form) {
@@ -205,9 +116,6 @@ class ColumnRoleResolver
         return false;
     }
 
-    /**
-     * @param  string[]  $aliases
-     */
     protected function matches(string $column, array $aliases, bool $exact): bool
     {
         foreach ($aliases as $alias) {
@@ -219,21 +127,6 @@ class ColumnRoleResolver
         return false;
     }
 
-    /**
-     * A numeric `id` or `<something>_id` is a KEY, not an article code.
-     *
-     * The catalog vocabulary lists "id" among the SKU aliases, which is right
-     * for a spreadsheet — someone who typed "ID" in a header meant an article
-     * number. In a database it is wrong almost every time: essentially every
-     * table has a surrogate `id`, most have foreign keys beside it, and matching
-     * "id" as a substring claims all of them. Offering one as the SKU would have
-     * the agent reading internal row numbers out to customers on nearly every
-     * catalog we discover — and `category_id` would be read out as the article
-     * number of the product.
-     *
-     * A real article number keeps its own name — `article`, `sku`, `code`,
-     * `артикул`, `штрихкод`, `product_code` — and none of those are affected.
-     */
     protected function isSurrogateKey(string $field, string $folded, bool $numeric): bool
     {
         return $field === 'sku'
@@ -241,11 +134,6 @@ class ColumnRoleResolver
             && ($folded === 'id' || str_ends_with($folded, ' id'));
     }
 
-    /**
-     * A negative fit means "never", not "worse": a text-only field refuses a
-     * numeric column outright rather than accepting it for want of anything
-     * better.
-     */
     protected function typeFit(string $field, bool $numeric): int
     {
         if (! self::accepts($field, $numeric)) {

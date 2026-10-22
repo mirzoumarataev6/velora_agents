@@ -21,7 +21,6 @@ class DealPolicy
         return $this->permitted($user, PermissionCatalog::CRM_MANAGE);
     }
 
-    /** Downloading the board as CSV — same question as viewAny, named for what it is. */
     public function export(User $user): bool
     {
         return $this->permitted($user, PermissionCatalog::CRM_VIEW);

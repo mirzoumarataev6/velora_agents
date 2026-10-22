@@ -3,7 +3,6 @@
 namespace App\Models;
 
 use App\Services\Permissions\PermissionCatalog;
-use Database\Factories\RoleFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -12,28 +11,9 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Lang;
 use InvalidArgumentException;
 
-/**
- * A named bundle of permissions. `team_id` NULL marks one of the 4 global
- * system-role templates seeded once in a migration — never assigned to a
- * `team_user` row directly, only copied (see `copyTemplatesFor()`) into
- * real, per-team rows at team creation. `is_owner` marks the one role per
- * team that is immune to edit/delete — `TeamRoleController` refuses to
- * touch it regardless of who is asking, Owner included.
- *
- * Role management itself is NOT owner-only: it is gated by the catalog
- * permissions `team.roles.view`/`team.roles.manage` like any other
- * resource, so an Admin (or a custom role holding `team.roles.manage`)
- * can create and edit roles too. What stops that from being a path to
- * self-escalation is `AuthorizesRoleGrants::canGrant()` — a manager can
- * never save a role, or hand one out, carrying a permission they do not
- * themselves already hold. Every resource Policy (`CrmWorkspacePolicy`,
- * `DealPolicy`, the `Bi*Policy` classes, ...) already reads from this same
- * catalog, not from an owner check.
- */
 #[Fillable(['team_id', 'name', 'slug'])]
 class Role extends Model
 {
-    /** @use HasFactory<RoleFactory> */
     use HasFactory;
 
     protected function casts(): array
@@ -53,21 +33,12 @@ class Role extends Model
 
     public static function displayNameFor(string $slug, string $name): string
     {
-        // Only the four seeded roles have translated slugs. A custom role's
-        // own name is the owner's chosen label, not a missing translation key.
+
         $key = 'shell.nav.teams.roles.'.$slug;
 
         return Lang::has($key) ? __($key) : $name;
     }
 
-    /**
-     * In catalog/insertion order (ordered by id), not alphabetically — so a
-     * freshly copied role's bundle compares equal to `PermissionCatalog`'s
-     * own ordering with a plain `===`, and a diff against it reads as "what
-     * changed" rather than noise from an arbitrary re-sort.
-     *
-     * @return list<string>
-     */
     public function permissionKeys(): array
     {
         return DB::table('role_permission')->where('role_id', $this->id)->orderBy('id')->pluck('permission')->all();
@@ -80,7 +51,6 @@ class Role extends Model
         return in_array($permission, $this->permissionKeys(), true);
     }
 
-    /** @param list<string> $permissions */
     public function syncPermissions(array $permissions): void
     {
         foreach ($permissions as $permission) {
@@ -108,21 +78,6 @@ class Role extends Model
         ));
     }
 
-    /**
-     * `PermissionCatalog::requires()`'s own docblock ("enforced as a
-     * reject... never an auto-add on the server") was, until this method
-     * existed, honored only by `TeamRoleController::permissionRules()` — a
-     * validation closure on one HTTP endpoint. Every other write path to
-     * `role_permission` (tinker, a seeder, a future route, a queued job)
-     * could persist a role violating it; the real dev database held
-     * exactly that (`roles.id=62`, `billing.manage` without
-     * `billing.view` — see the `2026_10_26_000001` migration that repairs
-     * the data this check would otherwise have let back in). Moving the
-     * check here, below the controller, means every caller gets the same
-     * guarantee instead of relying on each one to remember it separately.
-     *
-     * @param  list<string>  $permissions
-     */
     private static function assertSatisfiesDependencies(array $permissions): void
     {
         foreach (PermissionCatalog::requires() as $permission => $dependencies) {
@@ -139,22 +94,6 @@ class Role extends Model
         }
     }
 
-    /**
-     * Copy the 4 global templates (team_id NULL) into real, team-scoped
-     * rows for a freshly created team, each with its default permission
-     * bundle.
-     *
-     * Bulk-inserted rather than one `create()` + one `syncPermissions()`
-     * (a delete plus an insert) per role: since Stage 2a, this runs on
-     * every single new user, not just real sign-ups, and the per-role
-     * version's dozen-plus queries were a measurable chunk of the test
-     * suite's wall time. Still 5 queries regardless of role count, not 1,
-     * because MySQL's query builder `insert()` does not return the ids a
-     * bulk insert created — a second `SELECT` is what gets them back for
-     * `role_permission.role_id` to point at.
-     *
-     * @return array<string, self> role slug => the new team-scoped Role
-     */
     public static function copyTemplatesFor(Team $team): array
     {
         $templates = static::whereNull('team_id')->get()->keyBy('slug');
@@ -191,14 +130,6 @@ class Role extends Model
                 ? ($templatePermissions->get($template->id) ?? [])
                 : PermissionCatalog::defaultMatrix()[$slug];
 
-            // Bulk-inserted below, bypassing syncPermissions() for the
-            // reasons in this method's own docblock — but that means its
-            // dependency check never runs either, so it is repeated here.
-            // Template rows are themselves written through syncPermissions()
-            // (or the seeded defaultMatrix(), proven valid by
-            // PermissionCatalogTest), so this should never actually throw;
-            // it exists so a future caller cannot copy a corrupted template
-            // forward into every new team silently.
             self::assertSatisfiesDependencies($permissions);
 
             foreach ($permissions as $permission) {

@@ -139,6 +139,38 @@ class GreenApiWebhookTest extends TestCase
             && $request['chatId'] === '79001234567@c.us');
     }
 
+    /**
+     * The actual incident: Green API does not guarantee a JSON Content-Type on
+     * every delivery. Laravel only parses the body into $request->all()/input()
+     * when it recognises Content-Type as JSON — otherwise both come back empty,
+     * authentication fails, splitDeliveries() sees nothing, and the webhook is
+     * acknowledged with 200 while silently dispatching no job at all.
+     */
+    public function test_a_non_json_content_type_still_authenticates_and_dispatches(): void
+    {
+        $this->mockGemini('Здравствуйте! Чем помочь?');
+        Http::fake(['*/sendMessage/*' => Http::response(['idMessage' => 'OUT-1'], 200)]);
+        $channel = Channel::factory()->greenApi()->create();
+
+        $response = $this->call(
+            'POST',
+            route('webhooks.greenapi', $channel),
+            server: [
+                'CONTENT_TYPE' => 'text/plain',
+                'HTTP_AUTHORIZATION' => 'Bearer '.ChannelFactory::GREEN_API_WEBHOOK_TOKEN,
+            ],
+            content: json_encode($this->payload('BAE5-PLAIN', 'Что продаете?')),
+        );
+
+        $response->assertOk();
+        $this->assertDatabaseHas('messages', [
+            'external_message_id' => 'BAE5-PLAIN',
+            'role' => 'user',
+            'content' => 'Что продаете?',
+        ]);
+        $this->assertDatabaseHas('messages', ['role' => 'assistant']);
+    }
+
     public function test_duplicate_id_message_is_answered_once(): void
     {
         $this->mockGemini();

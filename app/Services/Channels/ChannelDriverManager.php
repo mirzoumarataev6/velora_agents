@@ -16,16 +16,13 @@ class ChannelDriverManager
         'instagrapi' => InstagrapiDriver::class,
     ];
 
-    // Создаёт менеджер драйверов каналов с контейнером для их разрешения
     public function __construct(protected Container $container) {}
 
-    // Возвращает драйвер, соответствующий типу указанного канала
     public function for(Channel $channel): ChannelDriverInterface
     {
         return $this->driver($channel->type);
     }
 
-    // Возвращает драйвер канала по его типу
     public function driver(string $type): ChannelDriverInterface
     {
         if (! isset($this->drivers[$type])) {

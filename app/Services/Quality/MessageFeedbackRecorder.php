@@ -11,10 +11,8 @@ use Illuminate\Support\Facades\Log;
 
 class MessageFeedbackRecorder
 {
-    // Создаёт регистратор обратной связи с сервисом определения локали клиента
     public function __construct(protected CustomerLocale $locales) {}
 
-    // Сохраняет оценку сообщения и подтверждает получение обратной связи в канале
     public function record(ChannelDriverInterface $driver, Channel $channel, MessageFeedback $feedback): bool
     {
         $message = $this->resolve($channel, $feedback);
@@ -41,7 +39,6 @@ class MessageFeedbackRecorder
         return $recorded;
     }
 
-    // Находит сообщение ассистента, к которому относится обратная связь, в рамках диалога с этим клиентом
     protected function resolve(Channel $channel, MessageFeedback $feedback): ?Message
     {
         return Message::query()
@@ -53,7 +50,6 @@ class MessageFeedbackRecorder
             ->first();
     }
 
-    // Возвращает локализованный текст подтверждения обратной связи для клиента
     protected function say(Channel $channel, MessageFeedback $feedback, string $key): string
     {
         $conversation = $channel->conversations()

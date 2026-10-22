@@ -19,16 +19,13 @@ class ProductSearchService
 
     protected const MAX_EXCLUSIONS = 10;
 
-    // Создаёт сервис поиска товаров с резолвером источников каталога
     public function __construct(protected ProductSourceResolver $sources) {}
 
-    // Сообщает, включён ли для агента поиск по каталогу товаров
     public function enabledFor(Agent $agent): bool
     {
         return $this->sources->for($agent)?->hasProducts() === true;
     }
 
-    // Возвращает описание инструмента поиска товаров для LLM
     public function toolDefinition(): array
     {
         return [
@@ -106,7 +103,6 @@ class ProductSearchService
         ];
     }
 
-    // Возвращает системную инструкцию о правилах использования поиска по каталогу
     public function systemInstruction(): string
     {
         return implode("\n", [
@@ -162,7 +158,6 @@ class ProductSearchService
         ]);
     }
 
-    // Выполняет поиск товаров по каталогу агента с учётом фильтров из аргументов
     public function search(Agent $agent, array $args): array
     {
         $limit = $this->limit($args['limit'] ?? null);
@@ -223,7 +218,6 @@ class ProductSearchService
         return $result;
     }
 
-    // Приводит и валидирует сырые аргументы инструмента поиска в набор фильтров
     protected function filters(array $args): array
     {
         $filters = [];
@@ -269,7 +263,6 @@ class ProductSearchService
         return $filters;
     }
 
-    // Приводит переданный список исключений к нормализованному массиву терминов
     protected function exclusions(mixed $value): array
     {
         $items = is_string($value) ? explode(',', $value) : (is_array($value) ? $value : []);
@@ -286,7 +279,6 @@ class ProductSearchService
         return array_slice(array_values(array_unique($clean)), 0, self::MAX_EXCLUSIONS);
     }
 
-    // Получает товары из источника и отфильтровывает исключённые клиентом варианты
     protected function fetch(ProductSource $source, array $filters, int $limit): array
     {
         $exclude = $filters['exclude'] ?? [];
@@ -303,7 +295,6 @@ class ProductSearchService
         return array_slice(array_values($rows), 0, $limit);
     }
 
-    // Проверяет, содержит ли товар одно из исключённых слов
     protected function isExcluded(array $row, array $exclude): bool
     {
         $haystack = $this->skeleton(implode(' ', array_map(
@@ -322,13 +313,11 @@ class ProductSearchService
         return false;
     }
 
-    // Сводит текст к грубому "скелету" для нечувствительного к письму и опечаткам сравнения
     protected function skeleton(string $text): string
     {
         return SearchSkeleton::fold($text);
     }
 
-    // Приводит запрошенный лимит к допустимому диапазону, подставляя значение по умолчанию
     protected function limit(mixed $requested): int
     {
         if (! is_numeric($requested)) {
@@ -344,7 +333,6 @@ class ProductSearchService
         return min($limit, self::MAX_LIMIT);
     }
 
-    // Приводит значение к очищенной строке заданной максимальной длины
     protected function string(mixed $value, int $limit): ?string
     {
         if (! is_string($value)) {
@@ -356,7 +344,6 @@ class ProductSearchService
         return $value === '' ? null : mb_substr($value, 0, $limit);
     }
 
-    // Убирает фильтр наличия, если источник товаров не отслеживает остатки
     protected function dropUnanswerableFilters(Agent $agent, ?ProductSource $source, array &$filters): array
     {
         if (empty($filters['in_stock_only']) || $source === null || $source->tracksStock()) {
@@ -376,7 +363,6 @@ class ProductSearchService
             .'need to know, offer to check.'];
     }
 
-    // Подбирает ближайшие альтернативы, постепенно ослабляя фильтры, если точных совпадений нет
     protected function nearest(?ProductSource $source, array $filters): array
     {
         $none = ['products' => [], 'note' => null, 'relaxed' => null];
@@ -387,14 +373,6 @@ class ProductSearchService
 
         $relaxations = [];
 
-        // Tried first: a customer typing in a different language/script than the
-        // catalog (Tajik "кавшхои nike") produces a query whose words are ANDed
-        // by the source — one word the catalog's text will never contain (the
-        // Tajik word for "shoes") zeroes out an otherwise-matching brand name
-        // ("nike"). Splitting the words and searching each on its own is what
-        // recovers that match; the price/stock/category relaxations below are
-        // for a DIFFERENT problem (right words, wrong price/category) and would
-        // never have found this.
         if (isset($filters['query']) && count($this->queryWords($filters['query'])) >= 2) {
             $relaxations['words'] = $filters;
         }
@@ -451,25 +429,12 @@ class ProductSearchService
         return $none;
     }
 
-    /**
-     * Searches each word of a multi-word "query" filter on its own — rather than
-     * ANDed together the way the source normally applies them — and ranks what
-     * comes back by how many of the words actually matched.
-     *
-     * Why this exists at all: the customer's language is not the catalog's. A
-     * Tajik "кавшхои nike" ("Nike shoes") has one word ("nike") a Russian/Latin
-     * catalog will match and one ("кавшхои") it never will, and the source's
-     * normal AND-of-every-word search makes the second word veto the first.
-     * Searching them apart is the only way to still find the Nike rows.
-     *
-     * @return array{products: array<int, array<string, mixed>>, matched: list<string>, unmatched: list<string>}
-     */
     protected function nearestByWords(ProductSource $source, array $filters): array
     {
         $words = $this->queryWords($filters['query'] ?? '');
         $base = array_diff_key($filters, array_flip(['query']));
 
-        $matches = []; // identity => ['row' => row, 'count' => how many words it matched]
+        $matches = [];
         $matched = [];
         $unmatched = [];
 
@@ -485,9 +450,7 @@ class ProductSearchService
             $matched[] = $word;
 
             foreach ($rows as $row) {
-                // sku, falling back to the name: present() never includes the
-                // dataset row's own id, and the name is the only other field
-                // guaranteed to identify "the same product" across two calls.
+
                 $identity = $row['sku'] ?? $row['name'] ?? null;
 
                 if ($identity === null) {
@@ -509,15 +472,6 @@ class ProductSearchService
         ];
     }
 
-    /**
-     * Splits a search query into the standalone words {@see nearestByWords()}
-     * tries on their own. Short words are skipped (too common to mean
-     * anything on their own, e.g. a one-letter size) and the list is capped —
-     * both so a live database source backing one of these searches is hit a
-     * bounded number of times rather than once per word in a long sentence.
-     *
-     * @return list<string>
-     */
     protected function queryWords(string $query): array
     {
         $words = preg_split('/\s+/u', mb_strtolower(trim($query))) ?: [];
@@ -526,11 +480,6 @@ class ProductSearchService
         return array_slice(array_values(array_unique($words)), 0, 4);
     }
 
-    /**
-     * The nearest_note for a "words" relaxation: which of the customer's words
-     * the catalog actually has, which it does not, and why that is still a
-     * real answer rather than a failed one.
-     */
     protected function wordsNote(array $words): string
     {
         $matched = implode(', ', $words['matched']);
@@ -543,7 +492,6 @@ class ProductSearchService
             .'match for the whole phrase they used.';
     }
 
-    // Ищет ближайшие по цене товары ниже и выше заданного диапазона
     protected function nearestByPrice(ProductSource $source, array $wider, array $filters): array
     {
         $min = $filters['min_price'] ?? null;
@@ -573,7 +521,6 @@ class ProductSearchService
         return array_slice($candidates, 0, self::NEAREST_LIMIT);
     }
 
-    // Добавляет к товару информацию о том, насколько его цена выходит за рамки бюджета
     protected function withBudgetGap(array $row, ?float $min, ?float $max): array
     {
         $price = is_numeric($row['price'] ?? null)
@@ -593,7 +540,6 @@ class ProductSearchService
         return $row;
     }
 
-    // Округляет разницу цены, отбрасывая дробную часть, если она равна нулю
     protected function gap(float $amount): int|float
     {
         $amount = round($amount, 2);
@@ -601,7 +547,6 @@ class ProductSearchService
         return $amount == floor($amount) ? (int) $amount : $amount;
     }
 
-    // Формирует для LLM пояснение о том, почему поиск не дал результатов
     protected function emptyResultNote(array $filters, array $nearest): string
     {
         $note = $filters === []
@@ -623,7 +568,6 @@ class ProductSearchService
             .'again reads as a broken bot rather than a person. Vary the wording every time.';
     }
 
-    // Описывает применённые фильтры человекочитаемой фразой на английском для подсказки LLM
     protected function describeFilters(array $filters): string
     {
         $parts = [];
@@ -655,13 +599,11 @@ class ProductSearchService
         return $parts === [] ? 'these filters' : implode(', ', $parts);
     }
 
-    // Форматирует денежную сумму, убирая лишние нули после запятой
     protected function amount(float $value): string
     {
         return rtrim(rtrim(number_format($value, 2, '.', ''), '0'), '.') ?: '0';
     }
 
-    // Приводит значение к неотрицательному числу с плавающей точкой или null
     protected function money(mixed $value): ?float
     {
         if (! is_numeric($value)) {

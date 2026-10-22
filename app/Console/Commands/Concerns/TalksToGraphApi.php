@@ -8,26 +8,10 @@ use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Throwable;
 
-/**
- * The Graph API plumbing shared by the WhatsApp and Instagram diagnosis
- * commands.
- *
- * Extracted rather than copied: the two commands ask Meta different questions
- * (a WABA and a phone number on one side, an Instagram account and a Page on
- * the other) but they ask them the same WAY — same host, same token handling,
- * same raw-output discipline, same "is the tunnel the thing APP_URL claims"
- * check. A second copy of this would drift the first time either was fixed.
- *
- * Everything printed by dump() is raw. A diagnosis that paraphrases Meta's
- * error is a diagnosis you have to re-run by hand before you can trust it.
- */
 trait TalksToGraphApi
 {
     protected ?string $token = null;
 
-    /**
-     * The most recent channel of this type, optionally narrowed to one agent.
-     */
     protected function resolveChannelOfType(string $type): ?Channel
     {
         $query = Channel::query()->where('type', $type)->with('agent');
@@ -49,7 +33,6 @@ trait TalksToGraphApi
         return $query->latest('id')->first();
     }
 
-    /** Meta accepts only `{app-id}|{app-secret}` on app-level subscription calls. */
     protected function appToken(): ?string
     {
         $id = $this->option('app-id');
@@ -58,7 +41,6 @@ trait TalksToGraphApi
         return $id && $secret ? "{$id}|{$secret}" : null;
     }
 
-    /** @param  array<string, mixed>  $query */
     protected function get(string $path, array $query = [], bool $useToken = true): Response
     {
         $request = Http::timeout(20)->acceptJson();
@@ -81,18 +63,11 @@ trait TalksToGraphApi
         return 'https://'.$this->graphHost().'/'.static::API_VERSION.'/'.ltrim($path, '/');
     }
 
-    /**
-     * Which Graph host to talk to. Overridden by the Instagram command, whose
-     * newer IGAA tokens are only valid against graph.instagram.com.
-     */
     protected function graphHost(): string
     {
         return 'graph.facebook.com';
     }
 
-    /**
-     * Raw, always. See the trait docblock.
-     */
     protected function dump(Response $response): void
     {
         $status = $response->status();
@@ -117,7 +92,6 @@ trait TalksToGraphApi
         $this->line("<options=bold>── {$title}</>");
     }
 
-    /** The URL ngrok is actually serving right now, straight from its local agent API. */
     protected function tunnelUrl(): ?string
     {
         static $cached = false;
@@ -139,12 +113,6 @@ trait TalksToGraphApi
         return $value;
     }
 
-    /**
-     * APP_URL versus what ngrok is actually serving. Every webhook URL this app
-     * hands to Meta is built from APP_URL, so a disagreement here means Meta is
-     * posting into the void — the single most common cause of "it just stopped
-     * working" after a laptop restart.
-     */
     protected function reportEnvironment(): void
     {
         $appUrl = rtrim((string) config('app.url'), '/');
@@ -159,12 +127,6 @@ trait TalksToGraphApi
         }
     }
 
-    /**
-     * The credential every Meta channel now needs and none of them used to
-     * have: without an app secret the webhook signature cannot be verified, so
-     * the driver refuses every delivery. Reported first because a channel that
-     * looks perfect in every other respect will still receive nothing.
-     */
     protected function reportSignatureReadiness(Channel $channel): void
     {
         $secret = $channel->credentials['app_secret'] ?? null;
@@ -182,11 +144,6 @@ trait TalksToGraphApi
         $this->line('  app_secret           '.Channel::maskCredential($secret).' <fg=green>(signatures verifiable)</>');
     }
 
-    /**
-     * Token validity, straight from Meta rather than inferred from its shape.
-     *
-     * @return array<string, mixed> the `data` block, so callers can read scopes/app id
-     */
     protected function reportTokenValidity(): array
     {
         $debug = $this->get('debug_token', [

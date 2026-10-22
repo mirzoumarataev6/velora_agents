@@ -13,11 +13,6 @@ use App\Services\Bi\Query\SpecValidator;
 use App\Services\Bi\Schema\ColumnRole;
 use Illuminate\Support\Facades\DB;
 
-/**
- * Compose a useful first analysis from the schema, without asking an LLM to
- * guess columns or invent numbers. Every card is validated before the first
- * row is persisted; an unsuitable shape is omitted, never saved broken.
- */
 class AutoAnalysisGenerator
 {
     public function __construct(
@@ -94,8 +89,6 @@ class AutoAnalysisGenerator
         $detailY = $category && $time ? $y + 12 : ($category ? $y + 4 : $y);
         $put(__('bi.analysis.details'), WidgetType::Table, ['dimensions' => $details, 'detail' => true, 'limit' => 50], $category && ! $time ? 6 : 0, $detailY, $category && ! $time ? 6 : 12, 4);
 
-        // Validate every candidate against the live column registry and widget
-        // shape. No data query is needed here; rendering remains lazy/cached.
         $valid = [];
         foreach ($templates as $template) {
             $widget = new BiWidget(['type' => $template['type'], 'spec' => $template['spec']]);

@@ -9,14 +9,6 @@ use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
 
-/**
- * Sent once, by TeamInvitationController::store(). The accept link carries
- * the invitation's own `token` directly (see Invitation's own docblock on
- * why that column is a standalone value) — not a Laravel signed route — so
- * the link keeps working whether or not this mail is ever resent, and the
- * invitation itself can still be looked up, revoked or expire independently
- * of it.
- */
 class TeamInvitationMail extends Mailable
 {
     use Queueable, SerializesModels;

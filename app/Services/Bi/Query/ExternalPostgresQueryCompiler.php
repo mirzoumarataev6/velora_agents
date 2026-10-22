@@ -18,15 +18,13 @@ class ExternalPostgresQueryCompiler extends QueryCompiler
 
     protected function selectPrefix(int $timeoutMs): string
     {
-        // The customer's read-only session sets statement_timeout; a hint
-        // would be MySQL-only and a session mutation here would outlive a query.
+
         return '';
     }
 
     protected function orderTerm(string $quotedAlias, SortDirection $direction): string
     {
-        // PostgreSQL permits a SELECT alias as a complete ORDER BY term, but
-        // not inside `alias IS NULL` (the portable MySQL/SQLite spelling).
+
         return $quotedAlias.' '.$direction->sql().' NULLS LAST';
     }
 

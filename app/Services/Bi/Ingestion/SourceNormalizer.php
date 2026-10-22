@@ -11,41 +11,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
-/**
- * The first half of ingest: read the upload once, write a normalized copy, and
- * decide what every column is.
- *
- * ONE PASS over the original file, which is the load-bearing performance decision
- * in the whole module. Each row is simultaneously
- *
- *   - handed to the SchemaInferrer (which stops wanting rows after the sample), and
- *   - written to an NDJSON shard,
- *
- * so a 2M-row .xlsx is parsed once and never again — not to infer, not to
- * materialize, and not when the owner corrects a type. Doing inference as its own
- * pass would double the most expensive part of ingest to save nothing.
- *
- * Nothing here creates a table or writes a row of analytical data. That is
- * MaterializeDatasetJob's job, deliberately separated: this stage is pure reading
- * and can be retried freely, while that stage issues DDL and must not be.
- *
- * WHAT IS REPORTED RATHER THAN SWALLOWED, because a short table with no
- * explanation is the worst outcome an importer can produce:
- *   - `preamble`      rows stepped over above the header (a report's title block)
- *   - `ragged`        rows whose width did not match the header's
- *   - `over_row_limit` rows past the row budget (also sets `truncated`)
- * Blank rows are the one exception: they are dropped silently, because a
- * spreadsheet's trailing empty rows can number in the thousands and are not
- * something anybody meant to send.
- */
 class SourceNormalizer
 {
-    /**
-     * Leading rows buffered while looking for the header.
-     *
-     * Enough to step over a formatted report's title block; small enough that it
-     * is a handful of rows in memory rather than a strategy.
-     */
     private const PREAMBLE_LOOKAHEAD = 12;
 
     public function __construct(
@@ -53,14 +20,6 @@ class SourceNormalizer
         private readonly HeaderNormalizer $headers,
     ) {}
 
-    /**
-     * Read a source and create a dataset per sheet, schema inferred, shards
-     * written. Returns the datasets, in file order.
-     *
-     * @return array<int, BiDataset>
-     *
-     * @throws BiIngestionException
-     */
     public function normalize(BiSource $source): array
     {
         if (! $source->isFile()) {
@@ -82,31 +41,19 @@ class SourceNormalizer
             foreach ($reader->sheets() as $sheet) {
                 $dataset = $this->normalizeSheet($source, $sheet, count($datasets));
 
-                // A sheet with a header and no rows under it, or one that is
-                // entirely blank, contributes nothing. Skipped rather than
-                // failing the workbook: a "Инструкция" sheet beside three real
-                // ones is normal.
                 if ($dataset !== null) {
                     $datasets[] = $dataset;
                 }
             }
         } catch (\Throwable $e) {
-            // A workbook is all-or-nothing. Sheet three being too wide must not
-            // leave sheets one and two behind as datasets nobody will ever
-            // materialize: the job marks the SOURCE failed and dispatches nothing,
-            // so those rows would sit at "определение типов" forever, with their
-            // shards on disk and their tables never built.
-            //
-            // Deleted one at a time so each fires its own observer and takes its
-            // shards with it.
+
             foreach ($datasets as $orphan) {
                 $orphan->delete();
             }
 
             throw $e;
         } finally {
-            // Always, including on the way out of an exception: a half-read
-            // workbook must not leave a ZipArchive handle open on the worker.
+
             $reader->close();
         }
 
@@ -126,16 +73,6 @@ class SourceNormalizer
 
         $rows = $sheet->rows();
 
-        // Buffer the top of the sheet so a title block above the header can be
-        // recognized and stepped over — which needs the rows AFTER it to judge.
-        //
-        // Driven through the generator's own valid()/current()/next() rather than a
-        // `foreach` with a `break`. That is not style: breaking out of a foreach
-        // leaves the generator with its current value still unconsumed, so a later
-        // `yield from` re-emits the last buffered row — an off-by-one that silently
-        // duplicates a row of the owner's data — and PHP then refuses to delegate to
-        // it at all ("aborted without proper return"). Stepping it by hand leaves it
-        // cleanly positioned on the first row nobody has taken yet.
         $buffer = [];
 
         while ($rows->valid() && count($buffer) < self::PREAMBLE_LOOKAHEAD) {
@@ -161,8 +98,6 @@ class SourceNormalizer
 
         $this->assertWithinColumnBudget($headerNames);
 
-        // Counted, not silent: an owner whose report had four rows of preamble
-        // should be told four rows were not data.
         $preamble = $headerIndex;
 
         $dataset = $this->createDataset($source, $sheet, $headerNames);
@@ -171,12 +106,11 @@ class SourceNormalizer
             $result = $this->streamRows(
                 $dataset,
                 $headerNames,
-                // The buffered rows after the header, then the rest of the stream.
+
                 $this->remainingRows(array_slice($buffer, $headerIndex + 1), $rows),
             );
         } catch (\Throwable $e) {
-            // The dataset row exists but has no usable schema; leaving it behind
-            // would put a permanently "inferring" card in the owner's source list.
+
             $dataset->delete();
 
             throw $e;
@@ -206,21 +140,6 @@ class SourceNormalizer
         return $dataset;
     }
 
-    /**
-     * The buffered remainder followed by the live stream, as one sequence.
-     *
-     * The second half is stepped by hand rather than with `yield from`, and the
-     * reason is a genuine PHP sharp edge: `yield from` on a generator that has
-     * already FINISHED throws "aborted without proper return". That happens
-     * whenever the file is shorter than the lookahead — a three-row CSV is
-     * entirely inside the buffer, so the reader's generator is complete by the
-     * time it gets here. Which is to say: it would have failed on every small
-     * file and worked on every large one.
-     *
-     * @param  array<int, array<int, mixed>>  $buffered
-     * @param  Generator<int, array<int, mixed>>  $rest
-     * @return Generator<int, array<int, mixed>>
-     */
     private function remainingRows(array $buffered, Generator $rest): Generator
     {
         yield from $buffered;
@@ -231,13 +150,6 @@ class SourceNormalizer
         }
     }
 
-    /**
-     * The single pass: infer and shard at the same time.
-     *
-     * @param  array<int, string>  $headerNames
-     * @param  iterable<int, array<int, mixed>>  $rows
-     * @return array{rows: int, shards: int, ragged: int, over_limit: int}
-     */
     private function streamRows(BiDataset $dataset, array $headerNames, iterable $rows): array
     {
         $width = count($headerNames);
@@ -266,9 +178,7 @@ class SourceNormalizer
                 }
 
                 if ($kept >= $maxRows) {
-                    // Counted rather than aborted, and the count is not capped:
-                    // "the first 2,000,000 of 3,412,880 rows were imported" is a
-                    // far more useful thing to tell an owner than "truncated".
+
                     $overLimit++;
 
                     continue;
@@ -292,9 +202,6 @@ class SourceNormalizer
         return ['rows' => $kept, 'shards' => $shards, 'ragged' => $ragged, 'over_limit' => $overLimit];
     }
 
-    /**
-     * @param  array<int, InferredColumn>  $columns
-     */
     private function saveColumns(BiDataset $dataset, array $columns): void
     {
         $now = now();
@@ -306,9 +213,7 @@ class SourceNormalizer
 
             $rows[] = [
                 'user_id' => $dataset->user_id,
-                // Bulk insert bypasses BiColumn's StampsTeam creating hook, so the
-                // dataset's own team_id (resolved once, not per row) is stamped
-                // here explicitly — see StampsTeam's docblock for why this matters.
+
                 'team_id' => $dataset->team_id,
                 'bi_dataset_id' => $dataset->getKey(),
                 'ordinal' => $attributes['ordinal'],
@@ -335,9 +240,6 @@ class SourceNormalizer
             ];
         }
 
-        // One insert rather than 150. Re-normalization replaces the whole set, so
-        // the delete-then-insert is the honest shape: a column that no longer
-        // exists in the file must not survive as a row nothing can query.
         DB::transaction(function () use ($dataset, $rows) {
             BiColumn::where('bi_dataset_id', $dataset->getKey())->delete();
 
@@ -347,9 +249,6 @@ class SourceNormalizer
         });
     }
 
-    /**
-     * @param  array<int, string>  $headerNames
-     */
     private function createDataset(BiSource $source, ReadSheet $sheet, array $headerNames): BiDataset
     {
         $dataset = new BiDataset([
@@ -360,19 +259,11 @@ class SourceNormalizer
         ]);
 
         $dataset->user_id = $source->user_id;
-        // Explicit, not left to StampsTeam's own user_id fallback:
-        // NormalizeSourceJob runs minutes later in a queue (a 100MB upload
-        // takes a while to read), so current_team_id at the moment this
-        // executes is whichever team the owner happens to be looking at
-        // right then — not necessarily the team this upload belonged to
-        // when it was received. $source->team_id, already resolved at
-        // upload time, is the one that cannot have drifted since.
+
         $dataset->team_id = $source->team_id;
         $dataset->bi_source_id = $source->getKey();
         $dataset->save();
 
-        // Both derived from the primary key, so they cannot be set before the row
-        // exists — and neither is ever composed from anything a request supplied.
         $dataset->forceFill([
             'physical_table' => $dataset->physicalTable(),
             'shard_directory' => "bi/{$source->user_id}/datasets/{$dataset->getKey()}",
@@ -383,8 +274,7 @@ class SourceNormalizer
 
     private function datasetName(BiSource $source, ReadSheet $sheet): string
     {
-        // A real sheet name in a workbook is what the owner will look for; a
-        // generic "Sheet1" tells them nothing, so the filename wins there.
+
         if (! $sheet->isGenericName()) {
             return Str::limit($sheet->name, 120, '');
         }
@@ -410,8 +300,6 @@ class SourceNormalizer
     {
         $max = max(1, (int) config('agent.bi.ingest.max_datasets_per_owner', 25));
 
-        // Counted live rather than once up front: a 25-sheet workbook must stop at
-        // the quota mid-import instead of discovering afterwards that it blew it.
         $existing = BiDataset::where('team_id', $source->team_id)
             ->where('bi_source_id', '!=', $source->getKey())
             ->count();
@@ -424,16 +312,10 @@ class SourceNormalizer
         }
     }
 
-    /**
-     * @param  array<int, string>  $headerNames
-     */
     private function assertWithinColumnBudget(array $headerNames): void
     {
         $max = max(1, (int) config('agent.bi.ingest.max_columns', 150));
 
-        // A hard refusal, not a truncation. Silently dropping columns 151 onward
-        // would be dropping whichever column the owner actually wanted, and this
-        // number is also the width of a CREATE TABLE we are about to issue.
         if (count($headerNames) > $max) {
             throw new BiIngestionException(
                 BiIngestionException::TOO_MANY_COLUMNS,

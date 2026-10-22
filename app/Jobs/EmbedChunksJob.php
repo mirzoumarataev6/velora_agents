@@ -12,10 +12,8 @@ use Throwable;
 
 class EmbedChunksJob extends KnowledgeJob
 {
-    // Создаёт задачу построения эмбеддингов для чанков источника знаний
     public function __construct(public KnowledgeSource $source) {}
 
-    // Строит эмбеддинги для необработанных чанков и переводит источник в статус "готов"
     public function handle(LlmProviderInterface $llm, UsageRecorder $usage): void
     {
         $usage->for($this->source->agent);

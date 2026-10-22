@@ -7,19 +7,16 @@ use App\Models\Message;
 
 class FeedbackCadence
 {
-    // Создаёт регулятор частоты запроса оценок с минимальным интервалом между ними
     public function __construct(
         protected int $floor,
         protected ClosingMessageDetector $closings = new ClosingMessageDetector,
     ) {}
 
-    // Создаёт регулятор с минимальным интервалом, заданным в конфигурации
     public static function fromConfig(): self
     {
         return new self(floor: max(1, (int) config('agent.feedback.min_turns_between', 3)));
     }
 
-    // Определяет, стоит ли попросить у клиента оценку этого ответа
     public function shouldAsk(Conversation $conversation, Message $reply, ?Message $customerMessage = null): bool
     {
         if (! $this->isWorthRating($reply)) {
@@ -34,13 +31,11 @@ class FeedbackCadence
             || $this->customerIsWrappingUp($conversation, $reply, $customerMessage);
     }
 
-    // Отмечает, что запрос оценки для этого ответа уже был задан
     public function markAsked(Message $reply): void
     {
         $reply->forceFill(['meta' => [...$reply->meta ?? [], 'feedback_requested' => true]])->save();
     }
 
-    // Проверяет, что ответ не является отказом, эскалацией или приветствием, чтобы имело смысл его оценивать
     protected function isWorthRating(Message $reply): bool
     {
         $meta = $reply->meta ?? [];
@@ -50,7 +45,6 @@ class FeedbackCadence
             && ! ($meta['greeting'] ?? false);
     }
 
-    // Проверяет, завершил ли ответ что-то значимое (лид или запрос на одобрение цены)
     protected function closedSomething(Message $reply): bool
     {
         $meta = $reply->meta ?? [];
@@ -58,7 +52,6 @@ class FeedbackCadence
         return ($meta['lead_captured'] ?? false) || ($meta['price_approval_requested'] ?? false);
     }
 
-    // Проверяет, похоже ли последнее сообщение клиента на завершение разговора
     protected function customerIsWrappingUp(Conversation $conversation, Message $reply, ?Message $customerMessage): bool
     {
         $text = $customerMessage?->content ?? $conversation->messages()
@@ -70,7 +63,6 @@ class FeedbackCadence
         return $this->closings->matches((string) $text);
     }
 
-    // Считает число ответов ассистента с момента последнего запроса оценки или самой оценки
     protected function turnsSinceLastPromptOrRating(Conversation $conversation, Message $reply): int
     {
         $marker = $conversation->messages()

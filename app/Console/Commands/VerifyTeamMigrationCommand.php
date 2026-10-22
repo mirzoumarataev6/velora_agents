@@ -6,14 +6,6 @@ use App\Models\User;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 
-/**
- * Read-only check that the team backfill is complete: no row left with a
- * NULL team_id, no row pointing at a team_id that doesn't exist (team_id
- * carries no foreign key constraint yet — see the migration that adds it —
- * so the database itself won't catch this), and no user left with a NULL
- * current_team_id. The later migration that flips team_id to NOT NULL is
- * gated on this passing clean, per the Phase-1 plan.
- */
 class VerifyTeamMigrationCommand extends Command
 {
     protected $signature = 'team:verify-migration';

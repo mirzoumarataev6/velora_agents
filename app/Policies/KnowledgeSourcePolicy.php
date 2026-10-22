@@ -22,9 +22,6 @@ class KnowledgeSourcePolicy
         return $this->permitted($user, PermissionCatalog::AGENTS_VIEW, $knowledgeSource);
     }
 
-    /**
-     * Authorized via Gate::authorize('create', [KnowledgeSource::class, $agent]).
-     */
     public function create(User $user, Agent $agent): bool
     {
         return $this->permitted($user, PermissionCatalog::AGENTS_UPDATE, $agent);

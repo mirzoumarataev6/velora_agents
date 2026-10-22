@@ -7,12 +7,6 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Http;
 use Throwable;
 
-/**
- * Checks the Instagram (instagrapi) microservice: whether the process is up
- * at all (GET /health), then the per-account login state (GET
- * /status/{channel_uuid}) for every instagrapi channel in the DB — the
- * service is multi-tenant, so there is no single global "logged in" any more.
- */
 class InstagramStatusCommand extends Command
 {
     protected $signature = 'instagram:status';

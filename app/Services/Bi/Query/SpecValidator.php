@@ -4,41 +4,9 @@ namespace App\Services\Bi\Query;
 
 use App\Models\BiColumn;
 use App\Models\BiDataset;
-use Illuminate\Support\Collection;
 
-/**
- * Turns an untrusted array into a QuerySpec, or refuses it with a classified code.
- *
- * This is the only door into the query layer from the outside world — a request
- * body, a saved dashboard tile, or the AI analyst's function call all arrive as
- * the same nested array and all come through here.
- *
- * THE RESOLUTION RULE, which is the security property:
- *
- * A caller names a column by `bi_columns.id` or by its physical name (`c3`).
- * Either way the name is resolved against a map built from THIS DATASET'S OWN
- * COLUMNS, loaded once up front — never by querying with the caller's string as
- * a predicate, and never by trusting it as an identifier. An id belonging to
- * another dataset is not in the map, so it is not "denied"; it is simply not
- * found, which is the same answer the caller gets for a typo. There is no code
- * path in which a value from the array becomes part of a SQL identifier.
- *
- * Physical names are accepted alongside ids because they are OURS (`c0`, `c1`,
- * assigned by ordinal) and because a dashboard tile that survives a
- * rematerialization is worth having — rebuilding a dataset issues new
- * `bi_columns` rows with new ids but the same ordinals.
- *
- * Everything this class rejects, it rejects with a `BiQueryException` carrying a
- * code that has a sentence in all three locales. There are no bare messages here
- * for the same reason there are none in ingestion: the owner reads them.
- */
 class SpecValidator
 {
-    /**
-     * @param  array<string, mixed>  $input
-     *
-     * @throws BiQueryException
-     */
     public function validate(BiDataset $dataset, array $input): QuerySpec
     {
         $columns = $this->columnMap($dataset);
@@ -59,8 +27,6 @@ class SpecValidator
             $filters[] = $this->filter($raw, $columns);
         }
 
-        // Sorts are resolved AFTER dimensions and measures, because a sort names
-        // an output alias and the aliases only exist once those are positioned.
         $aliases = $this->aliasMap($dimensions, $measures);
 
         $sorts = [];
@@ -80,18 +46,9 @@ class SpecValidator
         );
     }
 
-    /**
-     * Every column of this dataset, reachable by id AND by physical name.
-     *
-     * One query, not one per field: a spec with eight fields would otherwise be
-     * eight round trips before a single row is read, and `tests/Feature/Perf/`
-     * exists to catch exactly that shape.
-     *
-     * @return array<string, BiColumn>
-     */
     protected function columnMap(BiDataset $dataset): array
     {
-        /** @var Collection<int, BiColumn> $columns */
+
         $columns = $dataset->relationLoaded('columns')
             ? $dataset->columns
             : $dataset->columns()->get();
@@ -106,15 +63,9 @@ class SpecValidator
         return $map;
     }
 
-    /**
-     * @param  array<string, BiColumn>  $columns
-     */
     protected function resolve(mixed $reference, array $columns, string $role): BiColumn
     {
-        // Prefixed before lookup so an id can never collide with a physical name.
-        // Without it a caller passing the string "0" would be ambiguous, and the
-        // disambiguation would depend on PHP's array-key casting rather than on
-        // anything we decided.
+
         $key = is_int($reference) || (is_string($reference) && ctype_digit($reference))
             ? '#'.(int) $reference
             : '@'.(is_string($reference) ? $reference : '');
@@ -129,9 +80,6 @@ class SpecValidator
         return $columns[$key];
     }
 
-    /**
-     * @param  array<string, BiColumn>  $columns
-     */
     protected function dimension(mixed $raw, array $columns, bool $detail = false): Dimension
     {
         $raw = $this->asArray($raw, 'dimension');
@@ -150,10 +98,6 @@ class SpecValidator
             }
         }
 
-        // A date dimension with no grain stated gets one, rather than grouping on
-        // raw timestamps. Grouping a datetime column by its exact value produces
-        // one bucket per row, which is not a chart — it is the table again, drawn
-        // slowly. Month is the grain a sales export is almost always wanted at.
         if (! $detail && $grain === null && $column->type->isTemporal()) {
             $grain = TimeGrain::Month;
         }
@@ -161,9 +105,6 @@ class SpecValidator
         return new Dimension($column, $grain);
     }
 
-    /**
-     * @param  array<string, BiColumn>  $columns
-     */
     protected function measure(mixed $raw, array $columns): Measure
     {
         $raw = $this->asArray($raw, 'measure');
@@ -184,9 +125,6 @@ class SpecValidator
         return new Measure($aggregate, $this->resolve($raw['column'] ?? null, $columns, 'measure'));
     }
 
-    /**
-     * @param  array<string, BiColumn>  $columns
-     */
     protected function filter(mixed $raw, array $columns): Filter
     {
         $raw = $this->asArray($raw, 'filter');
@@ -212,9 +150,6 @@ class SpecValidator
         $values = $this->values($raw);
         $arity = $operator->arity();
 
-        // `null` arity means "one or more", which still has to be at least one:
-        // `IN ()` is a syntax error in MySQL and silently false in SQLite, and
-        // neither is an answer worth giving an owner.
         $wrong = $arity === null
             ? $values === []
             : count($values) !== $arity;
@@ -230,9 +165,6 @@ class SpecValidator
         return new Filter($column, $operator, $values);
     }
 
-    /**
-     * @param  array<string, bool>  $aliases
-     */
     protected function sort(mixed $raw, array $aliases): Sort
     {
         $raw = $this->asArray($raw, 'sort');
@@ -258,18 +190,6 @@ class SpecValidator
         return new Sort($alias, $direction);
     }
 
-    /**
-     * The aliases a spec built from these fields WILL have.
-     *
-     * Mirrors the positioning QuerySpec does, which is a duplication worth
-     * flagging: the spec assigns positions itself and does not trust these. This
-     * map exists only so a bad sort is refused with "you did not select m3"
-     * rather than with an exception from deeper down.
-     *
-     * @param  array<int, Dimension>  $dimensions
-     * @param  array<int, Measure>  $measures
-     * @return array<string, bool>
-     */
     protected function aliasMap(array $dimensions, array $measures): array
     {
         $aliases = [];
@@ -285,22 +205,11 @@ class SpecValidator
         return $aliases;
     }
 
-    /** Whether `<`, `>` and `between` mean anything on this column. */
     protected function isOrdered(BiColumn $column): bool
     {
         return $column->type->isNumeric() || $column->type->isTemporal();
     }
 
-    /**
-     * A filter's values, always as a list.
-     *
-     * A scalar is accepted and wrapped: `['operator' => 'eq', 'value' => 5]` is
-     * how every caller naturally writes a single-value filter, and insisting on
-     * `['values' => [5]]` would be pedantry that produces bug reports.
-     *
-     * @param  array<string, mixed>  $raw
-     * @return array<int, mixed>
-     */
     protected function values(array $raw): array
     {
         if (array_key_exists('values', $raw)) {
@@ -314,10 +223,6 @@ class SpecValidator
         return [];
     }
 
-    /**
-     * @param  array<string, mixed>  $input
-     * @return array<int, mixed>
-     */
     protected function listOf(array $input, string $key): array
     {
         $value = $input[$key] ?? [];
@@ -325,7 +230,6 @@ class SpecValidator
         return is_array($value) ? array_values($value) : [];
     }
 
-    /** @return array<string, mixed> */
     protected function asArray(mixed $raw, string $role): array
     {
         if (! is_array($raw)) {

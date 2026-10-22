@@ -34,21 +34,12 @@ class StoreAgentRequest extends FormRequest
             'proactivity' => ['required', 'string', 'in:off,subtle,active'],
             'haggling_enabled' => ['boolean'],
             'haggling_level' => ['nullable', 'string', 'in:'.implode(',', HagglingService::LEVELS)],
-            // A percentage of the listed price, not an absolute figure: one
-            // agent covers a whole catalog. 100 means "no discount without me".
+
             'haggle_min_price_percent' => ['nullable', 'integer', 'min:1', 'max:100'],
             'haggling_instructions' => ['nullable', 'string', 'max:5000'],
         ];
     }
 
-    /**
-     * Map the flat form fields into the JSON column shapes used by the Agent model.
-     *
-     * `language`, `capture_leads`, `humanize_replies` and `transcribe_voice`
-     * are deliberately absent: they are no longer settings. Language is
-     * detected per message, and the other three are always on — see the note on
-     * the Agent model.
-     */
     public function agentAttributes(): array
     {
         $data = $this->validated();
@@ -67,17 +58,14 @@ class StoreAgentRequest extends FormRequest
             'rules_instructions' => $data['rules_instructions'] ?? null,
             'behavior' => [
                 'on_not_found' => $data['on_not_found'],
-                // Absent from an older form post means "use the configured
-                // default", not "off".
+
                 'escalation' => $data['escalation'] ?? config('agent.escalation.default_sensitivity', 'conservative'),
                 'internet_image_search' => (bool) ($data['internet_image_search'] ?? false),
             ],
             'proactivity' => $data['proactivity'],
             'haggling_enabled' => (bool) ($data['haggling_enabled'] ?? false),
             'haggling_level' => $data['haggling_level'] ?? HagglingService::DEFAULT_LEVEL,
-            // Absent means the strictest floor. An owner who has not told us
-            // what a sale is worth to them must not have a discount inferred
-            // on their behalf.
+
             'haggle_min_price_percent' => (int) ($data['haggle_min_price_percent'] ?? 100),
             'haggling_instructions' => $data['haggling_instructions'] ?? null,
         ];

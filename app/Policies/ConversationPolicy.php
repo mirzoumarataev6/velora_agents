@@ -22,9 +22,6 @@ class ConversationPolicy
         return $this->permitted($user, PermissionCatalog::CONVERSATIONS_VIEW, $conversation);
     }
 
-    /**
-     * Authorized via Gate::authorize('create', [Conversation::class, $agent]).
-     */
     public function create(User $user, Agent $agent): bool
     {
         return $this->permitted($user, PermissionCatalog::CONVERSATIONS_REPLY, $agent);

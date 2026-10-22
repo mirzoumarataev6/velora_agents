@@ -7,37 +7,14 @@ use App\Models\Agent;
 use App\Models\Conversation;
 use Illuminate\Support\Str;
 
-/**
- * Owns the "this customer needs a person" decision: the tool the model calls,
- * the prompt guidance that keeps it from crying wolf, the confidence bar, and
- * the flag + owner alert once it fires.
- *
- * Kept beside LeadCaptureService and shaped the same way, so the reply pipeline
- * only has to decide "offer the tool?" and "a call came back — act on it".
- *
- * The signal rides on the generation that was happening anyway: no separate
- * classification request, so a calm conversation costs exactly what it did
- * before this existed.
- */
 class EscalationService
 {
     public const TOOL_NAME = 'flag_needs_human';
 
-    /** Sensitivities an agent may be set to. `off` disables detection entirely. */
     public const SENSITIVITIES = ['off', 'conservative', 'balanced', 'sensitive'];
 
-    /** Signals the model may report, plus the one the pipeline raises itself. */
     public const SIGNALS = ['frustration', 'complaint', 'explicit_request', 'threatening_to_leave', 'fallback'];
 
-    /**
-     * The tool definition, in the neutral shape LlmProviderInterface::generate()
-     * accepts under $options['tools'].
-     *
-     * The description carries the precision bar, because that is where the model
-     * actually decides: it names what does NOT count as loudly as what does.
-     *
-     * @return array{name: string, description: string, parameters: array}
-     */
     public function toolDefinition(): array
     {
         return [
@@ -78,13 +55,6 @@ class EscalationService
         ];
     }
 
-    /**
-     * Guidance appended to the system prompt when escalation is enabled.
-     *
-     * Two jobs: keep the bar high, and make sure that flagging does not turn
-     * into going quiet. The customer must still get a real, warm answer in the
-     * same turn — the flag is for the owner, and is never mentioned aloud.
-     */
     public function systemInstruction(Agent $agent): string
     {
         $lines = [
@@ -110,7 +80,6 @@ class EscalationService
         return implode("\n", $lines);
     }
 
-    /** Whether this agent has detection switched on at all. */
     public function enabledFor(Agent $agent): bool
     {
         return $this->sensitivityFor($agent) !== 'off';
@@ -124,15 +93,6 @@ class EscalationService
         return in_array($configured, self::SENSITIVITIES, true) ? $configured : 'conservative';
     }
 
-    /**
-     * Does this tool call clear the bar for the agent's sensitivity?
-     *
-     * The model's own confidence is the only thing it reports, and self-reported
-     * confidence is generously calibrated — which is precisely why the default
-     * bar sits at 0.85 rather than at a "more than half sure" 0.5.
-     *
-     * @param  array<string, mixed>  $args
-     */
     public function shouldEscalate(Agent $agent, array $args): bool
     {
         $sensitivity = $this->sensitivityFor($agent);
@@ -147,8 +107,6 @@ class EscalationService
 
         $confidence = (float) ($args['confidence'] ?? 0);
 
-        // A stated request is an observation, not an inference, so it clears a
-        // lower bar than a mood read from tone.
         $threshold = $signal === 'explicit_request'
             ? (float) config('agent.escalation.explicit_request_threshold', 0.5)
             : (float) (config('agent.escalation.thresholds')[$sensitivity] ?? 0.85);
@@ -156,15 +114,6 @@ class EscalationService
         return $confidence >= $threshold;
     }
 
-    /**
-     * Flag the conversation and alert the owner.
-     *
-     * Idempotent within a window: an already-flagged conversation is not
-     * re-announced on every further angry message, or the owner would be
-     * notified into ignoring the bell.
-     *
-     * @param  array<string, mixed>  $args
-     */
     public function escalate(Agent $agent, Conversation $conversation, array $args, ?string $signal = null): void
     {
         $alreadyFlagged = $conversation->needs_human_at !== null;
@@ -176,8 +125,7 @@ class EscalationService
             'needs_human_at' => now(),
             'needs_human_signal' => $signal ?? (string) ($args['signal'] ?? 'frustration'),
             'needs_human_summary' => Str::limit(trim((string) ($args['summary'] ?? '')), 480) ?: null,
-            // Answering is now a person's job. Closed conversations are left
-            // closed — an escalation should not silently reopen an archive.
+
             'status' => $conversation->status === 'closed' ? 'closed' : 'human_takeover',
         ])->save();
 

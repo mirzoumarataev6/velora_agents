@@ -41,10 +41,8 @@ class HandleIncomingMessageJob implements ShouldQueue
 
     protected const UPDATE_DEDUP_TTL = 900;
 
-    // Создаёт задачу обработки входящего вебхука канала
     public function __construct(public Channel $channel, public array $payload) {}
 
-    // Обрабатывает входящее сообщение или обратную связь и отправляет ответ клиенту
     public function handle(
         ChannelDriverManager $drivers,
         TelegramNotifyLinker $linker,
@@ -59,13 +57,6 @@ class HandleIncomingMessageJob implements ShouldQueue
             return;
         }
 
-        // Почему так: нельзя взять AgentReplyService через method injection
-        // (как остальные параметры выше) — DI резолвит LlmProviderInterface
-        // внутри её конструктора ДО того, как выполнится первая строчка этого
-        // метода. Контекст команды нужно выставить раньше, поэтому сервис
-        // резолвится вручную, уже после того, как контекст задан. Используется
-        // team_id канала, а не активная команда владельца — это фоновый путь,
-        // у него нет "активного" пользователя.
         app(LlmProviderContext::class)->for(
             $this->channel->team_id ? Team::find($this->channel->team_id) : null
         );
@@ -76,6 +67,9 @@ class HandleIncomingMessageJob implements ShouldQueue
         $feedback = $driver->parseFeedback($this->payload, $this->channel);
 
         if ($feedback !== null) {
+            Log::info('Webhook carried message feedback, not a reply-worthy message', [
+                'channel_id' => $this->channel->id,
+            ]);
             $ratings->record($driver, $this->channel, $feedback);
 
             return;
@@ -84,6 +78,11 @@ class HandleIncomingMessageJob implements ShouldQueue
         $incoming = $driver->parseIncomingMessage($this->payload, $this->channel);
 
         if ($incoming === null) {
+            Log::info('Webhook ignored: not an incoming customer message', [
+                'channel_id' => $this->channel->id,
+                'type_webhook' => $this->payload['typeWebhook'] ?? $this->payload['type'] ?? null,
+            ]);
+
             return;
         }
 
@@ -92,6 +91,11 @@ class HandleIncomingMessageJob implements ShouldQueue
         }
 
         if ($this->alreadyAnswered($incoming->externalMessageId)) {
+            Log::info('Webhook ignored: this message already has a reply', [
+                'channel_id' => $this->channel->id,
+                'external_message_id' => $incoming->externalMessageId,
+            ]);
+
             return;
         }
 
@@ -105,6 +109,12 @@ class HandleIncomingMessageJob implements ShouldQueue
         $userMessage = $this->claimUserMessage($conversation, $incoming);
 
         if ($userMessage === null) {
+            Log::warning('Webhook ignored: could not claim or locate the user message row', [
+                'channel_id' => $this->channel->id,
+                'conversation_id' => $conversation->id,
+                'external_message_id' => $incoming->externalMessageId,
+            ]);
+
             return;
         }
 
@@ -112,10 +122,24 @@ class HandleIncomingMessageJob implements ShouldQueue
             MessageReceived::dispatch($userMessage);
         }
 
-        if ($conversation->status === 'human_takeover' || $agent->status === 'paused') {
+        if ($agent->status === 'paused') {
+            Log::info('Reply withheld: agent is paused by its owner', [
+                'channel_id' => $this->channel->id,
+                'conversation_id' => $conversation->id,
+                'external_message_id' => $incoming->externalMessageId,
+            ]);
             $conversation->update(['last_message_at' => now()]);
 
             return;
+        }
+
+        if ($conversation->status === 'human_takeover') {
+            Log::info('Reopening a human_takeover conversation for a new customer message', [
+                'channel_id' => $this->channel->id,
+                'conversation_id' => $conversation->id,
+                'external_message_id' => $incoming->externalMessageId,
+            ]);
+            $conversation->update(['status' => 'ai']);
         }
 
         $photo = in_array($this->channel->type, ['telegram', 'whatsapp', 'greenapi'], true)
@@ -154,8 +178,26 @@ class HandleIncomingMessageJob implements ShouldQueue
             };
         }
 
+        if (trim((string) $assistantMessage->content) === '') {
+            Log::warning('Assistant produced an empty reply; sending a safe default instead', [
+                'channel_id' => $this->channel->id,
+                'conversation_id' => $conversation->id,
+                'message_id' => $assistantMessage->id,
+            ]);
+            $assistantMessage->update([
+                'content' => $agent->response_format['technical_error_message']
+                    ?? 'Извините, не получилось сформировать ответ. Мы уже разбираемся, скоро вернёмся к вам.',
+            ]);
+        }
+
         $askForRating = $driver->supportsMessageFeedback()
             && $cadence->shouldAsk($conversation, $assistantMessage, $userMessage);
+
+        Log::info('Sending channel reply', [
+            'channel_id' => $this->channel->id,
+            'conversation_id' => $conversation->id,
+            'message_id' => $assistantMessage->id,
+        ]);
 
         try {
             $sender->send(
@@ -170,16 +212,30 @@ class HandleIncomingMessageJob implements ShouldQueue
             if ($askForRating) {
                 $cadence->markAsked($assistantMessage);
             }
+
+            Log::info('Channel reply delivered', [
+                'channel_id' => $this->channel->id,
+                'conversation_id' => $conversation->id,
+                'message_id' => $assistantMessage->id,
+            ]);
+            $assistantMessage->update(['meta' => [...($assistantMessage->meta ?? []), 'delivery_status' => 'sent']]);
         } catch (Throwable $e) {
             Log::error('Failed to deliver channel reply', [
                 'channel_id' => $this->channel->id,
                 'conversation_id' => $conversation->id,
+                'message_id' => $assistantMessage->id,
                 'error' => $e->getMessage(),
             ]);
+            $assistantMessage->update(['meta' => [
+                ...($assistantMessage->meta ?? []),
+                'delivery_status' => 'failed',
+                'delivery_error' => $e->getMessage(),
+            ]]);
+
+            throw $e;
         }
     }
 
-    // Уведомляет клиента и владельца, если задача окончательно провалилась
     public function failed(?Throwable $e): void
     {
         Log::error('Incoming message job failed permanently — no reply was sent', [
@@ -199,7 +255,6 @@ class HandleIncomingMessageJob implements ShouldQueue
         }
     }
 
-    // Отправляет клиенту сообщение об извинении после окончательного сбоя
     protected function apologiseToCustomer(): void
     {
         $driver = app(ChannelDriverManager::class)->for($this->channel);
@@ -225,7 +280,6 @@ class HandleIncomingMessageJob implements ShouldQueue
         );
     }
 
-    // Уведомляет владельца агента в Telegram о том, что сообщение осталось без ответа
     protected function alertOwner(?Throwable $e): void
     {
         $agent = $this->channel->agent;
@@ -251,11 +305,9 @@ class HandleIncomingMessageJob implements ShouldQueue
         );
     }
 
-    // Атомарно помечает вебхук как обработанный, отсеивая повторные доставки
     protected function claimUpdate(): bool
     {
-        $updateId = $this->payload['update_id']
-            ?? 'sha:'.hash('sha256', json_encode($this->payload));
+        $updateId = $this->updateDedupKey();
 
         if (Cache::add("webhook-update:{$this->channel->id}:{$updateId}", true, self::UPDATE_DEDUP_TTL)) {
             return true;
@@ -273,7 +325,19 @@ class HandleIncomingMessageJob implements ShouldQueue
         return false;
     }
 
-    // Проверяет, что на это сообщение уже был отправлен ответ
+    protected function updateDedupKey(): string
+    {
+        $messageId = $this->payload['update_id']
+            ?? $this->payload['idMessage']
+            ?? data_get($this->payload, 'body.idMessage');
+
+        if (is_string($messageId) || is_int($messageId)) {
+            return (string) $messageId;
+        }
+
+        return 'sha:'.hash('sha256', json_encode($this->payload));
+    }
+
     protected function alreadyAnswered(?string $externalMessageId): bool
     {
         if ($externalMessageId === null) {
@@ -293,10 +357,10 @@ class HandleIncomingMessageJob implements ShouldQueue
         return Message::where('conversation_id', $message->conversation_id)
             ->whereIn('role', ['assistant', 'operator'])
             ->where('id', '>', $message->id)
+            ->where(fn ($q) => $q->whereNull('meta->delivery_status')->orWhere('meta->delivery_status', '!=', 'failed'))
             ->exists();
     }
 
-    // Формирует ключ кэша для дедупликации извинения по конкретному обновлению
     protected function apologyKey(string $externalUserId): string
     {
         $updateId = $this->payload['update_id'] ?? md5(json_encode($this->payload));
@@ -304,7 +368,6 @@ class HandleIncomingMessageJob implements ShouldQueue
         return "webhook-apology:{$this->channel->id}:{$externalUserId}:{$updateId}";
     }
 
-    // Обрабатывает команду привязки Telegram владельца для получения уведомлений о заявках
     protected function handleNotifyLink(IncomingMessage $incoming, ChannelDriverInterface $driver, TelegramNotifyLinker $linker): bool
     {
         if ($incoming->type !== 'text') {
@@ -337,7 +400,6 @@ class HandleIncomingMessageJob implements ShouldQueue
         return true;
     }
 
-    // Находит существующий диалог с клиентом или создаёт новый
     protected function findOrCreateConversation(Agent $agent, IncomingMessage $incoming): Conversation
     {
         try {
@@ -353,7 +415,6 @@ class HandleIncomingMessageJob implements ShouldQueue
         }
     }
 
-    // Сохраняет сообщение клиента, атомарно защищаясь от повторной записи
     protected function claimUserMessage(Conversation $conversation, IncomingMessage $incoming): ?Message
     {
         try {

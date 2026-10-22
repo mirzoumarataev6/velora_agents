@@ -14,7 +14,6 @@ trait NormalizesSearchTerms
         'ies', 'es', 's',
     ];
 
-    // Разбивает поисковый запрос на нормализованные термины для поиска по подстроке
     protected function terms(string $query): array
     {
         $parts = preg_split('/\s+/u', mb_strtolower($query)) ?: [];
@@ -30,13 +29,11 @@ trait NormalizesSearchTerms
         return array_slice(array_values(array_unique($terms)), 0, 6);
     }
 
-    // Разбивает название категории на нормализованные термины для поиска
     protected function categoryTerms(string $category): array
     {
         return $this->terms($category);
     }
 
-    // Отбрасывает известное окончание слова, чтобы поиск находил разные словоформы
     protected function stem(string $word): string
     {
         if (mb_strlen($word) <= self::MIN_STEM_LENGTH) {
@@ -58,7 +55,6 @@ trait NormalizesSearchTerms
         return $word;
     }
 
-    // Убирает символы, специальные для SQL LIKE
     protected function escapeLike(string $value): string
     {
         return str_replace(['%', '_', '\\'], '', $value);

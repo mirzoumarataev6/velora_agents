@@ -448,6 +448,14 @@
                                         <span x-show="m.voice_duration" x-text="'· ' + voiceLength(m.voice_duration)" class="tnum"></span>
                                     </div>
 
+                                    {{-- Доставка этого ответа клиенту сорвалась — без
+                                         этого бейджа ответ в треде выглядит отправленным. --}}
+                                    <div x-show="m.delivery_status === 'failed'" x-cloak
+                                        class="badge badge-danger mt-1 w-fit">
+                                        <span aria-hidden="true">⚠️</span>
+                                        <span data-i18n="conversations.thread.delivery_failed">{{ __('conversations.thread.delivery_failed') }}</span>
+                                    </div>
+
                                     {{-- The customer's verdict on this reply, in the
                                          place the verdict is about. A thumbs-down on
                                          the dashboard is a number; here it sits under

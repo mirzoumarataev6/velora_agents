@@ -24,25 +24,8 @@ use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
-/**
- * The account settings area: profile, security, preferences and the account
- * itself.
- *
- * Everything here acts on the signed-in user and nobody else — there is no
- * {user} route parameter anywhere in this controller on purpose, so there is
- * no id for a request to tamper with. `$request->user()` IS the authorization.
- */
 class SettingsController extends Controller
 {
-    /**
-     * Themes the preference accepts. All three are stored verbatim, including
-     * `system` — it has to be distinguishable from a NULL column (an account
-     * that never chose at all), because the two now mean different things to
-     * the boot script: no choice defaults to light, `system` keeps following
-     * the OS. Collapsing `system` into null, as this used to do, made every
-     * existing "I picked system" account indistinguishable from "never
-     * touched settings" the day that default changed.
-     */
     protected const THEMES = ['system', 'light', 'dark'];
 
     public function index(Request $request): View
@@ -55,25 +38,10 @@ class SettingsController extends Controller
             'activeTeam' => $team,
             'canManageAiProvider' => $user->can(PermissionCatalog::TEAM_SETTINGS_UPDATE),
             'llmProviders' => config('agent.llm_providers'),
-            // Saving here is a small, local confirmation, so the flash is shown
-            // as a self-dismissing toast instead of the layout's banner — which
-            // would push the whole form down on every save.
+
             'statusAsToast' => true,
             'user' => $user,
-            // Drives the Telegram lead-alert cards: one per agent, because the
-            // link is made through that agent's own bot.
-            //
-            // `channels` is eager-loaded because partials/lead-notify-card reads
-            // `$agent->channels` to decide whether the agent's Telegram channel
-            // is connected — one query per card otherwise, which grew with the
-            // number of agents on the page (measured: 5 agents, 5 queries).
-            //
-            // The column list is deliberate, not incidental tidiness: `channels`
-            // also holds `credentials` (the encrypted bot token) and a `settings`
-            // JSON blob, and the card needs neither. Loading the whole row to
-            // answer one boolean would pull every agent's bot token into memory
-            // to render a settings page. Anything added here that needs more of
-            // a channel than type+status has to widen this list.
+
             'agents' => $user->can('agents.update') ? Agent::ownedBy($user)
                 ->with(['channels' => fn ($query) => $query->select('id', 'agent_id', 'type', 'status')])
                 ->orderBy('name')
@@ -83,20 +51,10 @@ class SettingsController extends Controller
         ]);
     }
 
-    /**
-     * Name and email.
-     *
-     * Changing the email drops the verified stamp: the new address has not
-     * proved it belongs to this person, and leaving the old stamp in place
-     * would silently vouch for an address nobody confirmed.
-     */
     public function updateProfile(Request $request): RedirectResponse
     {
         $user = $request->user();
 
-        // Named bags throughout this controller: four forms share one page, and
-        // a default bag would light up the password field's error under the
-        // profile inputs.
         $data = $request->validateWithBag('profile', [
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'email', 'max:255', Rule::unique('users', 'email')->ignore($user->id)],
@@ -117,10 +75,6 @@ class SettingsController extends Controller
             : __('settings.profile.saved'));
     }
 
-    /**
-     * Change password. The current one is required so that a borrowed, still
-     * signed-in browser can't be used to lock the real owner out.
-     */
     public function updatePassword(Request $request): RedirectResponse
     {
         $user = $request->user();
@@ -138,19 +92,12 @@ class SettingsController extends Controller
 
         $user->forceFill(['password' => Hash::make($data['password'])])->save();
 
-        // Keep THIS session signed in — the password hash it carries just went
-        // stale, and without this the owner would be logged out by their own
-        // successful password change.
         Auth::setUser($user);
         $request->session()->put('password_hash_web', $user->password);
 
         return back()->with('status', __('settings.security.password_saved'));
     }
 
-    /**
-     * Sign out every other browser, keeping this one. Password-gated for the
-     * same reason the change above is.
-     */
     public function logoutOtherSessions(Request $request): RedirectResponse
     {
         $user = $request->user();
@@ -167,9 +114,6 @@ class SettingsController extends Controller
 
         Auth::logoutOtherDevices($data['password']);
 
-        // logoutOtherDevices cycles the stored hash; the database session driver
-        // additionally keeps rows around, so drop the other ones outright rather
-        // than waiting for them to be rejected on next use.
         if ($this->sessionsAreListable()) {
             DB::table('sessions')
                 ->where('user_id', $user->id)
@@ -180,13 +124,6 @@ class SettingsController extends Controller
         return back()->with('status', __('settings.security.other_sessions_ended'));
     }
 
-    /**
-     * Interface language, theme and notification preferences.
-     *
-     * Locale is written the same way LocaleController writes it (user record +
-     * session) so the two entry points can't disagree about the current
-     * language, and the redirect below is re-rendered in the new one.
-     */
     public function updatePreferences(Request $request): RedirectResponse
     {
         $user = $request->user();
@@ -199,8 +136,7 @@ class SettingsController extends Controller
 
         $user->forceFill([
             'locale' => $data['locale'],
-            // Stored as typed — see the THEMES docblock for why `system` is
-            // no longer folded into null.
+
             'theme' => $data['theme'],
             'lead_notifications_enabled' => $request->boolean('lead_notifications_enabled'),
         ])->save();
@@ -212,14 +148,6 @@ class SettingsController extends Controller
         return back()->with('status', __('settings.preferences.saved'));
     }
 
-    /**
-     * Theme only, for the toggle in the sidebar.
-     *
-     * That toggle used to write localStorage alone, which meant the preference
-     * set here and the one set there disagreed the moment you used both. Both
-     * now write the same record; localStorage stays as the pre-paint cache that
-     * avoids a flash of the wrong theme before this value is known.
-     */
     public function updateTheme(Request $request): JsonResponse
     {
         $data = $request->validate([
@@ -233,9 +161,6 @@ class SettingsController extends Controller
         return response()->json(['theme' => $data['theme']]);
     }
 
-    /**
-     * Провайдер LLM, модель и base_url Ollama для активной команды.
-     */
     public function updateAiProvider(UpdateAiProviderSettingsRequest $request): RedirectResponse
     {
         $team = Team::findOrFail($request->user()->activeTeamId());
@@ -245,11 +170,6 @@ class SettingsController extends Controller
         return back()->with('status', __('settings.ai_provider.saved'));
     }
 
-    /**
-     * Пробный запрос к провайдеру с тем, что сейчас введено в форме — ничего
-     * не сохраняет, так что можно проверить Ollama до того, как owner нажмёт
-     * "Save".
-     */
     public function testAiProviderConnection(Request $request, LlmProviderFactory $factory): JsonResponse
     {
         abort_unless($request->user()->can(PermissionCatalog::TEAM_SETTINGS_UPDATE), 403);
@@ -272,11 +192,6 @@ class SettingsController extends Controller
         return response()->json(['ok' => true, 'message' => __('settings.ai_provider.test_succeeded')]);
     }
 
-    /**
-     * Модели, установленные в Ollama (GET {base_url}/api/tags) — для
-     * выпадающего списка. Недоступный сервер отдаёт пустой список, а не
-     * ошибку: форма сама откатывается на свободный ввод модели.
-     */
     public function ollamaModels(Request $request): JsonResponse
     {
         abort_unless($request->user()->can(PermissionCatalog::TEAM_SETTINGS_UPDATE), 403);
@@ -305,17 +220,6 @@ class SettingsController extends Controller
         return response()->json(['models' => $models, 'reachable' => true]);
     }
 
-    /**
-     * Delete the account and everything hanging off it.
-     *
-     * The confirmation phrase is checked server-side too: the modal is a
-     * courtesy, not the control. Agents, and through them channels, knowledge,
-     * conversations, messages and leads, go with the row via the foreign keys
-     * declared in their migrations. `DeletesAccount` exists because two of
-     * those foreign keys (deals/customers against crm_stages/crm_workspaces)
-     * are RESTRICT, not CASCADE, and MySQL's own cascade order trips them —
-     * see that service's docblock.
-     */
     public function destroy(Request $request): RedirectResponse|JsonResponse
     {
         $user = $request->user();
@@ -341,9 +245,6 @@ class SettingsController extends Controller
             ])->errorBag('account');
         }
 
-        // The user row is gone. Full logout rotates the remember token by
-        // writing that row again; clearing this device is sufficient because
-        // any old remember cookie can no longer resolve a deleted account.
         Auth::logoutCurrentDevice();
 
         $request->session()->invalidate();
@@ -352,15 +253,6 @@ class SettingsController extends Controller
         return redirect('/')->with('status', __('settings.account.deleted'));
     }
 
-    /**
-     * Other browsers currently signed in as this user.
-     *
-     * Only the database session driver keeps rows we can enumerate; on file or
-     * cookie drivers the section degrades to the "sign out everywhere" button
-     * rather than showing an empty list that would read as "no other devices".
-     *
-     * @return array<int, array<string, mixed>>
-     */
     protected function sessions(Request $request): array
     {
         if (! $this->sessionsAreListable()) {
@@ -387,11 +279,6 @@ class SettingsController extends Controller
         return config('session.driver') === 'database';
     }
 
-    /**
-     * A short, human "Chrome · Windows" from a user-agent string. Deliberately
-     * coarse — this exists so the owner can recognise their own devices, not to
-     * fingerprint them.
-     */
     protected function describeAgent(string $userAgent): string
     {
         $browser = match (true) {

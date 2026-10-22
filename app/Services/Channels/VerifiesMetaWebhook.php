@@ -9,7 +9,6 @@ use Symfony\Component\HttpFoundation\Response;
 
 trait VerifiesMetaWebhook
 {
-    // Подтверждает вебхук Meta, сверяя токен верификации и возвращая challenge
     public function verifyWebhook(Request $request, Channel $channel): ?Response
     {
         $mode = $request->query('hub_mode');
@@ -25,7 +24,6 @@ trait VerifiesMetaWebhook
         return response((string) $challenge, 200);
     }
 
-    // Проверяет подлинность входящего запроса по подписи X-Hub-Signature-256
     public function authenticateIncomingRequest(Request $request, Channel $channel): bool
     {
         $appSecret = $channel->credentials['app_secret'] ?? null;

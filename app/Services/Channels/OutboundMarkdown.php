@@ -29,7 +29,6 @@ class OutboundMarkdown
         ],
     ];
 
-    // Преобразует markdown-разметку текста в HTML, понятный Telegram
     public function toTelegramHtml(string $text): string
     {
         $escaped = htmlspecialchars($this->normalize($text), ENT_NOQUOTES, 'UTF-8');
@@ -44,7 +43,6 @@ class OutboundMarkdown
         );
     }
 
-    // Преобразует markdown-разметку текста в форматирование WhatsApp
     public function toWhatsApp(string $text): string
     {
         return $this->render(
@@ -53,7 +51,6 @@ class OutboundMarkdown
         );
     }
 
-    // Убирает markdown-разметку, оставляя обычный текст
     public function toPlainText(string $text): string
     {
         return $this->render(
@@ -62,7 +59,6 @@ class OutboundMarkdown
         );
     }
 
-    // Заменяет markdown-конструкции на промежуточные маркеры форматирования
     protected function markup(string $text, callable $renderLink): string
     {
         $text = (string) preg_replace_callback(
@@ -86,13 +82,11 @@ class OutboundMarkdown
         return (string) preg_replace('/^[ \t]*[-*+][ \t]+/mu', '• ', $text);
     }
 
-    // Строит функцию замены, оборачивающую совпадение в промежуточные маркеры типа форматирования
     protected function wrap(string $type): string
     {
         return self::OPEN.$type.self::CLOSE.'$1'.self::OPEN.'/'.$type.self::CLOSE;
     }
 
-    // Заменяет промежуточные маркеры на реальную разметку целевого канала
     protected function render(string $text, string $channel): string
     {
         $replacements = [];
@@ -105,7 +99,6 @@ class OutboundMarkdown
         return trim(strtr($text, $replacements));
     }
 
-    // Нормализует переносы строк и убирает блоки кода перед разметкой
     protected function normalize(string $text): string
     {
         $text = str_replace(["\r\n", self::OPEN, self::CLOSE], ["\n", '', ''], $text);

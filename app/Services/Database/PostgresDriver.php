@@ -2,14 +2,6 @@
 
 namespace App\Services\Database;
 
-/**
- * PostgreSQL.
- *
- * Introspection comes from information_schema with the system schemas excluded,
- * and non-public schemas are reported qualified ("sales.products") so the owner
- * can pick a table outside `public` and the mapping still names it
- * unambiguously.
- */
 class PostgresDriver extends AbstractPdoDriver
 {
     public const DEFAULT_PORT = 5432;
@@ -33,8 +25,6 @@ class PostgresDriver extends AbstractPdoDriver
             return $dsn.';sslmode=prefer';
         }
 
-        // With a CA configured, verify the chain and the hostname; without one,
-        // require encryption but accept an unverified certificate.
         $ca = config('agent.database.ssl_ca');
 
         return $ca
@@ -47,13 +37,6 @@ class PostgresDriver extends AbstractPdoDriver
         return '"';
     }
 
-    /**
-     * The one expression every introspection query names a table with.
-     *
-     * describeSchema() joins the table list, the column list and the key lists
-     * on this string, so all of them have to spell "sales.products" identically.
-     * Written once here rather than four times so they cannot drift apart.
-     */
     protected static function qualified(string $alias = ''): string
     {
         $prefix = $alias === '' ? '' : $alias.'.';
@@ -84,11 +67,6 @@ class PostgresDriver extends AbstractPdoDriver
         ];
     }
 
-    /**
-     * The `table` expression here is character-for-character the one in
-     * tablesQuery(): describeSchema() joins the two result sets on that string,
-     * so "sales.products" has to be spelled the same way in both.
-     */
     protected function allColumnsQuery(): array
     {
         return [
@@ -103,11 +81,7 @@ class PostgresDriver extends AbstractPdoDriver
 
     protected function foreignKeysQuery(): array
     {
-        // constraint_column_usage does not pair its rows with key_column_usage's
-        // for a COMPOSITE key — it yields the cross product of both sides. That
-        // is why the constraint name is selected: a caller that sees one
-        // constraint over several rows knows to skip it, and single-column keys
-        // (all discovery ever follows) are unaffected.
+
         return [
             'SELECT tc.constraint_name AS "constraint", '
                 .self::qualified('tc').' AS "table", '
@@ -128,9 +102,7 @@ class PostgresDriver extends AbstractPdoDriver
 
     protected function uniqueColumnsQuery(): array
     {
-        // PRIMARY KEY and UNIQUE CONSTRAINTS. A bare unique INDEX with no
-        // constraint behind it is missed, which costs a join we could have
-        // offered — never a join we should not have.
+
         return [
             'SELECT '.self::qualified('tc').' AS "table", '
                 .'kcu.column_name AS "column", tc.constraint_name AS "key" '
@@ -147,9 +119,7 @@ class PostgresDriver extends AbstractPdoDriver
     protected function rowCountsQuery(): array
     {
         return [
-            // reltuples is the planner's estimate, refreshed by ANALYZE. It is
-            // -1 on a relation that has never been analyzed in PG 14+, which the
-            // caller reads as "no estimate" rather than as an empty table.
+
             "SELECT CASE WHEN n.nspname = 'public' THEN c.relname "
                 ."ELSE n.nspname || '.' || c.relname END AS \"table\", "
                 .'c.reltuples::bigint AS "rows" '
@@ -170,16 +140,13 @@ class PostgresDriver extends AbstractPdoDriver
 
     protected function lowerText(string $quotedColumn): string
     {
-        // The cast is not optional here: lower() has no signature for a numeric
-        // argument, so a shop whose SKU column is an integer would error out.
+
         return 'LOWER(CAST('.$quotedColumn.' AS TEXT))';
     }
 
     protected function orderTerm(string $quotedColumn, string $direction): string
     {
-        // Postgres defaults to NULLS LAST ascending and NULLS FIRST descending;
-        // stating it keeps both directions consistent with MySQL and with the
-        // uploaded-catalog source.
+
         return $quotedColumn.' '.strtoupper($direction).' NULLS LAST';
     }
 

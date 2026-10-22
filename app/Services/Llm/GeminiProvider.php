@@ -8,12 +8,6 @@ use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
-/**
- * Thin wrapper around the Google Gemini REST API (generateContent, embedContent,
- * batchEmbedContents) with retry/backoff, timeout handling, and usage logging.
- *
- * Extracted unchanged from the former App\Services\GeminiService.
- */
 class GeminiProvider implements LlmProviderInterface
 {
     protected string $apiKey;
@@ -94,9 +88,6 @@ class GeminiProvider implements LlmProviderInterface
             'maxOutputTokens' => $options['max_output_tokens'] ?? null,
         ], fn ($value) => $value !== null);
 
-        // Gemini 2.5's "thinking" tokens are drawn from the same maxOutputTokens
-        // budget as the visible reply, so a small cap combined with default
-        // thinking can silently truncate the answer. Let callers opt out.
         if (array_key_exists('thinking_budget', $options)) {
             $generationConfig['thinkingConfig'] = ['thinkingBudget' => $options['thinking_budget']];
         }
@@ -125,8 +116,7 @@ class GeminiProvider implements LlmProviderInterface
 
             $call = $part['functionCall'];
             $toolCalls[] = [
-                // Gemini function calls carry no id of their own; synthesize a
-                // stable one from the name so the continuation turn can pair up.
+
                 'id' => (string) ($call['name'] ?? 'call'),
                 'name' => (string) ($call['name'] ?? ''),
                 'arguments' => is_array($call['args'] ?? null) ? $call['args'] : [],
@@ -152,13 +142,6 @@ class GeminiProvider implements LlmProviderInterface
         return $result;
     }
 
-    /**
-     * Translate a neutral contract turn into a Gemini `content` entry, including
-     * the function-calling continuation turns (see LlmProviderInterface::generate()).
-     *
-     * @param  array<string, mixed>  $turn
-     * @return array<string, mixed>
-     */
     protected function toGeminiContent(array $turn): array
     {
         return match ($turn['role']) {
@@ -320,19 +303,11 @@ class GeminiProvider implements LlmProviderInterface
         return $results;
     }
 
-    /**
-     * Rough token estimate (Gemini's embedding endpoints don't return usage metadata).
-     * Approximates ~4 characters per token, which is a reasonable heuristic across
-     * Latin-script languages (English, Russian, Tajik, Uzbek).
-     */
     public function estimateTokens(string $text): int
     {
         return max(1, (int) ceil(mb_strlen($text) / 4));
     }
 
-    /**
-     * @throws GeminiException
-     */
     protected function request(string $operation, string $path, array $payload): array
     {
         if (empty($this->apiKey)) {
@@ -352,11 +327,7 @@ class GeminiProvider implements LlmProviderInterface
                         }
 
                         if ($exception instanceof RequestException) {
-                            // 429 is deliberately NOT retried: Gemini's free-tier 429s observed in
-                            // practice are RESOURCE_EXHAUSTED (a daily quota), not a brief burst limit —
-                            // the response's own "retry in Ns" is far longer than our backoff window, so
-                            // retrying only adds latency (and, for a chat reply, risks the queue worker's
-                            // timeout killing and re-running the job, which can produce a duplicate reply).
+
                             return in_array($exception->response->status(), [408, 500, 502, 503, 504], true);
                         }
 

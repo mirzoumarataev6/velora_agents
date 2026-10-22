@@ -26,7 +26,6 @@ class BiConnectionPolicy
         return $this->permitted($user, PermissionCatalog::ANALYTICS_MANAGE);
     }
 
-    /** Dialling the host — deliberately distinct from view(). */
     public function test(User $user, BiConnection $connection): bool
     {
         return $this->permitted($user, PermissionCatalog::ANALYTICS_MANAGE, $connection);

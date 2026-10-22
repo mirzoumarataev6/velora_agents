@@ -6,12 +6,6 @@ use App\Models\Dataset;
 use App\Services\Dataset\ColumnMapper;
 use Illuminate\Foundation\Http\FormRequest;
 
-/**
- * Validates a mapping-step preview request: same token + mapping shape as
- * ImportDatasetRequest, but this one writes nothing — it only tells the
- * owner, before they commit to 'update', how many existing rows the file in
- * front of them doesn't match.
- */
 class PreviewDatasetUpdateRequest extends FormRequest
 {
     public function authorize(): bool
@@ -37,9 +31,6 @@ class PreviewDatasetUpdateRequest extends FormRequest
         return $rules;
     }
 
-    /**
-     * @return array<string, mixed>
-     */
     public function mapping(): array
     {
         return array_filter(

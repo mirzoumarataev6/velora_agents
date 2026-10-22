@@ -20,24 +20,6 @@ use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
-/**
- * Boards: list, create, view, rename, reorder, delete.
- *
- * The one surface here that is not ordinary CRUD is `show`, which renders every
- * widget server-side on first paint. That is deliberate and it is the opposite
- * of what a dashboard product usually does.
- *
- * WHY SERVER-RENDERED RATHER THAN A SPINNER PER CARD: the results are cached by
- * `QueryRunner` on a key that already carries the dataset version, so the common
- * case — opening a board you opened this morning — is a handful of cache reads
- * and no queries at all. Rendering those as HTML costs nothing and gives the
- * owner a board that is complete the moment it appears, with no layout shift as
- * eight cards pop in. A board whose cache is cold pays for it once, and the
- * per-card timing is shown rather than hidden.
- *
- * Each card can still refetch itself — see WidgetController::data() — which is
- * what the refresh button and the filter bar use.
- */
 class DashboardController extends Controller
 {
     public function __construct(
@@ -45,10 +27,6 @@ class DashboardController extends Controller
         private readonly LayoutUpdater $layout,
     ) {}
 
-    /**
-     * The BI section's landing route redirects here, and this redirects onward
-     * to a board — or shows the empty state when there is not one yet.
-     */
     public function index(Request $request): View|RedirectResponse
     {
         $this->authorize('viewAny', BiDashboard::class);
@@ -108,8 +86,6 @@ class DashboardController extends Controller
 
         $widgets = $dashboard->widgets()->with('dataset.columns')->get();
 
-        // Rendering the whole board must enforce the same boundary as the
-        // single-widget endpoint, including rows with a corrupt foreign link.
         foreach ($widgets as $widget) {
             $this->authorize('view', $widget);
             abort_unless($widget->team_id === $dashboard->team_id
@@ -117,9 +93,6 @@ class DashboardController extends Controller
             $this->authorize('query', $widget->dataset);
         }
 
-        // `fresh` is the refresh button: skip the cache for every card on the
-        // board at once. Not a query parameter the page links to itself with,
-        // so an ordinary navigation always takes the cheap path.
         $fresh = $request->boolean('fresh');
 
         $rendered = $this->renderer->renderBoard($dashboard, $widgets, $fresh);
@@ -140,9 +113,7 @@ class DashboardController extends Controller
         return view('bi.dashboards.show', [
             'dashboard' => $dashboard,
             'rendered' => $rendered,
-            // The dataset picker in the widget editor, and the filter bar's
-            // column list. Only READY datasets: a widget over one that is still
-            // importing would be created already broken.
+
             'datasets' => BiDataset::where('team_id', $dashboard->team_id)
                 ->where('status', BiDataset::STATUS_READY)
                 ->with('columns')
@@ -175,8 +146,6 @@ class DashboardController extends Controller
         $dashboard->position = (int) BiDashboard::ownedBy($user)->max('position') + 1;
         $dashboard->save();
 
-        // The first board an account creates becomes its landing board without
-        // being asked — there is nothing else for the section to open.
         if ($request->boolean('is_default') || BiDashboard::ownedBy($user)->count() === 1) {
             $dashboard->makeDefault();
         }
@@ -218,13 +187,6 @@ class DashboardController extends Controller
         return back()->with('status', __('bi.dashboards.saved'));
     }
 
-    /**
-     * Persist a drag.
-     *
-     * Its own endpoint rather than part of `update`, because it is a different
-     * operation with a different shape: no form fields, many rows, and no
-     * `updated_at` bump. See LayoutUpdater.
-     */
     public function updateLayout(UpdateBiLayoutRequest $request, BiDashboard $dashboard): JsonResponse
     {
         $this->authorize('update', $dashboard);
@@ -241,12 +203,8 @@ class DashboardController extends Controller
         $wasDefault = $dashboard->is_default;
         $user = $request->user();
 
-        // Widgets go with it through the foreign key's cascade. Nothing else
-        // needs cleaning up: a dashboard owns no files and no physical tables,
-        // which is why — unlike BiDataset — it has no observer.
         $dashboard->delete();
 
-        // Promote another board so the section still has somewhere to land.
         if ($wasDefault) {
             BiDashboard::landingFor($user)?->makeDefault();
         }

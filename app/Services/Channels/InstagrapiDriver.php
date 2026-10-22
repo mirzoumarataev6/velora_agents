@@ -17,28 +17,23 @@ class InstagrapiDriver implements ChannelDriverInterface
 
     protected const MAX_MESSAGE_LENGTH = 1000;
 
-    // Создаёт драйвер instagrapi с markdown-конвертацией текста
     public function __construct(protected OutboundMarkdown $markdown = new OutboundMarkdown) {}
 
-    // Подтверждает вебхук instagrapi (отдельной верификации не требуется)
     public function verifyWebhook(Request $request, Channel $channel): ?Response
     {
         return null;
     }
 
-    // Проверяет подлинность входящего запроса (instagrapi доверяет локальному сервису)
     public function authenticateIncomingRequest(Request $request, Channel $channel): bool
     {
         return true;
     }
 
-    // Возвращает пейлоад как единственную доставку сообщения
     public function splitDeliveries(array $payload): array
     {
         return [$payload];
     }
 
-    // Преобразует пейлоад instagrapi во внутреннее представление входящего сообщения
     public function parseIncomingMessage(array $payload, Channel $channel): ?IncomingMessage
     {
         $userId = (string) ($payload['from_user_id'] ?? '');
@@ -58,7 +53,6 @@ class InstagrapiDriver implements ChannelDriverInterface
         return new IncomingMessage($messageId, $userId, $userName, $text, 'text');
     }
 
-    // Отправляет текстовое сообщение пользователю через сервис instagrapi
     public function sendMessage(Channel $channel, string $externalUserId, string $text): void
     {
         try {
@@ -93,16 +87,13 @@ class InstagrapiDriver implements ChannelDriverInterface
         throw new RuntimeException('Outbound images are not enabled for this Instagram integration.');
     }
 
-    // Отправляет индикатор набора текста (instagrapi его не поддерживает)
     public function sendTypingIndicator(Channel $channel, string $externalUserId): void {}
 
-    // Сообщает, поддерживает ли instagrapi голосовые сообщения
     public function supportsVoiceMessages(): bool
     {
         return false;
     }
 
-    // Выполняет вход в Instagram через сервис instagrapi при подключении канала
     public function connect(Channel $channel): array
     {
         $username = $this->credential($channel, 'ig_username');
@@ -136,13 +127,11 @@ class InstagrapiDriver implements ChannelDriverInterface
         });
     }
 
-    // Отключает канал, завершая сессию instagrapi
     public function disconnect(Channel $channel): void
     {
         $this->call('/disconnect', ['channel_uuid' => $channel->uuid]);
     }
 
-    // Возвращает учётные данные канала по ключу или бросает исключение, если их нет
     protected function credential(Channel $channel, string $key): string
     {
         $value = $channel->credentials[$key] ?? null;
@@ -154,7 +143,6 @@ class InstagrapiDriver implements ChannelDriverInterface
         return (string) $value;
     }
 
-    // Выполняет POST-запрос к Python-сервису instagrapi
     protected function call(string $path, array $payload, int $timeout = 15): \Illuminate\Http\Client\Response
     {
         try {
@@ -164,7 +152,6 @@ class InstagrapiDriver implements ChannelDriverInterface
         }
     }
 
-    // Строит полный URL сервиса instagrapi для указанного пути
     protected function serviceUrl(string $path): string
     {
         return rtrim((string) config('agent.instagram_service.url'), '/').$path;

@@ -23,13 +23,11 @@ abstract class KnowledgeJob implements ShouldQueue
 
     public KnowledgeSource $source;
 
-    // Возвращает задержки в секундах перед повторными попытками выполнения задачи
     public function backoff(): array
     {
         return [10, 30];
     }
 
-    // Отмечает источник знаний как неудавшийся, если задача провалилась окончательно
     public function failed(?Throwable $e): void
     {
         if (! isset($this->source) || ! $this->source->exists) {
@@ -39,7 +37,6 @@ abstract class KnowledgeJob implements ShouldQueue
         $this->markFailed($this->source->fresh() ?? $this->source, $e ?? new \RuntimeException('The queue worker stopped before this step finished.'));
     }
 
-    // Решает, повторить ли попытку при временной ошибке или окончательно пометить источник неудавшимся
     protected function handleFailure(KnowledgeSource $source, Throwable $e): void
     {
         if ($this->isTransient($e) && $this->attempts() < $this->tries) {
@@ -56,7 +53,6 @@ abstract class KnowledgeJob implements ShouldQueue
         $this->markFailed($source, $e);
     }
 
-    // Определяет, является ли ошибка временной и достойной повторной попытки
     protected function isTransient(Throwable $e): bool
     {
         if ($e instanceof ConnectionException) {
@@ -73,7 +69,6 @@ abstract class KnowledgeJob implements ShouldQueue
         );
     }
 
-    // Помечает источник знаний неудавшимся и сохраняет текст ошибки
     protected function markFailed(KnowledgeSource $source, Throwable $e): void
     {
         Log::error('Knowledge source processing failed', [
@@ -88,7 +83,6 @@ abstract class KnowledgeJob implements ShouldQueue
         ]);
     }
 
-    // Помечает источник знаний как обрабатываемый перед началом шага
     protected function beginStep(): void
     {
         $this->source->forceFill(['status' => 'processing', 'error_message' => null])->save();

@@ -14,7 +14,6 @@ use Throwable;
 
 class PhotoReplyService
 {
-    /** Filler words stripped before a fresh (no pending menu) message is tried against the catalog. */
     private const QUERY_STOPWORDS = '/\b(?:как|выгляд\w*|покаж\w*|показ\w*|фото\w*|картинк\w*|изображен\w*'
         .'|это|они|он|она|что|какой|какая|какие|пожалуйста|а|и|но|ну|да|то|же|ли'
         .'|please|show|photo|picture|image|of|the|how|does|look\w*|laptop|notebook|and|but|so)\b/iu';
@@ -37,16 +36,10 @@ class PhotoReplyService
         $choices = $request['choices'];
 
         if ($model === '' && ($request['ambiguous'] ?? []) !== []) {
-            // "Нео" matched two configurations: ask again, but only among the
-            // ones it actually matched, not the whole original menu.
+
             $choices = $request['ambiguous'];
         } elseif ($model === '' && $choices === [] && $this->catalog->enabledFor($conversation->agent)) {
-            // No pending menu to resolve against: a fresh "как выглядит
-            // виктус" names a model directly often enough that forcing a
-            // clarify step here would be the WRONG behaviour this flow exists
-            // to avoid. Ask the catalog itself, which already resolves a
-            // Cyrillic model word against a Latin catalog name — see
-            // SearchSkeleton. Only acted on when it is unambiguous.
+
             $model = $this->resolveModelFromCatalog($conversation->agent, $user->content);
         }
 
@@ -74,14 +67,6 @@ class PhotoReplyService
         return $message;
     }
 
-    /**
-     * "Все"/"всё": send a photo for every offered choice instead of making
-     * the customer pick one, capped at ImageReplyService::MAX_IMAGES so a
-     * long menu does not turn into a dozen images. Each photo's own caption
-     * (built in ImageReplyService/WikimediaImageSearch) already carries the
-     * product name and — for an internet result — its licence; the
-     * surrounding text is the honest summary of what actually went out.
-     */
     private function replyAll(ChannelDriverInterface $driver, Channel $channel, Conversation $conversation, Message $user, array $request, string $locale): Message
     {
         $choices = array_slice($request['choices'], 0, ImageReplyService::MAX_IMAGES);
@@ -114,19 +99,10 @@ class PhotoReplyService
         return $message;
     }
 
-    /**
-     * Resolve, send and report on one model. Shared by the single-model path
-     * and the "send all" loop so both go through exactly the same catalog
-     * lookup and delivery attempt.
-     *
-     * @return array{0: string, 1: int, 2: array} [status, images sent, updated evidence meta]
-     */
     private function sendPhotoFor(ChannelDriverInterface $driver, Channel $channel, Conversation $conversation, Message $user, string $model, string $context, array $meta): array
     {
         try {
-            // A photo follow-up should not require another LLM turn to
-            // repeat the price list. Query the existing safe catalog API
-            // once, keeping only photo evidence for the selected model.
+
             $category = '';
             if ($this->catalog->enabledFor($conversation->agent)) {
                 $found = $this->catalog->search($conversation->agent, ['query' => $model, 'limit' => 5]);
@@ -134,9 +110,7 @@ class PhotoReplyService
                 foreach ($found['products'] ?? [] as $product) {
                     $category .= ' '.($product['category'] ?? '');
                     if (! empty($product['image_url'])) {
-                        // Carries the price into the catalog photo's caption
-                        // (ImageReplyService) so a "send all" burst reads as
-                        // "Name — price" per image, not a bare picture.
+
                         $candidates[] = ['name' => $product['name'], 'url' => $product['image_url'], 'price' => $product['price'] ?? null];
                     }
                 }
@@ -158,25 +132,6 @@ class PhotoReplyService
         }
     }
 
-    /**
-     * The owner's own photos for whichever catalog products the search
-     * above already resolved — the trusted source ImageReplyService sends
-     * first and without the fuzzy name/relevance check every other candidate
-     * still goes through, since these are tied to a product the catalog
-     * query, not a loose text match, already decided is the right one.
-     * Correlated by name (the only identifier search_products exposes) and
-     * only for the uploaded catalog — a live database connection has no
-     * local product row to hang a photo on.
-     *
-     * Stamped with `for_model` — the exact model this call resolved, not a
-     * substring guess — so ImageReplyService can still tell these apart once
-     * they are in play: replyAll()'s "send all" loop re-sends sendPhotoFor()
-     * per choice while *accumulating* `product_image_candidates` across
-     * calls (each call's evidence carries the previous ones forward), and
-     * without this tag an earlier choice's owned photo — never relevance-
-     * checked — would still be sitting in that accumulated evidence and get
-     * sent again on a later choice's turn.
-     */
     private function ownedImageCandidates(Agent $agent, array $matchedProducts, string $model): array
     {
         if ($agent->usesLiveDatabase() || $matchedProducts === []) {
@@ -196,7 +151,6 @@ class PhotoReplyService
         return $candidates;
     }
 
-    /** A fresh message naming exactly one real product, with no pending menu to resolve against. */
     private function resolveModelFromCatalog(Agent $agent, string $text): string
     {
         $query = trim((string) preg_replace('/\s+/u', ' ', (string) preg_replace(self::QUERY_STOPWORDS, ' ', $text)));

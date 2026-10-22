@@ -6,14 +6,6 @@ use App\Models\DatabaseConnection;
 use App\Services\Database\LiveProductSource;
 use Illuminate\Foundation\Http\FormRequest;
 
-/**
- * Choosing the products table and saying what its columns mean.
- *
- * Shape only is validated here. Whether the table and each column ACTUALLY
- * exist is settled in the controller against a fresh read of the customer's
- * information_schema — a rule string cannot know that, and it is the check that
- * keeps an identifier from ever reaching the SQL builder unverified.
- */
 class StoreMappingRequest extends FormRequest
 {
     public function authorize(): bool
@@ -26,7 +18,7 @@ class StoreMappingRequest extends FormRequest
         $rules = [
             'table' => ['required', 'string', 'max:255'],
             'mapping' => ['required', 'array'],
-            // Without a product name a row is not a product.
+
             'mapping.name' => ['required', 'string', 'max:128'],
         ];
 
@@ -46,13 +38,6 @@ class StoreMappingRequest extends FormRequest
         ];
     }
 
-    /**
-     * The mapping with unassigned fields dropped, and any key outside the field
-     * vocabulary discarded — so a hand-crafted request cannot smuggle an extra
-     * "column" into the stored mapping.
-     *
-     * @return array<string, string>
-     */
     public function mapping(): array
     {
         $submitted = (array) $this->input('mapping', []);

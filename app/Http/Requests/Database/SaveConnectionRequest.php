@@ -7,14 +7,6 @@ use App\Services\Database\DriverManager;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
-/**
- * The connection form, for both "Test connection" and "Save".
- *
- * `password` is nullable on purpose: the tab never receives the stored secret
- * back, so an owner editing the host of a saved connection submits an empty
- * password field and means "keep the one you have". Only a non-empty value
- * replaces it.
- */
 class SaveConnectionRequest extends FormRequest
 {
     public function authorize(): bool
@@ -30,15 +22,12 @@ class SaveConnectionRequest extends FormRequest
             'port' => ['required', 'integer', 'min:1', 'max:65535'],
             'database' => ['required', 'string', 'max:255'],
             'username' => ['required', 'string', 'max:255'],
-            // Nullable = "unchanged". See the class docblock.
+
             'password' => ['nullable', 'string', 'max:255'],
             'ssl' => ['nullable', 'boolean'],
         ];
     }
 
-    /**
-     * @return array<string, mixed>
-     */
     public function credentials(): array
     {
         return [

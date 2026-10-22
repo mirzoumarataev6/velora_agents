@@ -22,9 +22,6 @@ class ChannelPolicy
         return $this->permitted($user, PermissionCatalog::CHANNELS_VIEW, $channel);
     }
 
-    /**
-     * Authorized via Gate::authorize('create', [Channel::class, $agent]).
-     */
     public function create(User $user, Agent $agent): bool
     {
         return $this->permitted($user, PermissionCatalog::CHANNELS_MANAGE, $agent);

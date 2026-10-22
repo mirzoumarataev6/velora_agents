@@ -4,22 +4,8 @@ namespace App\Services\Bi\Ingestion;
 
 use App\Services\Bi\BiIngestionException;
 
-/**
- * Extension → reader. The only place that mapping is written down.
- *
- * Deliberately keyed on the EXTENSION rather than on a sniffed magic number,
- * because the extension is what the upload validator already accepted and the two
- * must agree: a file that passed validation as .csv and is then read as a
- * spreadsheet because its first bytes happened to look like a zip would be
- * bypassing the size budget for its real format. When the extension lies, the
- * reader fails with CORRUPT_FILE, which is the correct and honest outcome —
- * "this is not the .xlsx it claims to be" is the owner's to fix.
- */
 class ReaderFactory
 {
-    /**
-     * @throws BiIngestionException
-     */
     public function make(string $absolutePath, string $extension): TabularReader
     {
         if (! is_file($absolutePath) || ! is_readable($absolutePath)) {
@@ -50,10 +36,9 @@ class ReaderFactory
         };
     }
 
-    /** @return array<int, string> */
     public function supportedExtensions(): array
     {
-        /** @var array<int, string> $configured */
+
         $configured = config('agent.bi.ingest.allowed_extensions', []);
 
         return $configured;

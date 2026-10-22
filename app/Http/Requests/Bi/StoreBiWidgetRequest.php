@@ -10,27 +10,6 @@ use App\Services\Bi\Query\TimeGrain;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
-/**
- * A card's definition.
- *
- * WHAT IS VALIDATED HERE AND WHAT IS NOT is the whole design of this class.
- *
- * Validated here: the CLOSED SETS. A widget type, an aggregate, a grain, a
- * filter operator and a sort direction all come from enums, and a value outside
- * one of them is a malformed request rather than a query that happens to fail —
- * so it is refused with a field-level message the form can show next to the
- * offending input.
- *
- * NOT validated here: whether `c7` exists in this dataset, whether SUM makes
- * sense on it, and whether the type can draw the result. Those need the
- * dataset's registry, they are already checked by SpecValidator and
- * WidgetSpecBuilder, and re-checking them at the request layer would mean two
- * implementations of the same rule drifting apart. More importantly it would
- * make saving a widget fail for a dataset that is MID-REBUILD, which is a
- * perfectly reasonable moment to be editing a board.
- *
- * So: shape and vocabulary here, meaning downstream.
- */
 class StoreBiWidgetRequest extends FormRequest
 {
     public function authorize(): bool
@@ -52,8 +31,7 @@ class StoreBiWidgetRequest extends FormRequest
 
             'spec.measures' => ['nullable', 'array', 'max:24'],
             'spec.measures.*.aggregate' => ['required', Rule::in(Aggregate::values())],
-            // Nullable because COUNT takes none — the pairing is checked by
-            // SpecValidator, which knows which aggregates need a column.
+
             'spec.measures.*.column' => ['nullable'],
 
             'spec.sorts' => ['nullable', 'array', 'max:8'],
@@ -71,8 +49,6 @@ class StoreBiWidgetRequest extends FormRequest
 
             'options' => ['nullable', 'array', 'max:20'],
 
-            // Accepted on create so the editor can place a card where the owner
-            // dropped it; omitted, BiWidget::defaultSlot() puts it at the bottom.
             'grid_x' => ['nullable', 'integer', 'min:0', 'max:11'],
             'grid_y' => ['nullable', 'integer', 'min:0', 'max:10000'],
             'grid_w' => ['nullable', 'integer', 'min:2', 'max:12'],

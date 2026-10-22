@@ -15,11 +15,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Throwable;
 
-/**
- * The LLM chooses an operation, never a table or a SQL string. Tool arguments
- * cross the same registry and shape validators as a human editor. The model's
- * prose is not trusted as an answer about numbers: only QueryRunner output is.
- */
 class AnalystChat
 {
     public function __construct(
@@ -96,12 +91,9 @@ class AnalystChat
         return $message;
     }
 
-    /** @return array<int, array{name:string,description:string,parameters:array}> */
     private function tools(): array
     {
-        // JSON Schema requires an object for `properties`; PHP's empty array
-        // would serialize as `[]`, which OpenAI rejects with HTTP 400 before
-        // the model can answer any BI question.
+
         $shape = fn (array $properties, array $required = []) => [
             'type' => 'object',
             'properties' => $properties === [] ? (object) [] : $properties,
@@ -123,7 +115,6 @@ class AnalystChat
         ];
     }
 
-    /** @return array<string, mixed> */
     private function execute(User $owner, BiDashboard $dashboard, BiDataset $dataset, string $name, array $args): array
     {
         if ($name === 'answer_question') {
@@ -212,7 +203,6 @@ class AnalystChat
         return ['kind' => 'refusal', 'text' => __('bi.chat.cannot_answer')];
     }
 
-    /** @return array<string, mixed> */
     private function widgetEffect(BiWidget $widget, BiDashboard $dashboard, string $text, array $undo): array
     {
         $item = $this->renderer->render($widget, $dashboard);
@@ -222,13 +212,11 @@ class AnalystChat
             'html' => view('bi.partials.widget-card', compact('item'))->render(), 'undo' => $undo];
     }
 
-    /** @return array<string, mixed> */
     private function snapshot(BiWidget $widget): array
     {
         return $widget->only(['id', 'bi_dataset_id', 'title', 'type', 'spec', 'filters', 'options', 'grid_x', 'grid_y', 'grid_w', 'grid_h']);
     }
 
-    /** Restore one recorded change, once, under a lock so two clicks cannot replay it. */
     public function undo(User $owner, BiDashboard $dashboard, BiChatMessage $message): array
     {
         return DB::transaction(function () use ($owner, $dashboard, $message): array {

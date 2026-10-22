@@ -16,20 +16,6 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 
-/**
- * Cards on a board: add, edit, refetch, delete.
- *
- * THE TWO-AUTHORIZATION RULE runs through every method here. A widget request
- * names two things the caller must own — the board it is on and the dataset it
- * reads — and both are checked, separately, every time. See BiWidgetPolicy for
- * why collapsing them would be a hole: a widget row whose `bi_dataset_id` had
- * been tampered with would otherwise be rendered having proven only that the
- * CARD belongs to the caller.
- *
- * Routes are nested under the dashboard and use `->scopeBindings()`, so a
- * widget id from another board 404s at the router rather than reaching a policy
- * that would have said yes.
- */
 class WidgetController extends Controller
 {
     public function __construct(private readonly WidgetRenderer $renderer, private readonly WidgetSpecBuilder $specs) {}
@@ -58,9 +44,6 @@ class WidgetController extends Controller
         $widget->bi_dataset_id = $dataset->getKey();
         $widget->filters = $request->validated('filters', []);
 
-        // Only where the request did not place it. A card added by dragging
-        // from the palette knows where it was dropped; one added from the
-        // editor does not, and goes to the bottom.
         $widget->forceFill(array_filter(
             BiWidget::defaultSlot($dashboard, $type),
             fn ($_, $key) => $widget->{$key} === null,
@@ -90,8 +73,6 @@ class WidgetController extends Controller
             'grid_x', 'grid_y', 'grid_w', 'grid_h',
         ]));
 
-        // Repointing a card at a different dataset is allowed, and is the
-        // reason the dataset is authorized on update as well as on create.
         $widget->bi_dataset_id = $dataset->getKey();
         $this->validateWidget($widget, $dataset);
         $widget->save();
@@ -103,14 +84,6 @@ class WidgetController extends Controller
         return back()->with('status', __('bi.widgets.saved'));
     }
 
-    /**
-     * One card's numbers, as JSON — the refresh button and the filter bar.
-     *
-     * Returns 200 with an `error` key rather than an HTTP error status when the
-     * query is refused. The card has already rendered; what the browser needs is
-     * the sentence to put inside it, and a 422 here would be indistinguishable
-     * from the request itself being malformed.
-     */
     public function data(Request $request, BiDashboard $dashboard, BiWidget $widget): JsonResponse
     {
         $this->authorize('view', $dashboard);
@@ -127,8 +100,6 @@ class WidgetController extends Controller
             'search' => ['sometimes', 'string', 'max:120'],
         ]);
 
-        // A table page is an ephemeral variation of the saved QuerySpec. The
-        // request may choose a validated alias or text column, never SQL.
         if ($widget->type === WidgetType::Table && ($request->has('offset') || $request->has('sort') || $request->filled('search'))) {
             $copy = clone $widget;
             $spec = $widget->spec;
@@ -209,14 +180,6 @@ class WidgetController extends Controller
         ]);
     }
 
-    /**
-     * The dataset a request names, authorized and proven ready.
-     *
-     * Looked up through `ownedBy` AND then run through the policy. The scope is
-     * what makes a foreign id a 404-shaped validation error instead of a 403
-     * that confirms the row exists; the policy is the check that would still be
-     * there if someone replaced the scope with a plain `find`.
-     */
     private function dataset(StoreBiWidgetRequest $request, BiDashboard $dashboard): BiDataset
     {
         $dataset = BiDataset::where('team_id', $dashboard->team_id)

@@ -8,10 +8,8 @@ use Illuminate\Support\Sleep;
 
 class HumanizedReplySender
 {
-    // Создаёт отправитель ответов с разбивкой текста через HumanReplySplitter
     public function __construct(protected HumanReplySplitter $splitter) {}
 
-    // Отправляет ответ частями с имитацией печати, как это делает человек
     public function send(
         ChannelDriverInterface $driver,
         Channel $channel,
@@ -45,7 +43,6 @@ class HumanizedReplySender
         return count($messages);
     }
 
-    // Возвращает список сообщений, на которые будет разбит текст ответа
     public function messagesFor(string $text): array
     {
         return $this->splitter->split(
@@ -55,7 +52,6 @@ class HumanizedReplySender
         );
     }
 
-    // Вычисляет задержку перед отправкой сообщения в зависимости от его длины
     protected function delayMsFor(string $message): int
     {
         $min = (int) config('agent.humanize.min_delay_ms', 800);

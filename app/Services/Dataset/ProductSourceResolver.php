@@ -15,10 +15,8 @@ class ProductSourceResolver
 
     public const SOURCES = [self::DATASET, self::DATABASE];
 
-    // Создаёт резолвер источников товаров с менеджером драйверов БД
     public function __construct(protected DriverManager $drivers) {}
 
-    // Возвращает подходящий источник товаров для агента (датасет или живая БД)
     public function for(Agent $agent): ?ProductSource
     {
         if ($agent->product_source === self::DATABASE) {

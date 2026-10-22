@@ -6,7 +6,6 @@ use App\Models\Concerns\ScopesActiveTeam;
 use App\Models\Concerns\StampsTeam;
 use App\Observers\ConversationObserver;
 use App\Policies\ConversationPolicy;
-use Database\Factories\ConversationFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Attributes\UsePolicy;
@@ -21,9 +20,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 #[ObservedBy(ConversationObserver::class)]
 class Conversation extends Model
 {
-    /** @use HasFactory<ConversationFactory> */
     use HasFactory;
-
     use ScopesActiveTeam;
     use StampsTeam;
 
@@ -36,16 +33,6 @@ class Conversation extends Model
         ];
     }
 
-    /**
-     * Escalated to a human and not looked at since.
-     *
-     * Opening the thread is what clears it (that is what writes
-     * operator_read_at), so the bell empties by reading the conversation rather
-     * than by dismissing a notification and forgetting about it.
-     *
-     * @param  Builder<Conversation>  $query
-     * @return Builder<Conversation>
-     */
     public function scopeNeedsHumanUnattended(Builder $query): Builder
     {
         return $query->whereNotNull('conversations.needs_human_at')
@@ -55,21 +42,11 @@ class Conversation extends Model
             );
     }
 
-    /**
-     * Leads captured out of this conversation. A conversation can produce more
-     * than one — a customer who orders twice is still one conversation.
-     */
     public function leads(): HasMany
     {
         return $this->hasMany(Lead::class);
     }
 
-    /**
-     * A customer message has arrived since the owner last opened this thread.
-     *
-     * @param  Builder<Conversation>  $query
-     * @return Builder<Conversation>
-     */
     public function scopeUnread(Builder $query): Builder
     {
         return $query->whereHas('messages', function ($q) {
@@ -86,10 +63,6 @@ class Conversation extends Model
         return $this->belongsTo(Agent::class);
     }
 
-    /**
-     * The person behind this thread. Nullable: playground threads have none,
-     * and a thread whose customer profile was deleted keeps its transcript.
-     */
     public function customer(): BelongsTo
     {
         return $this->belongsTo(Customer::class);

@@ -22,16 +22,10 @@ class ProjectBoards
         $locale = $this->resolveLocale($teamId, $creatorId);
 
         try {
-            // Translated at creation time, in the creator's (or else the team
-            // owner's) saved locale. The name is then plain text on the row: it is
-            // NOT re-translated if that locale later changes, because it is
-            // editable and a silent rewrite would clobber a name someone already
-            // chose for themselves.
+
             return $this->create($teamId, $creatorId, __('projects.defaults.board_name', [], $locale), null, 'team', 'blue', '_inbox', $locale);
         } catch (UniqueConstraintViolationException) {
-            // Two requests can open a new team's first task simultaneously.
-            // The unique team+slug key decides which one created the board;
-            // the loser uses that same board instead of producing twins.
+
             return ProjectBoard::where('team_id', $teamId)->where('slug', '_inbox')->firstOrFail();
         }
     }
@@ -59,8 +53,6 @@ class ProjectBoards
                 'slug' => $slug ?? 'board-'.Str::lower(Str::random(16)),
             ]);
 
-            // Same reasoning as the default board name above: translated once, here,
-            // in the resolved owner/creator locale, then stored as plain editable text.
             foreach ([
                 ['name' => __('projects.defaults.column_todo', [], $locale), 'is_done' => false],
                 ['name' => __('projects.defaults.column_doing', [], $locale), 'is_done' => false],
@@ -87,16 +79,6 @@ class ProjectBoards
         });
     }
 
-    /**
-     * Picks the locale for this board's default names. Deliberately NOT
-     * app()->getLocale(): defaultForTeam() is also called from Task::booted()
-     * on any task write — including queue jobs, the agent reply pipeline,
-     * artisan commands and DemoSeeder — where the process never ran SetLocale
-     * and the locale is just config('app.locale'). A Tajik or Russian team's
-     * first board would silently get English names. The creator's own saved
-     * preference wins when known; otherwise fall back to the team owner's,
-     * since a background job still has no request-scoped locale to trust.
-     */
     private function resolveLocale(int $teamId, ?int $creatorId): string
     {
         if ($creatorId !== null) {

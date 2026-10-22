@@ -27,11 +27,6 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
-/**
- * Turns a customer message into a grounded reply: embeds the question, retrieves
- * relevant knowledge chunks, builds the system prompt, calls the LLM provider, and persists
- * both sides of the exchange with retrieval/timing metadata.
- */
 class AgentReplyService
 {
     protected const LANGUAGE_NAMES = [
@@ -41,75 +36,26 @@ class AgentReplyService
         'uz' => 'Uzbek',
     ];
 
-    /**
-     * If the LLM provider is down (e.g. a quota exhaustion that won't clear for
-     * hours), don't spam the customer with the same canned fallback text on
-     * every message they send in the meantime.
-     */
     protected const FALLBACK_SUPPRESSION_MINUTES = 5;
 
-    /**
-     * Matches a message that is ONLY a greeting (nothing else) so the
-     * provider-down fallback path can reply with something friendlier than the
-     * generic fallback text — still no API call, just a nicer canned reply.
-     */
     protected const GREETING_PATTERN = '/^\s*(привет\w*|здравствуй\w*|добр(ый|ое)\s+(день|вечер|утро)|hi|hello+|hey+|salom\w*|ассалому\s*алейкум|салом\w*|assalomu\s*alaykum)[\s!.,?]*$/iu';
 
-    /**
-     * How many times the model may call search_products before the reply is
-     * written anyway. One refinement after a miss is genuinely useful ("no
-     * jackets under 500" -> widen the budget); a third is the model looping.
-     */
     protected const MAX_PRODUCT_SEARCH_ROUNDS = 2;
 
-    /**
-     * Characters of output budgeted per token when sizing the generation cap.
-     *
-     * One, not the three or four a latin-calibrated estimate would use. The
-     * agent's languages are Russian and Tajik, and Cyrillic costs the tokenizer
-     * roughly one token per character — a rare word can cost more. A cap sized
-     * for latin cut a 600-character reply off at around 400, in the middle of a
-     * word ("Если вас интересует какая-то определ"), and the customer saw the
-     * fragment. The character limit is a STYLE instruction the model follows;
-     * this cap is only the safety net behind it, so it is sized to sit above
-     * what the prompt asks for rather than to enforce it.
-     */
     protected const OUTPUT_CHARS_PER_TOKEN = 1.0;
 
-    /**
-     * Extra room on top, for the sentence the model is finishing when it reaches
-     * the limit. Truncation is worse than length.
-     */
     protected const OUTPUT_TOKEN_HEADROOM = 1.25;
 
-    /** Whatever the owner sets, one chat reply is never bigger than this. */
     protected const MAX_OUTPUT_TOKENS = 4000;
 
-    /**
-     * How many of the customer's own recent messages are checked for the same
-     * question being asked again. Three strikes — asked, re-asked, asked a third
-     * time — is a conversation that is not going to resolve itself.
-     */
     protected const REPEATED_QUESTION_LOOKBACK = 6;
 
-    /**
-     * How far back to look for the language the customer is writing in. Enough
-     * to ride out a run of "ок"/photo turns without reaching back into a part of
-     * the conversation they have already moved on from.
-     */
     protected const LANGUAGE_LOOKBACK = 5;
 
-    /**
-     * How recently an order must have been recorded for a fresh confirmation to
-     * be taken as referring to it. A customer saying "оформите ещё раз" a minute
-     * later means the same order, not a second one.
-     */
     protected const ORDER_CLAIM_WINDOW_MINUTES = 10;
 
-    /** How many of the assistant's own recent replies a new one must not repeat. */
     protected const REPEAT_LOOKBACK = 3;
 
-    /** "/start", "/start@SomeBot", "/start <deep-link payload>". */
     protected const START_COMMAND_PATTERN = '/^\/start(?:@\S+)?(?:\s.*)?$/su';
 
     public function __construct(
@@ -126,21 +72,12 @@ class AgentReplyService
         protected HostilityDetector $hostility,
         protected OrderConfirmationGuard $orderClaims,
         protected HagglingService $haggling,
-        // Stateless and dependency-free, so it is defaulted rather than bound:
-        // nothing ever needs to swap it, and the backfill command constructs
-        // its own copy of the same class.
+
         protected NonAnswerDetector $nonAnswers = new NonAnswerDetector,
         protected CustomerLocale $locales = new CustomerLocale,
         protected ReplyStyleCleaner $styleCleaner = new ReplyStyleCleaner,
     ) {}
 
-    /**
-     * Whether the last assistant reply in this conversation was a provider-down
-     * fallback sent recently enough that a new reply attempt should be
-     * skipped entirely — both to avoid spamming the customer with repeated
-     * identical canned text, and to avoid a doomed API call when the failure
-     * is a daily quota that won't clear within the window anyway.
-     */
     public function shouldSuppressReply(Conversation $conversation): bool
     {
         $lastAssistant = $conversation->messages()
@@ -156,13 +93,6 @@ class AgentReplyService
         return $lastAssistant->created_at->gt(now()->subMinutes(self::FALLBACK_SUPPRESSION_MINUTES));
     }
 
-    /**
-     * Persist the customer's message and generate a full RAG-grounded reply for it.
-     * Used by the Playground, which doesn't need the message pre-created for
-     * idempotency (there's no external delivery to deduplicate).
-     *
-     * @return array{user: Message, assistant: Message}
-     */
     public function reply(
         Conversation $conversation,
         string $userMessage,
@@ -174,8 +104,7 @@ class AgentReplyService
             'role' => 'user',
             'content' => $userMessage,
             'external_message_id' => $externalMessageId,
-            // A sandbox recording is stored exactly like a Telegram voice note:
-            // the transcript is the content, and this is what says it was spoken.
+
             'source_type' => $sourceType,
             'voice_duration' => $voiceDuration,
         ]);
@@ -183,13 +112,6 @@ class AgentReplyService
         return ['user' => $userMsg, 'assistant' => $this->generateReplyFor($conversation, $userMsg)];
     }
 
-    /**
-     * Generate and persist a full RAG-grounded reply for an ALREADY-persisted
-     * user message. Callers that need dedup-safe message creation (e.g. a
-     * channel webhook job, where the same delivery could be processed more
-     * than once) should create the user message themselves first — guarded by
-     * a unique constraint — and only call this once that succeeds.
-     */
     public function generateReplyFor(Conversation $conversation, Message $userMsg): Message
     {
         $agent = $conversation->agent;
@@ -202,9 +124,9 @@ class AgentReplyService
         $generationMs = 0.0;
         $usage = ['input_tokens' => 0, 'output_tokens' => 0];
         $failed = false;
-        /** @var Lead[] $capturedLeads */
+
         $capturedLeads = [];
-        /** @var Lead[] $haggleLeads Pending price approvals raised this turn. */
+
         $haggleLeads = [];
         $escalation = null;
         $productSearches = 0;
@@ -221,29 +143,14 @@ class AgentReplyService
         try {
             $detectEscalation = $this->escalation->enabledFor($agent);
             $searchProducts = $this->productSearch->enabledFor($agent);
-            // Negotiating needs something to negotiate over: with no catalog
-            // there is no listed price, and the floor is a percentage of one.
+
             $negotiatesPrice = $searchProducts && $this->haggling->enabledFor($agent);
 
-            // The reply the customer is answering. Held here rather than looked
-            // up later because two separate decisions need it: how to prompt for
-            // a short follow-up, and whether what comes back is that same reply
-            // sent again.
             $previousReply = $this->lastAssistantMessage($conversation, $userMsg);
             $isFollowUp = $this->followUps->isShortFollowUp($userMsg->content, $previousReply !== null);
 
-            // Detected here, from the text, and not left to the model: a
-            // customer swearing at the assistant is a fact about their message,
-            // and the model — prompted to be warm and de-escalating — reads it
-            // as something to apologise for rather than as a reason to fetch a
-            // person. See HostilityDetector.
             $handover = $detectEscalation ? $this->detectHandover($conversation, $userMsg) : null;
 
-            // "How much is the Lenovo?" is answered entirely by search_products;
-            // embedding it and scanning the knowledge base adds a round trip and
-            // a full cosine pass to produce chunks about delivery policy. Skipped
-            // only when the message is unambiguously a product question — see
-            // ProductQuestionDetector, which is built to say no when unsure.
             $retrievalSkipped = $searchProducts
                 && config('agent.rag.skip_for_product_questions')
                 && $this->productQuestions->isPureProductQuestion($userMsg->content);
@@ -277,9 +184,7 @@ class AgentReplyService
             if ($searchProducts) {
                 $systemPrompt .= "\n\n".$this->productSearch->systemInstruction();
             }
-            // Unconditional: recording what a customer wants to buy is the
-            // whole job, and an agent that cannot take an order is not a
-            // cheaper agent — it is a broken one.
+
             $systemPrompt .= "\n\n".$this->leadCapture->systemInstruction();
             if ($negotiatesPrice) {
                 $systemPrompt .= "\n\n".$this->haggling->systemInstruction($agent);
@@ -287,8 +192,7 @@ class AgentReplyService
             if ($detectEscalation) {
                 $systemPrompt .= "\n\n".$this->escalation->systemInstruction($agent);
             }
-            // Keep the writing guidance after the tool instructions: their
-            // ordering examples must not become a sales invitation every turn.
+
             $systemPrompt .= "\n\n".$this->conversationStyleInstruction();
             $contents = $this->buildContents($conversation);
 
@@ -302,13 +206,10 @@ class AgentReplyService
             $options = [
                 'max_output_tokens' => $this->maxOutputTokens($agent),
                 'temperature' => 0.4,
-                // Disabled: this is a latency-sensitive chat reply, not a reasoning task, and
-                // thinking tokens are drawn from the same maxOutputTokens budget as the visible
-                // reply — leaving thinking on risks silently truncating (or delaying) the answer.
+
                 'thinking_budget' => 0,
             ];
-            // Both tools ride on the one generation that was happening anyway —
-            // the frustration check costs no extra request.
+
             $tools = [];
             if ($searchProducts) {
                 $tools[] = $this->productSearch->toolDefinition();
@@ -329,10 +230,6 @@ class AgentReplyService
             $toolCalls = $result['tool_calls'] ?? [];
             $carried = ['input_tokens' => 0, 'output_tokens' => 0];
 
-            // A catalog lookup is answered here and fed back, so the reply the
-            // customer sees is written with the real prices in hand. $contents
-            // grows with the exchange, which is what keeps a follow-up round
-            // (and a later lead confirmation) coherent.
             if ($searchProducts) {
                 $resolved = $this->resolveProductSearches($agent, $systemPrompt, $contents, $result, $options);
                 $result = $resolved['result'];
@@ -342,18 +239,10 @@ class AgentReplyService
                 $productQueries = $resolved['queries'];
                 $productImageCandidates = $resolved['images'];
                 $productMisses = $resolved['misses'];
-                // Replaced, not appended: $resolved carries forward the non-search
-                // calls from every superseded generation (the first one included),
-                // and $result is now the final generation. Adding the original
-                // list back would record the same lead twice.
+
                 $toolCalls = [...$resolved['tool_calls'], ...($result['tool_calls'] ?? [])];
             }
 
-            // The catalog answers a product question only if the model actually
-            // asks it. A model that answers one out of its own head — the exact
-            // failure behind "we don't have that" for a product sitting in the
-            // catalog — leaves no other trace, so it is recorded here with the
-            // message that produced it.
             if ($searchProducts && $retrievalSkipped && $productSearches === 0) {
                 Log::warning('Product question answered without calling '.ProductSearchService::TOOL_NAME, [
                     'agent_id' => $agent->id,
@@ -370,9 +259,6 @@ class AgentReplyService
                 $escalation = $this->firstEscalationCall($agent, $toolCalls);
             }
 
-            // The detector's verdict stands on its own. If the model also
-            // flagged this turn, its summary is the better one to keep — it saw
-            // the conversation; the detector only saw the words.
             if ($handover !== null) {
                 $escalation = [
                     'signal' => $handover['signal'],
@@ -395,11 +281,6 @@ class AgentReplyService
                 ))
                 : [];
 
-            // A price the assistant was already allowed to give is not a
-            // decision for the owner. Checked here rather than trusted to the
-            // prompt: the model reads the listed price off its own earlier
-            // message often enough that unfiltered escalations would train the
-            // owner to ignore the ones that matter. See isBelowFloor().
             $haggleCalls = array_values(array_filter(
                 $haggleCalls,
                 fn ($call) => $this->haggling->isBelowFloor(
@@ -410,26 +291,19 @@ class AgentReplyService
             ));
 
             if ($haggleCalls !== []) {
-                // The price question outranks everything else this turn: until
-                // the owner answers there is no price, so there is no order to
-                // record either. Any create_lead call made alongside it is
-                // dropped rather than filed against a price nobody agreed to.
+
                 $request = $this->requestPriceApproval($agent, $conversation, $contents, $systemPrompt, $result, $haggleCalls);
                 $replyText = $request['text'];
                 $usage = $request['usage'];
                 $haggleLeads = $request['leads'];
             } elseif ($leadCalls !== [] && $this->leadCapture->shouldAskForPhoneFirst($conversation, $leadCalls)) {
-                // Held back for exactly one turn, so the customer is asked for a
-                // number before the order is filed without one. Nothing is
-                // persisted here; the next attempt records it whatever they say.
+
                 $ask = $this->askForPhoneBeforeRecording($agent, $conversation, $contents, $systemPrompt, $result, $leadCalls);
                 $replyText = $ask['text'];
                 $usage = $ask['usage'];
                 $askedForPhone = true;
             } elseif ($leadCalls !== []) {
-                // The model asked to record a lead: persist it, then do one more
-                // round-trip (tool result fed back) so the customer gets a natural
-                // confirmation in the conversation's own language.
+
                 $capture = $this->captureLeadsAndConfirm($agent, $conversation, $contents, $systemPrompt, $result, $leadCalls);
                 $replyText = $capture['text'];
                 $usage = $capture['usage'];
@@ -437,24 +311,14 @@ class AgentReplyService
             } else {
                 $replyText = trim($result['text']) !== ''
                     ? $result['text']
-                    // Flagging must never turn into silence. If the model spent
-                    // its turn on the tool call and wrote nothing, the customer
-                    // still gets an acknowledgement rather than the generic
-                    // "I don't know" fallback, which would read as a brush-off
-                    // to someone who has just complained.
+
                     : ($escalation !== null || $handover !== null
                         ? $this->escalationAcknowledgement($agent)
                         : $this->fallbackMessage($agent));
                 $usage = ['input_tokens' => $result['input_tokens'], 'output_tokens' => $result['output_tokens']];
 
-                // A reply the model ran out of room to finish must not reach the
-                // customer ending mid-word.
                 $replyText = $this->repairTruncatedReply($replyText, $result['finish_reason'] ?? null);
 
-                // Every turn, against the last few replies — not only short
-                // follow-ups against the last one. The loop this closes was
-                // three full-sentence "something else, not MacBook" messages,
-                // none of them short, each answered with the same list.
                 $recentReplies = $this->recentAssistantReplies($conversation, $userMsg);
 
                 if ($recentReplies !== []) {
@@ -479,12 +343,6 @@ class AgentReplyService
                 $replyText = $cleaned;
             }
 
-            // A confirmation the customer can read must correspond to a row
-            // they can be phoned about. Runs last, on the final text, whichever
-            // path produced it.
-            // Skipped while a price is out for approval: the reply deliberately
-            // promises nothing, and the guard exists to catch a confirmation
-            // that WAS given.
             if ($haggleLeads === []) {
                 $replyText = $this->honourAnyOrderClaim($agent, $conversation, $replyText, $capturedLeads);
             }
@@ -492,9 +350,6 @@ class AgentReplyService
             $replyText = $this->removeFalsePhotoConfirmation($replyText);
             $replyText = $this->rejectEmptyReply($agent, $conversation, $replyText);
 
-            // Superseded generations (a turn the model spent calling
-            // search_products) still cost tokens; the owner is billed for the
-            // whole exchange, so it is all recorded.
             $usage['input_tokens'] += $carried['input_tokens'];
             $usage['output_tokens'] += $carried['output_tokens'];
 
@@ -505,15 +360,11 @@ class AgentReplyService
                 'conversation_id' => $conversation->id,
                 'error' => $e->getMessage(),
             ]);
-            // When the provider is already down, a canned reply that fits the
-            // message reads as a normal answer instead of a second "something's
-            // broken" signal stacked on top of a trivial one.
+
             $replyText = match (true) {
-                // A customer who has just sworn at the assistant must not be
-                // answered with "we'll get back to you" — they were promised a
-                // person, and the flag below is about to summon one.
+
                 $handover !== null => $this->escalationAcknowledgement($agent),
-                // A bare greeting doesn't need the LLM to answer well.
+
                 $this->isSimpleGreeting($userMsg->content) => $this->greetingMessage($agent, $conversation),
                 default => $this->fallbackMessage($agent),
             };
@@ -556,55 +407,36 @@ class AgentReplyService
                 'embedding_ms' => round($embeddingMs, 1),
                 'search_ms' => round($searchMs, 2),
                 'retrieval_ms' => round($embeddingMs + $searchMs, 1),
-                // Surfaces in the Playground's per-message diagnostics beside the
-                // timings, so a zero retrieval time reads as a decision rather
-                // than as something silently broken.
+
                 'retrieval_skipped' => $retrievalSkipped,
                 'generation_ms' => round($generationMs, 1),
                 'total_ms' => round($totalMs, 1),
                 'failed' => $failed,
                 'lead_captured' => $capturedLeads !== [],
-                // Recorded on the turn that asked, and read back on the next
-                // order attempt so the customer is only ever asked once.
+
                 LeadCaptureService::ASKED_FOR_PHONE => $askedForPhone,
                 'lead_ids' => array_map(fn (Lead $lead) => $lead->id, $capturedLeads),
-                // A turn that ended in "я уточню у менеджера". Visible in the
-                // Playground beside the other decisions this turn made.
+
                 'price_approval_requested' => $haggleLeads !== [],
                 'haggle_lead_ids' => array_map(fn (Lead $lead) => $lead->id, $haggleLeads),
                 'escalated' => $escalation !== null,
                 'escalation_signal' => $escalation['signal'] ?? null,
                 'escalation_confidence' => $escalation['confidence'] ?? null,
-                // How many catalog lookups this reply is grounded in. Surfaces in
-                // the Playground's per-message diagnostics the same way retrieval
-                // timings do, so an owner debugging a wrong price can see whether
-                // the dataset was consulted at all.
+
                 'product_searches' => $productSearches,
-                // What the catalog was asked for, so the owner's dashboard can
-                // show demand rather than only sales.
+
                 'product_queries' => $productQueries,
                 'product_image_candidates' => array_slice($productImageCandidates, 0, 10),
-                // Whether this turn ended without an answer, and why. Recorded
-                // here because nothing else in the schema survives it: a
-                // question the agent could not answer produces no lead, no
-                // escalation and no error — the customer simply leaves. The
-                // question itself rides along so the dashboard can group
-                // recurring ones without joining back through the transcript.
+
                 'unanswered' => $unanswered !== null,
                 'unanswered_reason' => $unanswered['reason'] ?? null,
-                // Which signal caught it: the facts of the turn ('retrieval',
-                // 'pipeline') or the wording of the reply ('reply_text'). The
-                // owner never sees this; it exists so a noisy detector can be
-                // told apart from a noisy agent when tuning either one.
+
                 'unanswered_detected_by' => $unanswered['detected_by'] ?? null,
                 'unanswered_question' => $unanswered === null ? null : mb_substr(trim($userMsg->content), 0, 300),
-                // Why a handover fired, when one did — the owner's inbox shows
-                // the signal, and this shows whether a person or a pattern
-                // decided it.
+
                 'escalation_detected_by' => $escalation['detected_by'] ?? ($escalation !== null ? 'model' : null),
                 'escalation_reason' => $escalation['reason'] ?? null,
-                // The follow-up path, so a repeated answer that slipped through
-                // is visible in the Playground rather than only in the logs.
+
                 'short_follow_up' => $isFollowUp,
                 'style_cleaned' => $styleCleaned,
                 'rewrote_repeated_reply' => $rewroteRepeat,
@@ -617,9 +449,6 @@ class AgentReplyService
             SendLeadNotificationJob::dispatch($lead);
         }
 
-        // After the reply is persisted: the customer gets this turn's answer,
-        // and only the NEXT incoming message finds the conversation in human
-        // hands. Flagging is not a gag order on the reply already written.
         if ($escalation !== null) {
             $this->escalation->escalate($agent, $conversation, $escalation);
         }
@@ -627,41 +456,6 @@ class AgentReplyService
         return $assistantMsg;
     }
 
-    /**
-     * Did this turn leave the customer without an answer, and if so why?
-     *
-     * Deliberately narrow. The temptation is to flag anything that looks
-     * uncertain, and a dashboard that cries wolf gets ignored — so only three
-     * situations count, each of which is a FACT about the turn rather than a
-     * reading of the reply text:
-     *
-     *  - catalog_miss: the model searched the catalog and every search came
-     *    back empty. The customer asked for something the shop does not list.
-     *    This is the one that pays for the feature: it is demand the owner
-     *    cannot see any other way.
-     *  - knowledge_miss: the agent was asked a real question and told the
-     *    customer it did not know. Judged from the REPLY, not from retrieval
-     *    scores — see the long note at the check itself for why scoring the
-     *    knowledge base cannot answer this on its own.
-     *  - provider_down: no answer was generated. Worth counting separately so
-     *    an outage does not masquerade as missing content.
-     *
-     * A turn that recorded an order is never unanswered, whatever else it did:
-     * the customer got what they came for.
-     *
-     * WHAT COUNTS AS UNANSWERED is what the customer was told, not what the
-     * pipeline scored. The catalog and provider branches below are facts about
-     * the turn and stay that way; the knowledge branch asks
-     * `looksLikeANonAnswer()` about the actual reply, because the knowledge
-     * base is only ONE of the agent's sources — business settings and the
-     * model's own competence are the others — and a widget that flags every
-     * answer the vector store did not supply spends its credibility on correct
-     * answers within a week of launch.
-     *
-     * @param  RetrievedChunk[]  $retrieved
-     * @param  Lead[]  $capturedLeads
-     * @return array{reason: 'catalog_miss'|'knowledge_miss'|'provider_down', detected_by: 'pipeline'|'retrieval'|'reply_text'}|null
-     */
     protected function classifyUnanswered(
         bool $failed,
         int $productSearches,
@@ -674,8 +468,7 @@ class AgentReplyService
         bool $escalated,
         bool $priceApprovalRequested,
     ): ?array {
-        // Both of these ended the turn with the customer holding something real
-        // — an order, or a price the owner is about to rule on.
+
         if ($capturedLeads !== [] || $priceApprovalRequested) {
             return null;
         }
@@ -690,49 +483,18 @@ class AgentReplyService
                 : null;
         }
 
-        // No catalog was consulted, so a knowledge miss is only meaningful if
-        // the knowledge base was actually asked. Greetings and one-word replies
-        // are excluded: they have nothing to retrieve and would drown the list.
         if ($retrievalSkipped || ! $this->looksLikeAQuestion($userMessage)) {
             return null;
         }
 
-        // THE REPLY DECIDES. Not retrieval.
-        //
-        // This check used to come second, after an early return on "nothing
-        // confident was retrieved" — and that early return was wrong, because
-        // it treated the knowledge base as the agent's only source of truth.
-        // It is not. The owner's address, opening hours and house rules live in
-        // the agent's own settings (custom_system_prompt, rules_instructions,
-        // description) and reach the model directly, never through the vector
-        // store; general questions about the field are answered from the
-        // model's own competence. A correct, specific answer to "а где вы
-        // находитесь" therefore scores nothing against the uploaded documents
-        // BY DESIGN — and was being reported to the owner as "нет в базе
-        // знаний" while sitting next to the right address.
-        //
-        // So low retrieval confidence is not evidence of anything on its own.
-        // The question this widget asks is whether the CUSTOMER went away
-        // without an answer, and the only place that is visible is the reply.
         if (! $this->looksLikeANonAnswer($replyText)) {
             return null;
         }
 
-        // An escalation acknowledgement ("передаю менеджеру") reads exactly like
-        // an apology to the matcher above, and a handover is already its own
-        // category in the owner's inbox. Counting it here would file one event
-        // under two problems.
         if ($escalated) {
             return null;
         }
 
-        // The turn IS unanswered. Retrieval's only remaining job is to say
-        // which kind of hole it was, which is what the owner acts on
-        // differently: nothing relevant found means the knowledge base is
-        // missing the topic outright, while a confident chunk that still
-        // produced "I don't know" means the material is there but does not
-        // cover this case — the Dushanbe page answering a question about
-        // Khujand.
         $confident = array_filter($retrieved, fn (RetrievedChunk $chunk) => $chunk->confident);
 
         return [
@@ -741,30 +503,17 @@ class AgentReplyService
         ];
     }
 
-    /**
-     * Did the agent tell the customer, in whatever words it chose, that it does
-     * not know?
-     *
-     * The judgement itself lives in NonAnswerDetector, because the backfill
-     * command that re-judges turns recorded under the older rule has to reach
-     * exactly the same verdict this does — see that class.
-     */
     protected function looksLikeANonAnswer(string $reply): bool
     {
         return $this->nonAnswers->matches($reply);
     }
 
-    /**
-     * A crude but deliberate filter: enough words to be a request, or an
-     * explicit question mark. Its only job is to keep "ок", "привет" and a
-     * bare emoji out of the owner's unanswered list.
-     */
     protected function looksLikeAQuestion(string $message): bool
     {
         $message = trim($message);
 
         if ($message === '' || str_starts_with($message, '[')) {
-            return false; // A photo/voice placeholder, not a typed question.
+            return false;
         }
 
         return str_contains($message, '?')
@@ -772,24 +521,6 @@ class AgentReplyService
             || count(preg_split('/\s+/u', $message, -1, PREG_SPLIT_NO_EMPTY) ?: []) >= 3;
     }
 
-    /**
-     * Answer the model's search_products calls and let it write the reply with
-     * the results in hand.
-     *
-     * Each round appends the call and its result to $contents and regenerates.
-     * The loop is bounded by MAX_PRODUCT_SEARCH_ROUNDS: a model that keeps
-     * searching instead of answering must still produce a reply, so whatever it
-     * last wrote is what the customer gets.
-     *
-     * The search itself cannot fail the turn — ProductSearchService returns an
-     * empty result with guidance rather than throwing — so a catalog problem
-     * degrades to "I could not find that" instead of the generic fallback.
-     *
-     * @param  array<int, array<string, mixed>>  $contents
-     * @param  array<string, mixed>  $result  The generation that may contain tool calls.
-     * @param  array<string, mixed>  $options
-     * @return array{result: array<string, mixed>, contents: array<int, array<string, mixed>>, carried: array{input_tokens: int, output_tokens: int}, tool_calls: array<int, array<string, mixed>>, searches: int, queries: array<int, array{query: ?string, category: ?string, count: int}>, misses: int}
-     */
     protected function resolveProductSearches(
         Agent $agent,
         string $systemPrompt,
@@ -800,11 +531,7 @@ class AgentReplyService
         $carried = ['input_tokens' => 0, 'output_tokens' => 0];
         $seenToolCalls = [];
         $searches = 0;
-        // What the customer was actually shopping for this turn, and how much of
-        // it the catalog could answer. Recorded on the message because the
-        // owner's dashboard has no other way to see demand: a product asked for
-        // ten times and never stocked leaves no lead, no order and no trace
-        // anywhere else in the schema.
+
         $queries = [];
         $images = [];
         $misses = 0;
@@ -830,32 +557,19 @@ class AgentReplyService
                 $searches++;
 
                 $queries[] = [
-                    // The normalized filters, not the raw arguments: they are
-                    // what was really searched for, and they are already
-                    // trimmed and length-capped.
+
                     'query' => $found['filters']['query'] ?? null,
                     'category' => $found['filters']['category'] ?? null,
                     'count' => (int) $found['count'],
                 ];
 
-                // A real alternative in "nearest" (the words relaxation included)
-                // is a product the customer is being shown, not a miss the owner
-                // needs to see — only an EMPTY search, with nothing to offer at
-                // all, is the unanswered demand classifyUnanswered() reports on.
                 if ((int) $found['count'] === 0 && empty($found['nearest'])) {
                     $misses++;
                 }
 
-                // Info, not debug: this is the record of what the model asked
-                // the catalog for. When an owner reports "it says we don't have
-                // it", the first question is whether the model extracted the
-                // right filters from the customer's words, and this is the only
-                // place that answers it.
                 Log::info('agent.product_search', [
                     'agent_id' => $agent->id,
-                    // Raw and normalized side by side: the difference between
-                    // them is the argument the tool refused (a negative price, a
-                    // non-numeric limit) and is exactly what is worth seeing.
+
                     'arguments' => $arguments,
                     'filters' => $found['filters'],
                     'count' => $found['count'],
@@ -871,9 +585,6 @@ class AgentReplyService
                 ];
             }
 
-            // The generation that asked for the search is about to be replaced,
-            // but any OTHER tool it called on the same turn (a lead, an
-            // escalation flag) still counts and must not be lost with it.
             $seenToolCalls = [...$seenToolCalls, ...array_values(array_filter(
                 $result['tool_calls'] ?? [],
                 fn ($call) => ($call['name'] ?? null) !== ProductSearchService::TOOL_NAME,
@@ -897,20 +608,12 @@ class AgentReplyService
         ];
     }
 
-    /**
-     * The channel job handles photo delivery separately. A model can still
-     * volunteer a false refusal in an ordinary catalog answer despite the
-     * prompt; remove that claim without discarding the factual product list.
-     */
     protected function removeFalsePhotoRefusal(string $replyText, string $customerText): string
     {
         if (preg_match('/(?:к сожалению,?\s*)?я не могу (?:отправить|прислать|показать)[^\n]*(?:фото|фотограф|картинк|изображен)/iu', $replyText) !== 1) {
             return $replyText;
         }
 
-        // A stock-list answer can volunteer this false refusal even without
-        // the word "photo" in the customer's turn. Remove only the refusal
-        // and its unsupported website redirect, preserving the product list.
         $cleaned = preg_replace('/(?:к сожалению,?\s*)?я не могу (?:отправить|прислать|показать)[^.!?\n]*(?:фото|фотограф|картинк|изображен)[^\n]*?(?:[.!?](?=\s|$)|$)/iu', '', $replyText);
         $cleaned = preg_replace('/(?:однако\s+)?вы можете (?:увидеть|посмотреть)[^\n]*?сайт[^\n]*?(?:[.!?](?=\s|$)|$)/iu', '', $cleaned);
         $cleaned = trim($this->styleCleaner->clean(trim($cleaned)));
@@ -918,14 +621,6 @@ class AgentReplyService
         return $cleaned !== '' ? $cleaned : 'Какую модель хотите посмотреть?';
     }
 
-    /**
-     * This method's reply path never sends a photo — only PhotoReplyService
-     * does, and it writes its own "sent"/"failed" text from code, not from a
-     * generation. A model that writes "Фото ... отправлено" (or invents a
-     * Wikimedia-style licence/attribution line) here is claiming a delivery,
-     * or a sourced image, that never happened; strip the claim rather than
-     * let the customer believe a photo is on its way.
-     */
     protected function removeFalsePhotoConfirmation(string $replyText): string
     {
         $pattern = '/(?:вот\s+)?(?:фото|фотограф\w*|картинк\w*|изображен\w*)[^.!?\n]*?(?:отправлен\w*|прислал\w*|высла\w*|готов\w*)[^.!?\n]*?(?:[.!?](?=\s|$)|$)'
@@ -940,14 +635,6 @@ class AgentReplyService
         return $cleaned !== '' ? $cleaned : 'Уточняю фото для этой модели — одну минуту.';
     }
 
-    /**
-     * Never send a message that says nothing.
-     *
-     * A reply of "." or " " is not a short answer, it is a broken one — the
-     * customer reads it as the bot glitching and starts nudging ("Алооо", ".").
-     * Whitespace from the model, truncation repair and markdown stripping can
-     * all cause it; check once before persistence rather than trusting them.
-     */
     protected function rejectEmptyReply(Agent $agent, Conversation $conversation, string $replyText): string
     {
         if (preg_match('/[\p{L}\p{N}]/u', $replyText)) {
@@ -963,28 +650,6 @@ class AgentReplyService
         return $this->fallbackMessage($agent);
     }
 
-    /**
-     * Make an order confirmation true, or stop it being sent.
-     *
-     * THE FAILURE THIS CLOSES. A model can write "заявка принята" without
-     * calling anything, and it does — in the reported conversation it said so
-     * three times while the orders table stayed empty. Two of those turns had
-     * called the tool and had the write fail silently; one had never called it
-     * at all. The customer cannot tell those apart, and neither can the owner,
-     * who simply sees no orders.
-     *
-     * So the claim is treated as binding. If the reply says an order exists and
-     * none was written this turn, one is written here — thin, but real, and
-     * linked to the conversation the details are in. Making the sentence true is
-     * more useful than deleting it: the customer has already been told, and an
-     * owner would far rather see an order with sparse details than lose a sale
-     * to a sentence nobody honoured.
-     *
-     * Returns the reply text, unchanged unless nothing could be recorded — in
-     * which case the claim itself has to go, because it would be a lie.
-     *
-     * @param  Lead[]  $capturedLeads  Modified in place when a rescue row is written.
-     */
     protected function honourAnyOrderClaim(Agent $agent, Conversation $conversation, string $replyText, array &$capturedLeads): string
     {
         if (! $this->orderClaims->claimsOrderRecorded($replyText)) {
@@ -992,11 +657,9 @@ class AgentReplyService
         }
 
         if ($capturedLeads !== []) {
-            return $replyText; // Claimed and recorded — the normal path.
+            return $replyText;
         }
 
-        // An order recorded moments ago in this conversation counts: a customer
-        // asking "оформите ещё раз" should not produce a second row.
         $existing = $conversation->leads()
             ->where('created_at', '>=', now()->subMinutes(self::ORDER_CLAIM_WINDOW_MINUTES))
             ->exists();
@@ -1005,9 +668,6 @@ class AgentReplyService
             return $replyText;
         }
 
-        // Info level and always, as the standing record of this failure mode:
-        // if this line stops appearing, the prompt is doing its job; if it
-        // appears often, the model is still confirming orders it never placed.
         Log::info('Assistant confirmed an order without recording one; recording it now', [
             'agent_id' => $agent->id,
             'conversation_id' => $conversation->id,
@@ -1024,9 +684,7 @@ class AgentReplyService
 
             return $replyText;
         } catch (Throwable $e) {
-            // The write is still failing. The one thing that must not happen now
-            // is the customer being told, a fourth time, that everything is
-            // fine — so the promise is withdrawn and a person is brought in.
+
             Log::error('Could not record a promised order; withdrawing the confirmation', [
                 'agent_id' => $agent->id,
                 'conversation_id' => $conversation->id,
@@ -1044,23 +702,6 @@ class AgentReplyService
         }
     }
 
-    /**
-     * Turn this order attempt into a request for a phone number.
-     *
-     * The order is deliberately NOT saved yet. The customer is asked once, and
-     * whatever they answer, the next attempt records the order — with the number
-     * if they gave one, without it if they did not. Nothing here can refuse an
-     * order; it can only delay one by a single turn.
-     *
-     * The generation is a real one, so the question arrives in the customer's
-     * own language and mentions what they are ordering. If it fails, the
-     * templated question goes instead: having asked is the point, and a canned
-     * sentence still asks.
-     *
-     * @param  array<int, array<string, mixed>>  $contents
-     * @param  array<int, array{id: string, name: string, arguments: array}>  $leadCalls
-     * @return array{text: string, usage: array{input_tokens: int, output_tokens: int}}
-     */
     protected function askForPhoneBeforeRecording(
         Agent $agent,
         Conversation $conversation,
@@ -1114,21 +755,6 @@ class AgentReplyService
         ];
     }
 
-    /**
-     * File the customer's price request for the owner and let the model write
-     * the holding sentence with the outcome in hand.
-     *
-     * Shaped exactly like captureLeadsAndConfirm() — persist, feed the tool
-     * result back, regenerate — with one difference that is the point of the
-     * whole feature: what the model is handed back says the request was SENT,
-     * never that it was granted. There is no path through here that lets the
-     * assistant tell a customer a below-floor price is theirs, because the only
-     * party who can say that has not been asked yet.
-     *
-     * @param  array<int, array{role: string, text: string}>  $contents
-     * @param  array<int, array{id: string, name: string, arguments: array}>  $haggleCalls
-     * @return array{text: string, usage: array{input_tokens: int, output_tokens: int}, leads: Lead[]}
-     */
     protected function requestPriceApproval(
         Agent $agent,
         Conversation $conversation,
@@ -1196,8 +822,7 @@ class AgentReplyService
         ]);
 
         return [
-            // The request is already filed, so the customer must hear the
-            // holding sentence whether or not the generation came back.
+
             'text' => $text !== ''
                 ? $text
                 : ($leads !== [] ? $this->haggling->pendingFallback($agent) : $this->fallbackMessage($agent)),
@@ -1206,11 +831,6 @@ class AgentReplyService
         ];
     }
 
-    /**
-     * A price out of tool arguments. Models pass "1500", 1500 and "1 500" for
-     * the same number, and a filter that only understood one of them would let
-     * the other two past the floor check.
-     */
     protected function numeric(mixed $value): ?float
     {
         if (is_int($value) || is_float($value)) {
@@ -1226,17 +846,6 @@ class AgentReplyService
         return null;
     }
 
-    /**
-     * Persist every create_lead call the model made this turn, then feed the
-     * tool results back for one more generation so the reply confirms the order
-     * in the customer's language. Falls back to a templated confirmation if that
-     * follow-up generation fails — the lead is already saved, so the customer
-     * must still hear back.
-     *
-     * @param  array<int, array{role: string, text: string}>  $contents
-     * @param  array<int, array{id: string, name: string, arguments: array}>  $leadCalls
-     * @return array{text: string, usage: array{input_tokens: int, output_tokens: int}, leads: Lead[]}
-     */
     protected function captureLeadsAndConfirm(
         Agent $agent,
         Conversation $conversation,
@@ -1249,9 +858,6 @@ class AgentReplyService
         $leads = [];
         $continuation = $contents;
 
-        // Resolved once, from the tool arguments AND the conversation, because
-        // it decides two different things: what is stored on the order, and
-        // whether the customer may be promised a call.
         $phone = $this->leadCapture->phoneFor($conversation, $leadCalls);
 
         foreach ($leadCalls as $call) {
@@ -1261,15 +867,7 @@ class AgentReplyService
                 $saved = $this->leadCapture->persist($agent, $conversation, $call['arguments'] ?? [], $source, $phone);
                 $leads[] = $saved;
             } catch (Throwable $e) {
-                // This is the failure that took the whole turn down in
-                // production: a schema change that had not been migrated made
-                // the insert throw, and a reply the model had already written
-                // (and the owner had already paid for) was discarded with it.
-                //
-                // The order is genuinely lost here and that is bad — but the
-                // customer's conversation continuing is worth more than the
-                // symmetry of failing the turn, and the message they get still
-                // acknowledges what they asked for. The owner gets a loud log.
+
                 Log::error('Failed to record a lead; continuing with the reply', [
                     'agent_id' => $agent->id,
                     'conversation_id' => $conversation->id,
@@ -1283,9 +881,7 @@ class AgentReplyService
                 'role' => 'tool_result',
                 'id' => $call['id'],
                 'name' => $call['name'],
-                // The result the model is handed is what actually happened, not
-                // what was attempted. Telling it "recorded" after a failed write
-                // is what produced three confirmations against an empty table.
+
                 'result' => $saved !== null
                     ? $this->leadCapture->confirmationInstruction($phone !== null)
                     : $this->leadCapture->failureInstruction(),
@@ -1311,8 +907,7 @@ class AgentReplyService
                 'conversation_id' => $conversation->id,
                 'error' => $e->getMessage(),
             ]);
-            // If the model already wrote text alongside the tool call, prefer it
-            // over the static fallback.
+
             $text = trim($firstResult['text'] ?? '') !== ''
                 ? $firstResult['text']
                 : $this->leadCapture->confirmationFallback($agent, $phone !== null);
@@ -1325,12 +920,6 @@ class AgentReplyService
         ];
     }
 
-    /**
-     * A short, deterministic-in-spirit reply for when a photo couldn't be
-     * confidently matched to a product: ask for the product name instead of
-     * describing the image or apologizing at length. Skips retrieval entirely
-     * — there's nothing useful to search for yet.
-     */
     public function askForProductName(Conversation $conversation, Message $userMsg): Message
     {
         $agent = $conversation->agent;
@@ -1388,27 +977,12 @@ class AgentReplyService
         return $assistantMsg;
     }
 
-    /**
-     * A short apology-and-next-step for a voice note we could not turn into
-     * text — transcription is off for this agent, it failed, or the note was
-     * too long.
-     *
-     * Skips retrieval entirely (there is no question to search for yet) but
-     * still goes through the model so the customer is answered in the language
-     * they were speaking, which a canned string could not do across ru/tg/en.
-     * If even that generation fails, a templated line is used rather than
-     * leaving a voice note unanswered.
-     */
     public function explainVoiceProblem(Conversation $conversation, Message $userMsg, string $reason): Message
     {
         $agent = $conversation->agent;
         $this->usage->for($agent);
         $startedAt = microtime(true);
 
-        // 'unsupported_attachment' shares this path deliberately. The customer's
-        // situation is identical — they sent something the assistant cannot
-        // read and need to be asked for text — and a second near-identical
-        // method would drift from this one.
         $medium = $reason === 'unsupported_attachment'
             ? 'an attachment this assistant cannot open (a document, video, location or similar)'
             : 'a voice message';
@@ -1472,24 +1046,12 @@ class AgentReplyService
         return $assistantMsg;
     }
 
-    /**
-     * Last resort when the provider is down too. Deliberately not the generic
-     * fallback text, which says nothing about what the customer should do next.
-     */
     protected function voiceFallbackMessage(Agent $agent): string
     {
         return $agent->response_format['voice_fallback_message']
             ?? 'Извините, я не смог разобрать голосовое сообщение. Напишите, пожалуйста, текстом.';
     }
 
-    /**
-     * The assistant's own recent replies, newest first — what a new reply is
-     * checked against for repetition. More than one, because the reported loop
-     * alternated wording between turns and a reply can repeat the one before
-     * last as easily as the last.
-     *
-     * @return array<int, string>
-     */
     protected function recentAssistantReplies(Conversation $conversation, Message $userMsg): array
     {
         return $conversation->messages()
@@ -1502,13 +1064,6 @@ class AgentReplyService
             ->all();
     }
 
-    /**
-     * The assistant's own last message in this conversation, if any.
-     *
-     * Excludes the turn being answered so a re-run cannot compare a reply to
-     * itself. Operator messages count: a customer replying "да" to a human
-     * colleague's message is continuing from that, not from the bot.
-     */
     protected function lastAssistantMessage(Conversation $conversation, Message $userMsg): ?Message
     {
         return $conversation->messages()
@@ -1519,20 +1074,6 @@ class AgentReplyService
             ->first();
     }
 
-    /**
-     * What a short referential follow-up needs the model to be told.
-     *
-     * The failing case: four products listed, the customer asks "так да или
-     * нет", and the model — handed the same context it had a turn ago, plus a
-     * catalog rule telling it to search again before answering — re-runs the
-     * search and re-renders the same four products. Everything it did was
-     * individually correct. What was missing is the instruction that the QUESTION
-     * has changed even though the subject has not.
-     *
-     * The previous reply is quoted rather than left to be found in the history.
-     * "Do not repeat yourself" is advice; "do not repeat THIS" is a comparison
-     * the model can actually make.
-     */
     protected function followUpInstruction(?string $previousReply): string
     {
         $lines = [
@@ -1559,15 +1100,6 @@ class AgentReplyService
         return implode("\n", $lines);
     }
 
-    /**
-     * What the model is told when the pipeline has already decided a person is
-     * taking over.
-     *
-     * The handover happens whether or not the model cooperates — it is recorded
-     * after this generation regardless. This exists so the customer is TOLD, in
-     * their own language and in the assistant's own voice, rather than being met
-     * with another apology and silence.
-     */
     protected function handoverInstruction(): string
     {
         return implode("\n", [
@@ -1585,15 +1117,6 @@ class AgentReplyService
         ]);
     }
 
-    /**
-     * Decide whether this turn hands the conversation to a person.
-     *
-     * Two independent triggers, both about the customer rather than about the
-     * model's opinion of them: what they just said, and how many times they have
-     * now had to say it.
-     *
-     * @return array{signal: string, reason: string, summary: string}|null
-     */
     protected function detectHandover(Conversation $conversation, Message $userMsg): ?array
     {
         $verdict = $this->hostility->inspect(
@@ -1624,13 +1147,6 @@ class AgentReplyService
         ];
     }
 
-    /**
-     * How many of the customer's earlier messages here were already rude.
-     *
-     * This is what makes a second "бесполезный бот" escalate while the first
-     * does not: one exasperated word is a bad moment, two is a conversation
-     * going wrong.
-     */
     protected function priorRudeMessageCount(Conversation $conversation, Message $userMsg): int
     {
         $earlier = $conversation->messages()
@@ -1645,18 +1161,9 @@ class AgentReplyService
             ->count();
     }
 
-    /**
-     * Whether the customer is now asking the same thing for the third time.
-     *
-     * A question re-asked twice after being answered is the shape of an
-     * assistant that cannot help: either it keeps missing the point or the
-     * answer it has is not the one being asked for. Both are a person's job, and
-     * neither is something the model is well placed to notice about itself.
-     */
     protected function hasAskedTheSameThingRepeatedly(Conversation $conversation, Message $userMsg): bool
     {
-        // A follow-up is short and referential by nature; "да" repeated is not a
-        // customer stuck on a question.
+
         if ($this->followUps->isShortFollowUp($userMsg->content, true)) {
             return false;
         }
@@ -1675,22 +1182,6 @@ class AgentReplyService
         return $repeats >= 2;
     }
 
-    /**
-     * Catch the model sending the previous reply again, and ask once more.
-     *
-     * The prompt already tells it not to. This is the check that the instruction
-     * landed — and the reported bug is proof that an instruction alone does not
-     * always land. One extra generation is cheap next to a customer being handed
-     * the same four products they just read.
-     *
-     * One correction at most, with the original draft and catalog results still
-     * available. Repeated questions can be removed without deleting useful facts.
-     *
-     * @param  array<int, array<string, mixed>>  $contents
-     * @param  array<int, string>  $recentReplies  The assistant's own recent replies, newest first.
-     * @param  array<string, mixed>  $options
-     * @return array{text: string, rewritten: bool, usage: array{input_tokens: int, output_tokens: int}}
-     */
     protected function rewriteIfRepeated(
         Agent $agent,
         Conversation $conversation,
@@ -1702,8 +1193,6 @@ class AgentReplyService
     ): array {
         $unchanged = ['text' => $replyText, 'rewritten' => false, 'usage' => ['input_tokens' => 0, 'output_tokens' => 0]];
 
-        // The customer's own figures — their budget — are not the assistant
-        // repeating itself when it quotes them back.
         $customerTexts = $this->recentCustomerMessages($conversation)->all();
 
         if ($this->followUps->requestsRecap($customerTexts[0] ?? '')) {
@@ -1749,8 +1238,7 @@ class AgentReplyService
         ]);
 
         try {
-            // No tools this time. The model has already searched; another round
-            // of tool calls is how it talked itself back into the same list.
+
             $retry = $this->llm->generate($correction, $contents, [
                 'max_output_tokens' => $options['max_output_tokens'] ?? $this->maxOutputTokens($agent),
                 'temperature' => 0.4,
@@ -1772,8 +1260,6 @@ class AgentReplyService
             'output_tokens' => (int) ($retry['output_tokens'] ?? 0),
         ];
 
-        // The retry is still billed even when it came back empty and the
-        // original stands.
         if ($text === '') {
             return ['text' => $replyText, 'rewritten' => false, 'usage' => $usage];
         }
@@ -1783,16 +1269,6 @@ class AgentReplyService
         return ['text' => $text, 'rewritten' => $text !== $replyText, 'usage' => $usage];
     }
 
-    /**
-     * The escalation tool call that clears this agent's confidence bar, if any.
-     *
-     * A call the model made but that falls short of the bar is deliberately
-     * dropped here rather than downstream — below the bar it is not a signal,
-     * it is a guess, and acting on guesses is what makes an alert worthless.
-     *
-     * @param  array<int, array<string, mixed>>  $toolCalls
-     * @return array<string, mixed>|null
-     */
     protected function firstEscalationCall(Agent $agent, array $toolCalls): ?array
     {
         foreach ($toolCalls as $call) {
@@ -1817,9 +1293,6 @@ class AgentReplyService
         return null;
     }
 
-    /**
-     * Used only when the model flagged the customer but wrote no reply text.
-     */
     protected function escalationAcknowledgement(Agent $agent): string
     {
         return $agent->response_format['escalation_message']
@@ -1832,11 +1305,6 @@ class AgentReplyService
             ?? 'Извините, сейчас не получается ответить. Мы уточним этот вопрос и вернёмся с ответом.';
     }
 
-    /**
-     * The owner's configured greeting, verbatim. Only when they left it blank
-     * is a default used, and then in the agent's own language — never a string
-     * that assumes Russian, and never something the model makes up.
-     */
     protected function greetingMessage(Agent $agent, Conversation $conversation): string
     {
         $configured = $agent->response_format['greeting_message'] ?? null;
@@ -1848,28 +1316,11 @@ class AgentReplyService
         return __('replies.greeting', [], $this->locales->forAgent($conversation));
     }
 
-    /**
-     * Telegram's /start — optionally with a deep-link payload, or addressed as
-     * "/start@SomeBot" in a group. The owner's "/start notify_<code>" is
-     * consumed before this is ever asked.
-     */
     public static function isStartCommand(string $text): bool
     {
         return preg_match(self::START_COMMAND_PATTERN, trim($text)) === 1;
     }
 
-    /**
-     * The reply to /start: the configured greeting, sent as-is.
-     *
-     * No retrieval and no model call. /start carries no question, and handing
-     * the literal text "/start" to the model is what produced "It seems like
-     * you're trying to restart something" — in English, to a Russian-speaking
-     * shop's customer — in place of the greeting the owner wrote.
-     *
-     * Marked as a session start: a customer pressing /start is beginning a
-     * new conversation even though Telegram gives them the same chat, and
-     * FeedbackCadence counts turns from here rather than from days ago.
-     */
     public function greetOnStart(Conversation $conversation): Message
     {
         $assistantMsg = $conversation->messages()->create([
@@ -1895,15 +1346,6 @@ class AgentReplyService
         return (bool) preg_match(self::GREETING_PATTERN, trim($text));
     }
 
-    /**
-     * The hard generation cap for one reply.
-     *
-     * This is a SAFETY NET, not the length control — the prompt's "keep replies
-     * under approximately N characters" is what shapes the answer. Sizing this
-     * to the same N is what truncated replies mid-word: the model wrote the
-     * length it was asked for, in Cyrillic, and ran out of tokens doing it. So
-     * the budget is deliberately larger than the style instruction asks for.
-     */
     protected function maxOutputTokens(Agent $agent): int
     {
         $maxLength = (int) ($agent->response_format['max_length'] ?? 600);
@@ -1913,18 +1355,6 @@ class AgentReplyService
         return max(256, min($tokens, self::MAX_OUTPUT_TOKENS));
     }
 
-    /**
-     * Repair a reply the model did not get to finish.
-     *
-     * Even with a generous cap a reply can hit it, and what the customer must
-     * never see is the half-word it stops on. Trimming back to the last complete
-     * sentence turns "…какая-то определ" into a reply that simply ends earlier —
-     * shorter than intended, but readable, and indistinguishable from a model
-     * that chose to stop there.
-     *
-     * Only applied when the provider says it ran out of room. A reply that ends
-     * without punctuation because the model wrote it that way is left alone.
-     */
     protected function repairTruncatedReply(string $text, ?string $finishReason): string
     {
         if (! $this->hitOutputLimit($finishReason)) {
@@ -1933,7 +1363,6 @@ class AgentReplyService
 
         $trimmed = rtrim($text);
 
-        // Already ends on a sentence: nothing was lost mid-thought.
         if ($trimmed === '' || preg_match('/[.!?…)]["»\']?$/u', $trimmed)) {
             return $text;
         }
@@ -1946,35 +1375,21 @@ class AgentReplyService
             }
         }
 
-        // Nothing worth keeping — one long unfinished sentence. Better to let
-        // the fragment through than to send an empty message; the log below is
-        // what says the cap needs raising.
         if ($cut === 0) {
             return $text;
         }
 
         $repaired = rtrim(mb_substr($trimmed, 0, $cut));
 
-        // A reply whose first sentence-ending character is also its first
-        // character trims to a lone ".", which is worse than the fragment it
-        // replaced.
         return preg_match('/[\p{L}\p{N}]/u', $repaired) ? $repaired : $text;
     }
 
     protected function hitOutputLimit(?string $finishReason): bool
     {
-        // Gemini says MAX_TOKENS, OpenAI says length.
+
         return in_array(strtolower((string) $finishReason), ['max_tokens', 'length'], true);
     }
 
-    /**
-     * The ordered turns to send to Gemini: the last N messages of the
-     * conversation, INCLUDING the most recent one — callers persist the new
-     * user message before calling this, so it naturally appears as the final
-     * turn without needing to be appended separately.
-     *
-     * @return array<int, array{role: string, text: string}>
-     */
     protected function buildContents(Conversation $conversation): array
     {
         $limit = (int) config('agent.rag.history_length');
@@ -1982,7 +1397,7 @@ class AgentReplyService
         return $conversation->messages()
             ->whereIn('role', ['user', 'assistant', 'operator'])
             ->orderByDesc('created_at')
-            ->orderByDesc('id') // tiebreaker: created_at has only second precision, id reflects true insertion order
+            ->orderByDesc('id')
             ->take($limit)
             ->get()
             ->reverse()
@@ -1994,11 +1409,6 @@ class AgentReplyService
             ->all();
     }
 
-    /**
-     * @param  RetrievedChunk[]  $retrieved
-     * @param  bool  $searchProducts  Whether the catalog tool is being offered this turn.
-     * @param  bool  $retrievalSkipped  Whether the knowledge base was deliberately not consulted.
-     */
     protected function buildSystemPrompt(
         Agent $agent,
         array $retrieved,
@@ -2017,19 +1427,12 @@ class AgentReplyService
             $agent->description ? ": {$agent->description}" : ''
         ));
 
-        // The business owner's own instructions take priority over the default tone/format
-        // rules below whenever the two disagree — surfaced early and unmistakably for that reason.
         if (! empty($agent->custom_system_prompt)) {
             $parts[] = 'IMPORTANT — the business owner gave these instructions about personality and style. '.
                 "They take priority over the default tone/formatting guidance elsewhere in this prompt whenever they conflict:\n"
                 .$agent->custom_system_prompt;
         }
 
-        // Kept as its own section rather than folded into the persona above:
-        // that one says who the agent IS, this one says what it must DO in
-        // named situations. Merging them would let a style note ("be brief")
-        // dilute a hard rule ("never quote wholesale prices"). Omitted whole
-        // when empty, so no bare header ever reaches the model.
         if (! empty($agent->rules_instructions)) {
             $parts[] = 'IMPORTANT — the business owner gave these situational rules for how to handle specific '.
                 'cases. Follow them exactly. They take priority over the default tone/formatting guidance '.
@@ -2089,28 +1492,9 @@ class AgentReplyService
         return implode("\n\n", $parts);
     }
 
-    /**
-     * The two-tier answering policy.
-     *
-     * The problem it solves: a strictly grounded assistant refuses roughly half
-     * of what customers actually ask, because half of it is general curiosity
-     * about the field rather than a question about the business ("what even is
-     * backend?", "is Python hard?"). Refusing those reads as a broken product,
-     * and answering them needs no knowledge base — the model already knows.
-     *
-     * So the two are separated. General knowledge of the FIELD is free to use;
-     * facts about THIS BUSINESS remain strictly grounded. What counts as "the
-     * field" is derived by the model from the agent's own description and
-     * knowledge base, so an education centre's assistant is knowledgeable about
-     * learning and programming while a clothing shop's is knowledgeable about
-     * fabrics and sizing, with nothing about either hardcoded here.
-     */
     protected function answeringPolicyInstruction(bool $searchProducts): string
     {
-        // Without this carve-out TIER 2 flatly states that prices and stock may
-        // come ONLY from the knowledge base — which contradicts the catalog
-        // instruction appended after it, and gives a model looking for a reason
-        // not to call the tool a rule that appears to endorse skipping it.
+
         $productCarveOut = $searchProducts
             ? [
                 '- EXCEPTION, and it overrides the rule above: prices, discounts, stock, availability and which',
@@ -2157,15 +1541,9 @@ class AgentReplyService
         ]);
     }
 
-    /**
-     * @param  RetrievedChunk[]  $retrieved
-     */
     protected function knowledgeBaseSection(array $retrieved, bool $skipped = false): string
     {
-        // Deliberately NOT the same message as "empty". A skipped retrieval must
-        // never read to the model as "this business has no knowledge base" —
-        // that would turn a latency optimization into the agent denying it knows
-        // anything about the business.
+
         if ($skipped) {
             return 'KNOWLEDGE BASE: not consulted for this message. It was identified as a question about products, '
                 .'prices, stock or availability, which the "'.ProductSearchService::TOOL_NAME.'" tool answers '
@@ -2194,10 +1572,6 @@ class AgentReplyService
             $section .= "\n".$render($confident);
         }
 
-        // Retrieval scored these poorly but had nothing better. Saying so lets the
-        // model use them when they happen to fit and ignore them when they don't,
-        // which is a better outcome than withholding them and reporting an empty
-        // knowledge base — the failure this whole section exists to prevent.
         if ($weak !== []) {
             $section .= ($confident !== [] ? "\n\n" : "\n")
                 ."POSSIBLY RELATED (weak match — the search found nothing clearly on-topic, so these may or\n"
@@ -2209,28 +1583,6 @@ class AgentReplyService
         return $section;
     }
 
-    /**
-     * How to talk about products: like someone who sells them for a living.
-     *
-     * THE PROBLEM. Given a catalog tool and a question, a model produces a
-     * catalog: four rows of name, specification and price, then "let me know if
-     * you are interested in one of them". Every fact in it is right and it is
-     * useless — it hands the choosing back to the customer, who asked precisely
-     * because they did not know how to choose. Nobody reads it as a person.
-     *
-     * What an actual salesperson does instead is short and specific: they pick,
-     * they say WHY that one given what the customer told them, they name the
-     * thing it is worse at so the recommendation can be trusted, and they ask
-     * the one question that would narrow it further. This section asks for those
-     * four moves, in that order.
-     *
-     * TWO THINGS IT MUST NOT BECOME. It must not license invention — the
-     * trade-off has to be visible in the data (a price gap, a smaller drive, no
-     * stock), never a plausible-sounding one made up to sound expert; that would
-     * undo the grounding rules above. And it must not become a formula, because
-     * a reply assembled from the same four moves every turn is the robot in a
-     * better suit. Both are stated as limits rather than left to be inferred.
-     */
     protected function consultativeSellingInstruction(): string
     {
         return implode("\n", [
@@ -2297,12 +1649,6 @@ class AgentReplyService
         ]);
     }
 
-    /**
-     * How forward-leaning the assistant should be about suggesting a next step.
-     * Every level keeps the same hard guardrails — one suggestion max, one
-     * question max, catalog-only, never pushy — and only shifts how much
-     * initiative the assistant takes.
-     */
     protected function proactivityInstruction(Agent $agent): string
     {
         return match ($agent->proactivity) {
@@ -2317,7 +1663,7 @@ class AgentReplyService
                 '- Never invent products, prices, or promotions; only suggest items that appear in the KNOWLEDGE BASE or catalog tool results.',
                 '- Still at most one suggestion and one question. Stay warm and helpful — never pushy, and never repeat an offer the customer already turned down.',
             ]),
-            default => implode("\n", [ // subtle
+            default => implode("\n", [
                 'Proactivity: SUBTLE.',
                 '- Answer the current request and normally stop. Suggest a next step only when the customer indicates readiness or asks for advice; do not add a generic invitation to every answer.',
                 '- Any product you mention must come FROM THE KNOWLEDGE BASE or catalog tool results. Never invent items and never push a sale.',
@@ -2326,28 +1672,12 @@ class AgentReplyService
         };
     }
 
-    /**
-     * What language to write the reply in.
-     *
-     * On 'auto' the language is DETECTED and named outright rather than left to
-     * the model to infer. "Reply in the customer's language" is enough for
-     * Russian and English and is not enough for Tajik: Tajik is written in
-     * Cyrillic, so a short Tajik message inside a mostly-Russian conversation
-     * reads to the model as unusual Russian, and it answers in Russian. Naming
-     * the language removes the inference — see LanguageDetector.
-     *
-     * The owner's explicit setting still wins outright. Someone who pinned their
-     * agent to Russian meant it, whatever a customer types.
-     */
     protected function languageInstruction(Agent $agent, Conversation $conversation): string
     {
         try {
             $detected = $this->languages->forConversation($this->recentCustomerMessages($conversation));
         } catch (Throwable $e) {
-            // Choosing a language is an optimisation over an instruction that
-            // already works without it. It must never be the reason a customer
-            // gets no answer at all, so a failure here falls through to the
-            // "reply in whatever they used" wording below.
+
             Log::warning('Language detection failed; falling back to inferred language', [
                 'agent_id' => $agent->id,
                 'conversation_id' => $conversation->id,
@@ -2363,16 +1693,11 @@ class AgentReplyService
             return implode(' ', [
                 "The customer is writing in {$name}. WRITE YOUR REPLY IN {$name}.",
                 $detected === LanguageDetector::TAJIK
-                    // Named because this is the case that was going wrong, and
-                    // because the two languages share an alphabet: without it,
-                    // "reply in Tajik" is satisfied by Russian that looks close
-                    // enough, and a customer writing Tajik keeps getting Russian.
+
                     ? 'Tajik and Russian share the Cyrillic alphabet, and this customer is writing TAJIK, not Russian. '
                         .'Answer in Tajik. Russian loanwords they used themselves (диск, заказ, ноутбук) are fine to '
                         .'keep — the sentence around them must be Tajik. '
-                        // The second failure: Tajik sentences with English and
-                        // pseudo-Russian filler spliced in — "дар нарх range
-                        // васият", "дар буҷаатон фити кунад".
+
                         .'Write natural, everyday Tajik, the way a shop assistant in Khujand speaks it. Do NOT splice '
                         .'English or Russian words, or half-translated hybrids, into a Tajik sentence: no "range", "fit", '
                         .'"budget", no "фити кунад", no "нарх range". Say it in Tajik: "дар ҳудуди буҷаи шумо", '
@@ -2399,15 +1724,6 @@ class AgentReplyService
             .'without a clear signal from the customer.';
     }
 
-    /**
-     * The customer's own recent messages, newest first.
-     *
-     * Newest first because the newest determinate one wins: a message with no
-     * language of its own ("ок", a photo, a model number) must inherit rather
-     * than reset the conversation to the default.
-     *
-     * @return Collection<int, string>
-     */
     protected function recentCustomerMessages(Conversation $conversation): Collection
     {
         return $conversation->messages()
@@ -2418,20 +1734,6 @@ class AgentReplyService
             ->pluck('content');
     }
 
-    /**
-     * How to pivot when a TIER 2 business fact is missing. This picks the shape
-     * of the pivot; it never licenses a bare refusal, and it does not apply to
-     * TIER 1 general questions — those are answered, not deflected.
-     *
-     * The owner's own fallback_message is handed over as a TONE sample, never as
-     * a line to send. It used to arrive as "you may phrase it close to: ...",
-     * and a model given a ready-made sentence naturally sent that sentence — the
-     * same one, word for word, every time a customer asked something the catalog
-     * or the knowledge base did not cover. From the customer's side that is the
-     * bot repeating itself, which is exactly what a human-sounding assistant
-     * must not do. So the sample is framed as register and length to imitate,
-     * and repeating any earlier reply is forbidden outright.
-     */
     protected function fallbackInstruction(string $onNotFound, ?string $fallbackMessage): string
     {
         $instruction = 'When a TIER 2 fact about this business is missing from the KNOWLEDGE BASE, do not guess, '

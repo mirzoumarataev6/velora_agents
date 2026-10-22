@@ -33,11 +33,7 @@ class CrmWorkspaceController extends Controller
         $workspace = new CrmWorkspace;
         $workspace->forceFill([
             'user_id' => $request->user()->id,
-            // Explicit, not left to StampsTeam's own current_team_id
-            // fallback: that resolution happens at INSERT time against
-            // whatever current_team_id is by then, whereas $teamId here is
-            // the one this very request already validated the name's
-            // uniqueness against — the two must never disagree.
+
             'team_id' => $teamId,
             'name' => trim($data['name']),
             'color' => $data['color'],
@@ -70,8 +66,7 @@ class CrmWorkspaceController extends Controller
         $this->authorize('delete', $workspace);
 
         DB::transaction(function () use ($request, $workspace) {
-            // Removing a folder must not remove its business records. Move
-            // them to the stable default folder before deleting the container.
+
             $default = CrmWorkspace::defaultFor($request->user(), $workspace->team_id);
             $workspace->deals()->update(['crm_workspace_id' => $default->id]);
             $workspace->customers()->update(['crm_workspace_id' => $default->id]);

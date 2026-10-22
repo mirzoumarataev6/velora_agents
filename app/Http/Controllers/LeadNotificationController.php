@@ -8,12 +8,6 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use RuntimeException;
 
-/**
- * Endpoints behind the "link my Telegram for lead alerts" card. The actual
- * link is completed asynchronously when the owner taps Start in Telegram (see
- * HandleIncomingMessageJob) — these just mint the deep link, report status, and
- * unlink.
- */
 class LeadNotificationController extends Controller
 {
     public function __construct(protected TelegramNotifyLinker $linker) {}

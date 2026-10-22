@@ -4,7 +4,6 @@ namespace App\Models;
 
 use App\Models\Concerns\StampsTeam;
 use App\Policies\ChannelPolicy;
-use Database\Factories\ChannelFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\UsePolicy;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -17,9 +16,7 @@ use Illuminate\Support\Str;
 #[UsePolicy(ChannelPolicy::class)]
 class Channel extends Model
 {
-    /** @use HasFactory<ChannelFactory> */
     use HasFactory;
-
     use StampsTeam;
 
     protected function casts(): array
@@ -49,9 +46,6 @@ class Channel extends Model
         return $this->hasMany(Conversation::class);
     }
 
-    /**
-     * Mask a credential value for display, revealing only the last 4 characters.
-     */
     public static function maskCredential(?string $value): ?string
     {
         if (empty($value)) {

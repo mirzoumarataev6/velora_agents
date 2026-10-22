@@ -48,9 +48,7 @@ class TeamRoleController extends Controller
         abort_unless(app(AuthorizesRoleGrants::class)->canGrantPermissions($request->user(), $teamId, $data['permissions'] ?? []), 403);
 
         $role = DB::transaction(function () use ($teamId, $data): Role {
-            // Slugs are internal identifiers and stay stable after a rename.
-            // Different names can normalize to the same text; the suffix
-            // keeps their slugs distinct without renaming existing roles.
+
             $base = Str::substr(Str::slug($data['name']) ?: 'role', 0, 230);
             $role = Role::create([
                 'team_id' => $teamId,
@@ -74,8 +72,7 @@ class TeamRoleController extends Controller
 
         $isSystem = in_array($role->slug, PermissionCatalog::systemRoleSlugs(), true);
         $data = $request->validateWithBag('roles', [
-            // Seeded names identify the four default roles throughout the UI;
-            // editing their permission bundle must not silently rename them.
+
             'name' => $isSystem
                 ? ['prohibited']
                 : ['required', 'string', 'max:255', Rule::unique('roles', 'name')->where('team_id', $teamId)->ignore($role->id)],
@@ -102,14 +99,10 @@ class TeamRoleController extends Controller
             ->with('status', __('settings.roles.saved'));
     }
 
-    /** @return array<string, array<int, mixed>> */
     private function permissionRules(): array
     {
         return [
-            // Rejects rather than silently completing the set: PermissionCatalog::requires()'s
-            // own docblock is why — the role editor UI auto-checks/unchecks the same pair
-            // client-side so nobody normally reaches this, but a direct request must not be
-            // able to save "manage" without "view" just because nothing client-side stopped it.
+
             'permissions' => ['sometimes', 'array', function (string $attribute, mixed $value, \Closure $fail): void {
                 $selected = (array) $value;
                 foreach (PermissionCatalog::requires() as $permission => $dependencies) {

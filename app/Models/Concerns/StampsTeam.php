@@ -5,33 +5,6 @@ namespace App\Models\Concerns;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 
-/**
- * Denormalizes `team_id` onto a tenant row at creation time, the same column
- * Stage 1's `team:migrate-users` backfilled onto existing rows — so a row
- * born today already carries what the backfill had to go back and fill in
- * for old ones. Nothing reads `team_id` for authorization yet; this is
- * purely keeping the column from falling behind again.
- *
- * Resolution order mirrors `team:migrate-users`' own two table groups:
- * prefer the row's own `agent_id` (one hop to `agents.team_id`) over its
- * `user_id` (one hop to `users.current_team_id`) — a row with both (`deals`,
- * `usage_logs`) is still agent-scoped first. Plain `DB::table()` lookups
- * rather than loading the related Eloquent model: this runs on every single
- * creating event, and a model hydration is unnecessary cost for one column.
- *
- * Two invariants, deliberately absolute:
- * - Never overwrites a `team_id` already set — a test or a future write
- *   path that sets it explicitly always wins.
- * - Never throws. An unresolvable row (an agent or user without a team yet)
- *   is left with `team_id = NULL`; `team:verify-migration` is the
- *   permanent safety net that notices, not this hook. Since Stage 2d-2's
- *   NOT NULL flip on all 26 of these tables, "left with NULL" no longer
- *   means a quietly incomplete row — the database itself refuses the
- *   INSERT. This hook's own behaviour is unchanged (it still never throws
- *   on this model's side); what changed is that an unresolvable row now
- *   surfaces as a hard failure one layer down instead of a silent gap
- *   `team:verify-migration` would have had to go looking for.
- */
 trait StampsTeam
 {
     private static int $teamStampingSuspended = 0;
@@ -51,22 +24,6 @@ trait StampsTeam
         });
     }
 
-    /**
-     * Lets a caller create a row that deliberately skips this stamping —
-     * the pre-Stage-2a "owner already has a team, but this row still
-     * arrived with no team_id" gap `team:migrate-users`' top-up pass exists
-     * to repair. Real callers never need this (every write path now stamps
-     * on its own); it exists for the tests that simulate that gap without
-     * also silencing this model's other creation-time behaviour (an
-     * Observer's audit row, say) the way `Model::withoutEvents()` would.
-     * Counter-based, so nested calls (or calls on more than one of these
-     * models at once) compose safely.
-     *
-     * @template T
-     *
-     * @param  callable(): T  $callback
-     * @return T
-     */
     public static function withoutTeamStamping(callable $callback): mixed
     {
         static::$teamStampingSuspended++;

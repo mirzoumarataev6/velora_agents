@@ -2,7 +2,6 @@
 
 namespace App\Services\Reply;
 
-/** Removes generic sign-offs without rewriting facts or ordering instructions. */
 class ReplyStyleCleaner
 {
     private const INVITATIONS = [
@@ -24,7 +23,6 @@ class ReplyStyleCleaner
         $sentences = preg_split('/(?<=[.!?。！？])\s+|\R+/u', trim($text), -1, PREG_SPLIT_NO_EMPTY) ?: [];
         $kept = array_filter($sentences, fn ($sentence) => ! $this->isGenericInvitation($sentence));
 
-        // Never turn a reply into silence; short courtesy-only answers are valid.
         if ($kept === [] || count($kept) === count($sentences)) {
             return $text;
         }
@@ -34,7 +32,7 @@ class ReplyStyleCleaner
 
     private function isGenericInvitation(string $sentence): bool
     {
-        // Numbers, links and concrete ordering details must survive cleanup.
+
         if (preg_match('/\p{N}|https?:|@|\b(?:телефон\w*|номер\w*|адрес\w*|оплат\w*|достав\w*|phone|address|payment|delivery|рақам\w*|суроға\w*|пардохт\w*)\b/iu', $sentence)) {
             return false;
         }

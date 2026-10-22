@@ -21,7 +21,6 @@ class CrmNotePolicy
         return $this->permitted($user, PermissionCatalog::CRM_MANAGE);
     }
 
-    /** Notes are shared CRM data; deletion requires the team's manage permission. */
     public function delete(User $user, CrmNote $note): bool
     {
         return $this->permitted($user, PermissionCatalog::CRM_MANAGE, $note);

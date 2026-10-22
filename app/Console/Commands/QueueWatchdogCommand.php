@@ -9,18 +9,10 @@ use App\Models\KnowledgeSource;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 
-/**
- * Finds knowledge sources that are stuck part-way through the pipeline and
- * either resumes them or fails them with an explanation — so a source can
- * never sit on "Processing…" forever because the worker died mid-run.
- *
- * Run automatically once a minute by `queue:supervise`; safe to run by hand.
- */
 #[Signature('queue:watchdog {--dry-run : Report what would be recovered without touching anything}')]
 #[Description('Recover knowledge sources left stuck by a dead or hung queue worker')]
 class QueueWatchdogCommand extends Command
@@ -42,12 +34,6 @@ class QueueWatchdogCommand extends Command
         return self::SUCCESS;
     }
 
-    /**
-     * Sources sitting in a non-terminal state longer than a healthy run of
-     * that state could possibly take.
-     *
-     * @return Collection<int, KnowledgeSource>
-     */
     protected function stuckSources()
     {
         $pendingCutoff = now()->subSeconds((int) config('worker.stuck.pending_seconds', 180));
@@ -64,8 +50,7 @@ class QueueWatchdogCommand extends Command
 
     protected function recover(KnowledgeSource $source): void
     {
-        // Still waiting its turn in a healthy queue — the worker just hasn't
-        // got to it yet. Leave it alone rather than queue it a second time.
+
         if ($this->hasUnreservedJob($source)) {
             $this->line("  <fg=gray>#{$source->id} {$source->name}: job still queued, leaving it</>");
 
@@ -130,12 +115,6 @@ class QueueWatchdogCommand extends Command
         ]);
     }
 
-    /**
-     * Resume from the furthest step whose inputs still exist, so recovery does
-     * not redo an expensive extraction (or re-embed) that already succeeded.
-     *
-     * @return class-string<ExtractTextJob|ChunkTextJob|EmbedChunksJob>
-     */
     protected function resumeJobFor(KnowledgeSource $source): string
     {
         if ($source->chunks()->exists()) {
@@ -149,24 +128,15 @@ class QueueWatchdogCommand extends Command
         return ExtractTextJob::class;
     }
 
-    /**
-     * Whether this source already has a job waiting in the queue that no
-     * worker has claimed yet.
-     *
-     * Matched by looking for the source's serialized model inside the job
-     * payload — the queue tables have no column to join on. Reserved jobs are
-     * excluded on purpose: those belong to a worker, and if that worker died
-     * the queue's own retry_after releases them without our help.
-     */
     protected function hasUnreservedJob(KnowledgeSource $source): bool
     {
         return DB::table('jobs')
             ->whereNull('reserved_at')
             ->where('payload', 'like', '%KnowledgeSource%')
             ->where(fn ($q) => $q
-                // The model identifier inside the payload is PHP-serialized...
+
                 ->where('payload', 'like', '%\"id\";i:'.$source->id.';%')
-                // ...unless a job was queued as plain JSON data.
+
                 ->orWhere('payload', 'like', '%"id":'.$source->id.',%')
             )
             ->exists();

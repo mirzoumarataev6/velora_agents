@@ -8,16 +8,6 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-/**
- * A record of one customer merge, kept so CustomerResolver::undoMerge() knows
- * exactly which rows to move back — see the migration for why no snapshot of
- * either profile's own fields is stored alongside it.
- */
-// team_id is fillable alongside user_id: both are only ever set by
-// CustomerResolver::merge() from trusted values already in scope (the
-// surviving customer), never from request input — see that method for why
-// team_id is passed explicitly rather than left to StampsTeam's own
-// user_id fallback.
 #[Fillable(['user_id', 'team_id', 'from_customer_id', 'into_customer_id', 'moved_conversation_ids', 'moved_lead_ids', 'moved_deal_ids', 'moved_task_ids', 'undone_at'])]
 class CustomerMerge extends Model
 {
@@ -25,7 +15,6 @@ class CustomerMerge extends Model
 
     public $timestamps = false;
 
-    /** How long after a merge the owner can still undo it. */
     public const UNDO_WINDOW_HOURS = 24;
 
     protected function casts(): array
@@ -40,12 +29,6 @@ class CustomerMerge extends Model
         ];
     }
 
-    /**
-     * Still within the window, and not already reversed.
-     *
-     * @param  Builder<CustomerMerge>  $query
-     * @return Builder<CustomerMerge>
-     */
     public function scopeUndoable(Builder $query): Builder
     {
         return $query->whereNull('undone_at')

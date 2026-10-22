@@ -19,18 +19,12 @@ class CreatesTeam
                 ->lockForUpdate()->first();
 
             if ($personal?->is_personal) {
-                // Promoting the private namespace keeps every existing
-                // agent/CRM/BI row on the same team_id. Copying rows to a new
-                // team would break their references and make a user's previous
-                // work disappear from the team they just created.
+
                 $personal->forceFill(['name' => $name, 'is_personal' => false])->save();
 
                 return $personal;
             }
 
-            // The team, its Owner role, and its first membership must arrive
-            // together; otherwise a failed role copy could leave an
-            // inaccessible team behind after switching into it.
             $team = Team::create(['name' => $name, 'created_by' => $owner->id]);
             $roles = Role::copyTemplatesFor($team);
 

@@ -16,18 +16,8 @@ use Illuminate\Support\Str;
 use Illuminate\View\View;
 use Throwable;
 
-/**
- * The unified inbox: every conversation across every agent and channel this
- * owner has, in one place.
- *
- * This is a view layer over the existing Conversation/Message models — the
- * same rows the webhook pipeline writes. Nothing here duplicates that state;
- * it filters, aggregates and (for operator replies) writes back through the
- * same channel drivers the agent itself uses.
- */
 class ConversationController extends Controller
 {
-    /** How the inbox can be sliced. `all` is the absence of a filter. */
     protected const STATUS_FILTERS = ['all', 'unread', 'needs_human', 'has_lead', 'rated_down', 'rated_up', 'closed'];
 
     protected const PER_PAGE = 25;
@@ -50,11 +40,6 @@ class ConversationController extends Controller
         ]);
     }
 
-    /**
-     * The conversation list itself, as JSON. Used for the first paint, for
-     * infinite scroll, and for the poll that surfaces new messages without a
-     * reload — one endpoint, so the three can never disagree.
-     */
     public function list(Request $request): JsonResponse
     {
         $this->authorize('viewAny', Conversation::class);
@@ -67,8 +52,7 @@ class ConversationController extends Controller
             'current_page' => $page->currentPage(),
             'last_page' => $page->lastPage(),
             'total' => $page->total(),
-            // Always the unfiltered count: it drives the "unread" badge, which
-            // would be nonsense if it only counted what the current filter shows.
+
             'unread_total' => Conversation::ownedBy($request->user())
                 ->whereNotNull('channel_id')
                 ->unread()
@@ -76,10 +60,6 @@ class ConversationController extends Controller
         ]);
     }
 
-    /**
-     * One conversation with its full transcript. Opening it is what marks it
-     * read, mirroring how any mail client behaves.
-     */
     public function show(Request $request, Conversation $conversation): JsonResponse
     {
         $this->authorize('view', $conversation);
@@ -109,13 +89,6 @@ class ConversationController extends Controller
         ]);
     }
 
-    /**
-     * Send a message to the customer as the human operator.
-     *
-     * Delivery happens BEFORE the message is recorded, on purpose: a transcript
-     * that shows a reply the customer never received is worse than no reply at
-     * all, because the owner would stop waiting for it.
-     */
     public function reply(Request $request, Conversation $conversation, ChannelDriverManager $drivers): JsonResponse
     {
         $this->authorize('reply', $conversation);
@@ -133,12 +106,7 @@ class ConversationController extends Controller
         try {
             $drivers->for($channel)->sendMessage($channel, $conversation->external_user_id, $data['content']);
         } catch (OutsideMessagingWindowException $e) {
-            // Not a failure to fix by retrying — WhatsApp and Instagram both
-            // refuse free-form messages more than 24 hours after the customer's
-            // last one. The operator needs to be told THAT, specifically,
-            // rather than "delivery failed"; there is nothing they can do until
-            // the customer writes again. Before this the driver returned
-            // silently and the reply was recorded as sent.
+
             Log::info('Operator reply blocked by the platform messaging window', [
                 'conversation_id' => $conversation->id,
                 'channel_id' => $channel->id,
@@ -160,8 +128,6 @@ class ConversationController extends Controller
             'content' => $data['content'],
         ]);
 
-        // Answering personally IS taking over: leaving the agent live would have
-        // it reply again underneath the operator, to the same customer.
         $conversation->forceFill([
             'status' => $conversation->status === 'closed' ? 'closed' : 'human_takeover',
             'last_message_at' => now(),
@@ -174,9 +140,6 @@ class ConversationController extends Controller
         ], 201);
     }
 
-    /**
-     * Move a conversation between AI handling, human takeover and closed.
-     */
     public function updateStatus(Request $request, Conversation $conversation): JsonResponse
     {
         $this->authorize('update', $conversation);
@@ -190,16 +153,6 @@ class ConversationController extends Controller
         return response()->json(['status' => $conversation->status]);
     }
 
-    /**
-     * The filter set an inbox starts from.
-     *
-     * Public and static because an agent's own conversations tab renders the
-     * same inbox partial and has to start from an identical shape — a
-     * hand-written copy over there would drift the first time a filter is
-     * added here.
-     *
-     * @return array<string, mixed>
-     */
     public static function defaultFilters(?int $agentId = null): array
     {
         return [
@@ -212,9 +165,6 @@ class ConversationController extends Controller
         ];
     }
 
-    /**
-     * @return array<string, mixed>
-     */
     protected function filters(Request $request): array
     {
         $status = (string) $request->query('status', 'all');
@@ -229,17 +179,12 @@ class ConversationController extends Controller
         ]);
     }
 
-    /**
-     * @param  array<string, mixed>  $filters
-     * @return Builder<Conversation>
-     */
     protected function query(Request $request, array $filters): Builder
     {
         $user = $request->user();
 
         return Conversation::ownedBy($user)
-            // Playground threads have no channel: they are the owner testing
-            // their own agent, not a customer, and cannot be replied to.
+
             ->whereNotNull('conversations.channel_id')
             ->with(['agent:id,name,slug', 'channel:id,type'])
             ->withCount([
@@ -251,7 +196,7 @@ class ConversationController extends Controller
                         ->orWhereColumn('messages.created_at', '>', 'conversations.operator_read_at')
                     ),
             ])
-            // Preview text without loading whole transcripts into memory.
+
             ->addSelect(['last_message_content' => Message::select('content')
                 ->whereColumn('messages.conversation_id', 'conversations.id')
                 ->latest('messages.id')
@@ -270,37 +215,22 @@ class ConversationController extends Controller
             ->when($filters['status'] === 'needs_human', fn ($q) => $q->where('conversations.status', 'human_takeover'))
             ->when($filters['status'] === 'closed', fn ($q) => $q->where('conversations.status', 'closed'))
             ->when($filters['status'] === 'has_lead', fn ($q) => $q->whereHas('leads'))
-            // Every conversation holding a reply the customer marked 👎. The
-            // dashboard's quality card links straight here, which is what makes
-            // that card actionable rather than decorative.
+
             ->when($filters['status'] === 'rated_down', fn ($q) => $q->whereHas(
                 'messages',
                 fn ($m) => $m->where('messages.rating', Message::RATING_DOWN)
             ))
-            // The positive counterpart — what the dashboard's "Все позитивные
-            // оценки" link lands on, symmetric to rated_down above.
+
             ->when($filters['status'] === 'rated_up', fn ($q) => $q->whereHas(
                 'messages',
                 fn ($m) => $m->where('messages.rating', Message::RATING_UP)
             ))
-            // "All" sits next to its own "Closed" chip in the UI, so it means
-            // all ACTIVE conversations — an inbox hides archived mail until
-            // asked for it explicitly.
-            //
-            // `rated_down` and `rated_up` are the deliberate exceptions. A
-            // reply does not stop being a rated reply because the thread was
-            // archived, and hiding those would make this list disagree with
-            // the count on the card that linked here — which reads as a bug,
-            // not as a policy.
+
             ->when(
                 ! in_array($filters['status'], ['closed', 'rated_down', 'rated_up'], true),
                 fn ($q) => $q->where('conversations.status', '!=', 'closed')
             )
-            // Message-content search, Telegram-style: the term is looked for in
-            // every message body as well as in who the customer is. Alongside
-            // the filter we carry back WHICH message matched and WHEN, so the
-            // list can be ordered by match recency and the UI can jump straight
-            // to that message instead of dropping the reader at the bottom.
+
             ->when($filters['q'], function (Builder $q, string $term) {
                 $like = '%'.$term.'%';
 
@@ -323,10 +253,7 @@ class ConversationController extends Controller
                         ->limit(1),
                     ]);
             })
-            // While searching, "most recent" means the most recent MATCH — a
-            // conversation whose hit is two months old belongs below one that
-            // was hit yesterday, whatever their last messages say. Conversations
-            // matched only by customer name have no match date and fall back.
+
             ->when(
                 $filters['q'],
                 fn ($q) => $q->orderByRaw('COALESCE(match_at, conversations.last_message_at) DESC'),
@@ -335,9 +262,6 @@ class ConversationController extends Controller
             ->orderByDesc('conversations.id');
     }
 
-    /**
-     * @return array<string, mixed>
-     */
     protected function summarize(Conversation $conversation, ?bool $unread = null): array
     {
         return [
@@ -356,9 +280,7 @@ class ConversationController extends Controller
                 ?? $conversation->updated_at?->toIso8601String(),
             'unread' => $unread ?? ((int) ($conversation->unread_count ?? 0) > 0),
             'leads_count' => (int) ($conversation->leads_count ?? $conversation->leads()->count()),
-            // Only present while searching. The row shows the matched message
-            // rather than the last one — during a search the last message is
-            // rarely the reason the row is on screen.
+
             'match_count' => (int) ($conversation->match_count ?? 0),
             'match_excerpt' => $conversation->match_excerpt === null
                 ? null
@@ -366,14 +288,9 @@ class ConversationController extends Controller
         ];
     }
 
-    /**
-     * @return array<string, mixed>
-     */
     protected function presentMessage(Message $message): array
     {
-        // Which knowledge the agent leaned on for this answer, when the reply
-        // pipeline recorded it. Shown in the thread so the owner can see why
-        // the agent said what it said.
+
         $chunks = collect($message->meta['retrieved_chunks'] ?? [])
             ->map(fn ($chunk) => [
                 'source' => $chunk['source_name'] ?? $chunk['source'] ?? null,
@@ -391,16 +308,14 @@ class ConversationController extends Controller
             'content' => $message->content,
             'created_at' => $message->created_at?->toIso8601String(),
             'chunks' => $chunks,
-            // So the operator can see the customer spoke rather than typed —
-            // the content is the transcript either way.
+
             'source_type' => $message->source_type ?? 'text',
             'voice_duration' => $message->voice_duration,
-            // The customer's verdict on this specific reply, shown in the
-            // thread rather than only counted on the dashboard. An aggregate
-            // says the agent was wrong 8% of the time; this says which answer
-            // was the wrong one, with the question still above it.
+
             'rating' => $message->rating,
             'rated_at' => $message->rated_at?->toIso8601String(),
+
+            'delivery_status' => $message->meta['delivery_status'] ?? null,
         ];
     }
 }

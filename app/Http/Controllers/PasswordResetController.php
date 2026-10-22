@@ -11,11 +11,6 @@ use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
-/**
- * Password reset built on Laravel's Password broker. Mail delivery uses the
- * framework's stock ResetPassword notification and default markdown template —
- * branding the email is deliberately out of scope here.
- */
 class PasswordResetController extends Controller
 {
     public function request(): View
@@ -29,9 +24,6 @@ class PasswordResetController extends Controller
 
         $status = Password::sendResetLink($request->only('email'));
 
-        // Always report success: telling an anonymous visitor whether an address
-        // is registered is an account-enumeration leak. A genuine throttle is the
-        // one case worth surfacing, since the user can act on it by waiting.
         if ($status === Password::RESET_THROTTLED) {
             throw ValidationException::withMessages(['email' => __($status)]);
         }
@@ -60,8 +52,7 @@ class PasswordResetController extends Controller
             function (User $user, string $password) {
                 $user->forceFill([
                     'password' => Hash::make($password),
-                    // Invalidate any "remember me" cookie issued before the reset:
-                    // a password change should log out every other device.
+
                     'remember_token' => Str::random(60),
                 ])->save();
             }

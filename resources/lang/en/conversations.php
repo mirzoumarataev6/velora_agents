@@ -107,6 +107,7 @@ return [
         'rating_up_hint' => 'Rated by the customer',
         'rating_down_hint' => 'The customer disliked this reply',
         'voice_note' => 'voice message',
+        'delivery_failed' => 'Not delivered to the customer',
         'no_channel' => 'This conversation has no connected channel, so it cannot be replied to.',
         'back' => 'Back to the list',
     ],

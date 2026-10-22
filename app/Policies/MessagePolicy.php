@@ -17,9 +17,6 @@ class MessagePolicy
         return $message->conversation !== null && $this->permitted($user, PermissionCatalog::CONVERSATIONS_VIEW, $message->conversation);
     }
 
-    /**
-     * Authorized via Gate::authorize('create', [Message::class, $conversation]).
-     */
     public function create(User $user, Conversation $conversation): bool
     {
         return $this->permitted($user, PermissionCatalog::CONVERSATIONS_REPLY, $conversation);

@@ -8,57 +8,23 @@ use App\Services\Llm\LlmProviderInterface;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
-/**
- * Drafts the two free-text fields on the agent form — the situational rules and
- * the persona — from a handful of questions the owner answers about their own
- * business.
- *
- * Deliberately nothing to do with AgentReplyService. That class is the
- * customer-facing pipeline: it is grounded, tool-armed, latency-sensitive and
- * carefully fenced about what it may claim. This one talks to the OWNER, once,
- * about how their assistant should behave. Sharing a prompt between the two
- * would mean every guard written for a customer conversation ("never invent a
- * product", "never promise a call") applying to a copywriting task where they
- * mean nothing — and, worse, the reverse.
- *
- * What comes back is a DRAFT. It is handed to the form for the owner to read and
- * edit; nothing here writes to the agent.
- */
 class AgentPersonaAssistant
 {
-    /**
-     * The questions asked, in order. Kept as data rather than markup so the
-     * wizard, the prompt and the validation all read from one list — a question
-     * added here appears in the UI and reaches the model without a second edit.
-     *
-     * `key` is what the translation files and the request payload use.
-     */
     public const QUESTIONS = ['priority', 'forbidden', 'phrases', 'angry', 'extra'];
 
-    /** Longest answer accepted per question — a paragraph, not an essay. */
     public const MAX_ANSWER_LENGTH = 600;
 
-    /** How many catalog categories are worth naming as context. */
     protected const CONTEXT_CATEGORIES = 12;
 
     public function __construct(protected LlmProviderInterface $llm) {}
 
-    /**
-     * Produce both blocks for this agent.
-     *
-     * @param  array<string, string>  $answers  Keyed by QUESTIONS.
-     * @return array{rules: string, persona: string, input_tokens: int, output_tokens: int}
-     *
-     * @throws LlmException when the provider fails or returns nothing usable.
-     */
     public function draft(Agent $agent, array $answers): array
     {
         $result = $this->llm->generate(
             $this->systemPrompt(),
             [['role' => 'user', 'text' => $this->brief($agent, $answers)]],
             [
-                // Long enough for two substantial blocks; this is a one-off
-                // authoring task, not a chat turn, so the budget is generous.
+
                 'max_output_tokens' => 2000,
                 'thinking_budget' => 0,
             ],
@@ -82,19 +48,6 @@ class AgentPersonaAssistant
         ];
     }
 
-    /**
-     * The system prompt.
-     *
-     * Two things it works hard at. First, the output contract: the response has
-     * to be split reliably into two fields, and asking for JSON from a model
-     * writing multi-paragraph Russian invites escaping bugs — so it asks for two
-     * named markers instead, which survive any amount of prose between them.
-     *
-     * Second, the register. The rules field wants "if X → do Y" lines, matching
-     * the placeholder the owner can see in the form; the persona field wants
-     * prose addressed to a new employee, matching its own guidance. A model left
-     * to its own devices writes the same bulleted marketing copy into both.
-     */
     public function systemPrompt(): string
     {
         return implode("\n", [
@@ -132,18 +85,6 @@ class AgentPersonaAssistant
         ]);
     }
 
-    /**
-     * The brief: everything already known about the business, then the owner's
-     * answers.
-     *
-     * The context comes first and is labelled as context, because its job is to
-     * make the draft specific — a rules block for "Ноутбуки и аксессуары" should
-     * mention warranties and configurations, and one for a flower shop should
-     * not. The answers come last because recency is where models weight
-     * instructions hardest.
-     *
-     * @param  array<string, string>  $answers
-     */
     public function brief(Agent $agent, array $answers): string
     {
         $lines = ['BUSINESS CONTEXT (facts already on file — use them, do not repeat them back verbatim):'];
@@ -177,8 +118,7 @@ class AgentPersonaAssistant
         }
 
         if ($agent->hagglesOnPrice()) {
-            // Worth stating, because otherwise the model writes discount rules
-            // that contradict the negotiation feature's own prompt.
+
             $lines[] = '- This assistant negotiates on price, and escalates below-floor offers to the owner. '
                 .'Do NOT write rules about granting discounts.';
         }
@@ -199,11 +139,6 @@ class AgentPersonaAssistant
         return implode("\n", $lines);
     }
 
-    /**
-     * English labels for the model, deliberately not the Russian ones the owner
-     * saw: the question text in the UI is written to be answerable by a shop
-     * owner, while these are written to be unambiguous to a model.
-     */
     protected function questionLabel(string $key): string
     {
         return match ($key) {
@@ -215,9 +150,6 @@ class AgentPersonaAssistant
         };
     }
 
-    /**
-     * @return array<int, string>
-     */
     protected function catalogCategories(Agent $agent): array
     {
         return $agent->datasetProducts()
@@ -230,16 +162,6 @@ class AgentPersonaAssistant
             ->all();
     }
 
-    /**
-     * Split the two blocks apart.
-     *
-     * Both must be present and non-empty. A response carrying only one of them
-     * is a failure rather than a partial success: half a draft silently
-     * overwriting one textarea and leaving the other untouched is worse for the
-     * owner than an honest error they can retry.
-     *
-     * @return array{rules: string, persona: string}|null
-     */
     protected function parse(string $text): ?array
     {
         if (! preg_match('/===RULES===(.*?)===PERSONA===(.*)$/su', $text, $matches)) {

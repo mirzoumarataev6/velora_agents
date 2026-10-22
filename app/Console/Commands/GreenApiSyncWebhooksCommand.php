@@ -8,14 +8,6 @@ use App\Services\Channels\GreenApiDriver;
 use Illuminate\Console\Command;
 use Illuminate\Support\Str;
 
-/**
- * Re-point every connected Green API instance's webhook at this app, via
- * setSettings. The Green API counterpart to telegram:sync-webhooks — for after
- * APP_URL changes, or when connect() could not register the webhook itself.
- *
- * The stored webhook token is reused, so an instance that already has it keeps
- * working throughout.
- */
 class GreenApiSyncWebhooksCommand extends Command
 {
     protected $signature = 'greenapi:sync-webhooks {--channel= : Only this channel id}';

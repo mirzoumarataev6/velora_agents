@@ -8,12 +8,6 @@ use App\Models\TeamMembership;
 use App\Models\User;
 use App\Services\Permissions\PermissionCatalog;
 
-/**
- * The one place that defines "what a personal team looks like" — used by
- * the one-off backfill command for existing users, and reused unchanged by
- * the registration flow for new users once that is wired up, so the two
- * never drift into creating teams shaped differently from each other.
- */
 class CreatesPersonalTeam
 {
     public function create(User $user): Team

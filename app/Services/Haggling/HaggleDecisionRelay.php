@@ -14,14 +14,12 @@ class HaggleDecisionRelay
 {
     protected const LANGUAGE_LOOKBACK = 5;
 
-    // Создаёт транслятор решений по торгу с драйверами каналов и определением языка
     public function __construct(
         protected ChannelDriverManager $drivers,
         protected HumanizedReplySender $sender,
         protected LanguageDetector $languages,
     ) {}
 
-    // Одобряет запрошенную клиентом цену и отправляет ему подтверждение
     public function approve(Lead $lead, ?float $price = null): Message
     {
         $granted = $price ?? (float) $lead->requested_price;
@@ -34,7 +32,6 @@ class HaggleDecisionRelay
         return $this->relay($lead, $this->approvalText($lead, $granted));
     }
 
-    // Отклоняет запрошенную клиентом цену, при желании предлагая встречную
     public function decline(Lead $lead, ?float $counterPrice = null): Message
     {
         $lead->forceFill([
@@ -45,7 +42,6 @@ class HaggleDecisionRelay
         return $this->relay($lead, $this->declineText($lead, $counterPrice));
     }
 
-    // Сохраняет решение по торгу как сообщение и отправляет его клиенту через канал
     protected function relay(Lead $lead, string $text): Message
     {
         $conversation = $lead->conversation;
@@ -80,7 +76,6 @@ class HaggleDecisionRelay
         return $message;
     }
 
-    // Формирует текст сообщения об одобрении цены на языке клиента
     protected function approvalText(Lead $lead, float $granted): string
     {
         $language = $this->languageFor($lead);
@@ -110,7 +105,6 @@ class HaggleDecisionRelay
         };
     }
 
-    // Формирует текст сообщения об отказе (с встречным предложением или без) на языке клиента
     protected function declineText(Lead $lead, ?float $counterPrice): string
     {
         $language = $this->languageFor($lead);
@@ -138,7 +132,6 @@ class HaggleDecisionRelay
         };
     }
 
-    // Определяет язык клиента по последним сообщениям диалога
     protected function languageFor(Lead $lead): string
     {
         $conversation = $lead->conversation;

@@ -10,11 +10,6 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 
-/**
- * The notes/activity thread that replaced the single freeform `note` field
- * on deals and customers — an entry here is either a free note or the owner
- * manually logging a call/visit/meeting that happened (possibly earlier).
- */
 class CrmNoteController extends Controller
 {
     public function storeForDeal(Request $request, Deal $deal): RedirectResponse|JsonResponse
@@ -53,15 +48,12 @@ class CrmNoteController extends Controller
         return back()->with('status', __('crm.notes.deleted'));
     }
 
-    /** Validates and creates one thread entry, keeping the legacy `note` column in sync for kind='note' entries. */
     private function create(Request $request, Deal|Customer $notable): CrmNote
     {
         $data = $request->validate([
             'kind' => ['required', 'string', 'in:'.implode(',', CrmNote::KINDS)],
             'body' => ['required', 'string', 'max:5000'],
-            // A log entry can be backdated (the owner logging a call that
-            // already happened) but never postdated beyond "today" — there
-            // is no such thing as a future activity log.
+
             'happened_at' => ['nullable', 'date', 'before_or_equal:'.now()->addMinute()->toDateTimeString()],
         ], [
             'kind.in' => __('crm.notes.validation.kind'),
@@ -84,14 +76,6 @@ class CrmNoteController extends Controller
         return $note;
     }
 
-    /**
-     * Keeps `deals.note` / `customers.note` pointed at the latest kind='note'
-     * entry, one-way, so CSV export and anything else still reading that
-     * column do not go stale once the UI stops writing it directly. The
-     * thread is the source of truth now; this is purely a courtesy to old
-     * readers, which is why a deleted note resyncs to the NEXT most recent
-     * one (or clears the column) instead of leaving it pointing at nothing.
-     */
     private function resyncLegacyColumn(Deal|Customer $notable): void
     {
         $latest = $notable->notes()->where('kind', 'note')->first();
